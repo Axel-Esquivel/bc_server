@@ -1,6 +1,10 @@
 import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 <<<<<<< ours
+<<<<<<< ours
 import { AuthService } from './auth.service';
+=======
+import { AuthService, TokenBundle } from './auth.service';
+>>>>>>> theirs
 =======
 import { AuthService, TokenBundle } from './auth.service';
 >>>>>>> theirs
@@ -25,11 +29,16 @@ export class AuthController {
 
   @Post('refresh')
 <<<<<<< ours
+<<<<<<< ours
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refresh(dto);
 =======
   refresh(@Body() dto: RefreshTokenDto): Promise<{ message: string; result: TokenBundle }> {
     return this.authService.refresh(dto) as any;
+>>>>>>> theirs
+=======
+  async refresh(@Body() dto: RefreshTokenDto): Promise<{ message: string; result: TokenBundle }> {
+    return this.authService.refresh(dto);
 >>>>>>> theirs
   }
 

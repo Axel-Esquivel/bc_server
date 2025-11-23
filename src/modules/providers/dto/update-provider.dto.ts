@@ -1,9 +1,12 @@
 <<<<<<< ours
+<<<<<<< ours
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateProviderDto } from './create-provider.dto';
 
 export class UpdateProviderDto extends PartialType(CreateProviderDto) {}
 =======
+=======
+>>>>>>> theirs
 import { Type } from 'class-transformer';
 import { IsArray, IsEmail, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { ProviderVariantInput } from './create-provider.dto';
@@ -36,4 +39,7 @@ export class UpdateProviderDto {
   @IsString()
   companyId?: string;
 }
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs

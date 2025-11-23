@@ -1,9 +1,12 @@
 <<<<<<< ours
+<<<<<<< ours
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateUomDto } from './create-uom.dto';
 
 export class UpdateUomDto extends PartialType(CreateUomDto) {}
 =======
+=======
+>>>>>>> theirs
 import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class UpdateUomDto {
@@ -29,4 +32,7 @@ export class UpdateUomDto {
   @IsString()
   companyId?: string;
 }
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs

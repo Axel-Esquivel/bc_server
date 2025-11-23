@@ -1,4 +1,5 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
+<<<<<<< ours
 import { Request, Response } from 'express';
 
 <<<<<<< ours
@@ -35,10 +36,49 @@ export class AuditContextMiddleware implements NestMiddleware {
       deviceId: req.deviceId || (req as any).deviceId || req.headers['x-device-id'],
       requestId: req.requestId || (req as any).requestId || req.headers['x-request-id'],
 >>>>>>> theirs
+=======
+import { NextFunction, Request, Response } from 'express';
+
+export interface AuditContext {
+  userId?: string;
+  workspaceId?: string;
+  deviceId?: string;
+  requestId?: string;
+  endpoint?: string;
+  ip?: string;
+}
+
+export type AuditRequest = Request & {
+  user?: any;
+  auditContext?: AuditContext;
+  workspaceId?: string;
+  deviceId?: string;
+  requestId?: string;
+};
+
+@Injectable()
+export class AuditContextMiddleware implements NestMiddleware {
+  use(req: AuditRequest, _res: Response, next: NextFunction) {
+    const forwarded = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim();
+    const ip = forwarded || req.ip || (req.socket?.remoteAddress as string | undefined);
+    const user = (req as AuditRequest).user;
+
+    const context: AuditContext = {
+      userId: user?.id || user?._id || (req.headers['x-user-id'] as string | undefined),
+      workspaceId:
+        req.workspaceId || (req as any).workspaceId || (req.headers['x-workspace-id'] as string | undefined),
+      deviceId: req.deviceId || (req as any).deviceId || (req.headers['x-device-id'] as string | undefined),
+      requestId: req.requestId || (req as any).requestId || (req.headers['x-request-id'] as string | undefined),
+>>>>>>> theirs
       endpoint: `${req.method} ${req.originalUrl}`,
       ip,
     };
 
+<<<<<<< ours
+=======
+    req.auditContext = context;
+
+>>>>>>> theirs
     next();
   }
 }

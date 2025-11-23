@@ -2,7 +2,11 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ExpressAdapter } from '@nestjs/platform-express';
 <<<<<<< ours
+<<<<<<< ours
 import * as express from 'express';
+=======
+import express from 'express';
+>>>>>>> theirs
 =======
 import express from 'express';
 >>>>>>> theirs

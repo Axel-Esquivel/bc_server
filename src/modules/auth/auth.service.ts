@@ -8,7 +8,11 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 
 <<<<<<< ours
+<<<<<<< ours
 interface TokenBundle {
+=======
+export interface TokenBundle {
+>>>>>>> theirs
 =======
 export interface TokenBundle {
 >>>>>>> theirs
