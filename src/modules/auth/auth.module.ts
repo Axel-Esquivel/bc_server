@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { DevicesModule } from '../devices/devices.module';
 import { UsersModule } from '../users/users.module';
@@ -12,7 +12,7 @@ import { RolesGuard } from './guards/roles.guard';
 @Module({
   imports: [
     UsersModule,
-    DevicesModule,
+    forwardRef(() => DevicesModule),
     WorkspacesModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'demo-secret',
