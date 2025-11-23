@@ -1,12 +1,3 @@
-<<<<<<< ours
-<<<<<<< ours
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateVariantDto } from './create-variant.dto';
-
-export class UpdateVariantDto extends PartialType(CreateVariantDto) {}
-=======
-=======
->>>>>>> theirs
 import { IsArray, IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class UpdateVariantDto {
@@ -46,7 +37,3 @@ export class UpdateVariantDto {
   @IsString()
   companyId?: string;
 }
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs

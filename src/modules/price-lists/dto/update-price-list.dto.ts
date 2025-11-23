@@ -1,12 +1,3 @@
-<<<<<<< ours
-<<<<<<< ours
-import { PartialType } from '@nestjs/mapped-types';
-import { CreatePriceListDto } from './create-price-list.dto';
-
-export class UpdatePriceListDto extends PartialType(CreatePriceListDto) {}
-=======
-=======
->>>>>>> theirs
 import { Type } from 'class-transformer';
 import { IsArray, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { PriceListItemDto } from './create-price-list.dto';
@@ -35,7 +26,3 @@ export class UpdatePriceListDto {
   @IsString()
   companyId?: string;
 }
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
