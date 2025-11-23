@@ -1,0 +1,36 @@
+import { IsArray, IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+
+export class CreateVariantDto {
+  @IsString()
+  @IsNotEmpty()
+  productId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  sku?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  barcodes?: string[];
+
+  @IsString()
+  @IsNotEmpty()
+  baseUomId!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  sellable?: boolean;
+
+  @IsString()
+  @IsNotEmpty()
+  workspaceId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  companyId!: string;
+}

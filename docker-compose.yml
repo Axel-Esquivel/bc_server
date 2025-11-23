@@ -1,0 +1,38 @@
+version: '3.9'
+services:
+  api:
+    build: .
+    container_name: business-control-api
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      MONGODB_URI: mongodb://mongo:27017/business_control
+      JWT_SECRET: changeme
+    depends_on:
+      - mongo
+      - redis
+    command: npm run start:dev
+
+  mongo:
+    image: mongo:7
+    container_name: business-control-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    container_name: business-control-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  mongo_data:
+  redis_data:

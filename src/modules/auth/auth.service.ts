@@ -1,0 +1,148 @@
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { UsersService } from '../users/users.service';
+import { DevicesService } from '../devices/devices.service';
+import { WorkspacesService } from '../workspaces/workspaces.service';
+import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { RegisterDto } from './dto/register.dto';
+
+<<<<<<< ours
+interface TokenBundle {
+=======
+export interface TokenBundle {
+>>>>>>> theirs
+  accessToken: string;
+  refreshToken: string;
+}
+
+@Injectable()
+export class AuthService {
+  private readonly refreshTokens = new Map<string, string>();
+
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly jwtService: JwtService,
+    private readonly devicesService: DevicesService,
+    private readonly workspacesService: WorkspacesService,
+  ) {}
+
+  async login(dto: LoginDto) {
+    const user = await this.usersService.validateCredentials(dto.identifier, dto.password);
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const workspaceId = dto.workspaceId || user.workspaces?.[0]?.workspaceId;
+    if (workspaceId) {
+      this.workspacesService.getWorkspace(workspaceId);
+    }
+    const deviceId = dto.deviceId || 'untracked-device';
+
+    this.devicesService.upsertDevice(user.id, deviceId, workspaceId);
+
+    const tokens = this.issueTokens({
+      sub: user.id,
+      email: user.email,
+      workspaceId,
+      deviceId,
+      workspaces: user.workspaces,
+      permissions: [],
+    });
+
+    this.storeRefreshToken(user.id, deviceId, tokens.refreshToken);
+
+    return {
+      message: 'Login successful',
+      result: {
+        user,
+        workspaceId,
+        deviceId,
+        ...tokens,
+      },
+    };
+  }
+
+  async register(dto: RegisterDto) {
+    const user = await this.usersService.createUser({
+      email: dto.email,
+      username: dto.username,
+      password: dto.password,
+      workspaceId: dto.workspaceId,
+    });
+
+    const workspaceId = dto.workspaceId;
+    return {
+      message: 'User registered',
+      result: {
+        user,
+        workspaceId,
+      },
+    };
+  }
+
+  async refresh(dto: RefreshTokenDto) {
+    const payload = await this.verifyRefreshToken(dto.refreshToken);
+    const stored = this.refreshTokens.get(this.refreshKey(payload.sub, dto.deviceId || payload.deviceId));
+    if (!stored || stored !== dto.refreshToken) {
+      throw new UnauthorizedException('Refresh token revoked');
+    }
+
+    const tokens = this.issueTokens({
+      sub: payload.sub,
+      email: payload.email,
+      workspaceId: payload.workspaceId,
+      deviceId: dto.deviceId || payload.deviceId,
+      workspaces: payload.workspaces,
+      permissions: payload.permissions || [],
+    });
+
+    this.storeRefreshToken(payload.sub, dto.deviceId || payload.deviceId, tokens.refreshToken);
+
+    return {
+      message: 'Token refreshed',
+      result: tokens,
+    };
+  }
+
+  async getProfile(userId: string) {
+    const user = this.usersService.findById(userId);
+    return {
+      message: 'User profile',
+      result: user,
+    };
+  }
+
+  private issueTokens(payload: any): TokenBundle {
+    const accessToken = this.jwtService.sign(payload, {
+      secret: process.env.JWT_SECRET || 'demo-secret',
+      expiresIn: '15m',
+    });
+
+    const refreshToken = this.jwtService.sign(payload, {
+      secret: process.env.JWT_REFRESH_SECRET || 'demo-refresh-secret',
+      expiresIn: '7d',
+    });
+
+    return { accessToken, refreshToken };
+  }
+
+  private async verifyRefreshToken(token: string) {
+    try {
+      return await this.jwtService.verifyAsync(token, {
+        secret: process.env.JWT_REFRESH_SECRET || 'demo-refresh-secret',
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+  }
+
+  private storeRefreshToken(userId: string, deviceId: string, refreshToken: string) {
+    const key = this.refreshKey(userId, deviceId);
+    this.refreshTokens.set(key, refreshToken);
+  }
+
+  private refreshKey(userId: string, deviceId?: string) {
+    return `${userId}:${deviceId || 'unknown-device'}`;
+  }
+}
