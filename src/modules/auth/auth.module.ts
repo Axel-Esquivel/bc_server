@@ -13,7 +13,7 @@ import { RolesGuard } from './guards/roles.guard';
   imports: [
     UsersModule,
     forwardRef(() => DevicesModule),
-    WorkspacesModule,
+    forwardRef(() => WorkspacesModule),
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'demo-secret',
       signOptions: { expiresIn: '15m' },
@@ -21,6 +21,6 @@ import { RolesGuard } from './guards/roles.guard';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtAuthGuard, RolesGuard, PermissionsGuard],
-  exports: [AuthService, JwtAuthGuard, RolesGuard, PermissionsGuard],
+  exports: [AuthService, JwtAuthGuard, RolesGuard, PermissionsGuard, JwtModule],
 })
 export class AuthModule {}

@@ -7,5 +7,6 @@ import { PosService } from './pos.service';
   imports: [InventoryModule],
   controllers: [PosController],
   providers: [PosService],
+  exports: [PosService],
 })
 export class PosModule {}

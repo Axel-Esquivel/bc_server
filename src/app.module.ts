@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import { Connection } from 'mongoose';
 import { CoreModule } from './core/core.module';
 import { RequestIdMiddleware } from './core/middlewares/request-id.middleware';
 import { AuditContextMiddleware } from './core/middlewares/audit-context.middleware';
@@ -28,9 +29,22 @@ import { ReportsModule } from './modules/reports/reports.module';
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => ({
-        uri: configService.get<string>('MONGODB_URI'),
+        uri:
+          configService.get<string>('MONGO_URI')?.trim() ||
+          configService.get<string>('MONGODB_URI')?.trim() ||
+          'mongodb://localhost:27017/business-control',
         dbName: configService.get<string>('MONGODB_DB') || 'business-control',
         appName: 'business-control-backend',
+        connectionFactory: (connection: Connection) => {
+          connection.on('error', (error) => {
+            // eslint-disable-next-line no-console
+            console.error(
+              'No se pudo conectar a MongoDB. Verifica la variable MONGO_URI o usa la URI por defecto.',
+              error,
+            );
+          });
+          return connection;
+        },
       }),
     }),
     CoreModule,
