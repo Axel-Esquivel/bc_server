@@ -1,10 +1,10 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ExpressAdapter } from '@nestjs/platform-express';
-import { IoAdapter } from '@nestjs/platform-socket.io';
 import express from 'express';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './core/filters/http-exception.filter';
+import { SocketsAdapter } from './core/adapters/sockets.adapter';
 
 async function bootstrap() {
   const server = express();
@@ -16,7 +16,7 @@ async function bootstrap() {
     origin: allowedOrigins,
     credentials: true,
   });
-  app.useWebSocketAdapter(new IoAdapter(app));
+  app.useWebSocketAdapter(new SocketsAdapter(app));
 
   app.useGlobalFilters(app.get(HttpExceptionFilter));
 
