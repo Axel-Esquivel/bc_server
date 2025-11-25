@@ -5,6 +5,7 @@ import {
   HttpException,
   HttpStatus,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 
 @Catch()
@@ -20,6 +21,30 @@ export class HttpExceptionFilter implements ExceptionFilter {
       exception instanceof HttpException
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
+
+    const path = request.originalUrl || request.url;
+
+    if (exception instanceof NotFoundException || status === HttpStatus.NOT_FOUND) {
+      const exceptionResponse =
+        exception instanceof HttpException ? exception.getResponse() : undefined;
+
+      const rawMessage =
+        typeof exceptionResponse === 'string'
+          ? exceptionResponse
+          : (exceptionResponse as any)?.message;
+
+      const message =
+        (Array.isArray(rawMessage) ? rawMessage.join(', ') : rawMessage) || 'Route not found';
+
+      response.status(HttpStatus.NOT_FOUND).json({
+        statusCode: HttpStatus.NOT_FOUND,
+        message,
+        path,
+        timestamp: new Date().toISOString(),
+      });
+
+      return;
+    }
 
     const exceptionResponse =
       exception instanceof HttpException ? exception.getResponse() : 'Internal server error';
@@ -41,6 +66,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
             ? exceptionResponse
             : undefined,
       },
+      path,
+      timestamp: new Date().toISOString(),
     };
 
     const auditContext = request.auditContext || {};
