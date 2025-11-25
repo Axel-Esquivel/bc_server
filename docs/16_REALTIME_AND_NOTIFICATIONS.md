@@ -1,191 +1,95 @@
-# 16_REALTIME_AND_NOTIFICATIONS (Backend Only)
+## 15) REALTIME, SOCKETS Y NOTIFICACIONES (POS, INVENTARIO, DASHBOARDS, CHAT)
 
+Lee primero:
+- docs/AGENT_BACKEND.md
+- docs/00_PROJECT_OVERVIEW.md
+- docs/01_ARCHITECTURE.md
+- docs/02_MODULES_OVERVIEW.md
+- docs/14_SECURITY_LOGS_AUDIT.md
+- docs/16_REALTIME_AND_NOTIFICATIONS.md
 
-## 1. Objetivos del módulo en tiempo real
+Tarea:
 
-El backend debe proveer infraestructura WebSocket para:
+Quiero que diseñes e implementes la **infraestructura de tiempo real** del backend de Business Control, usando NestJS 11 y websockets (socket.io), respetando siempre la arquitectura hexagonal + CQRS + eventos de dominio y el estilo de API definido en los demás documentos.
 
-### 1.1. POS en tiempo real
-- Transmisión de **ventas en tiempo real**.
-- Actualización inmediata de:
-  - carrito del POS,
-  - pagos,
-  - confirmaciones,
-  - totales diarios.
+Alcance:
 
-### 1.2. Inventarios en tiempo real
-- Movimientos de inventario transmitidos al instante:
-  - transferencias,
-  - ajustes,
-  - entradas/salidas,
-  - conteos de inventario.
+1. **Infraestructura base de realtime**:
+   - Crea un módulo dedicado, por ejemplo: `src/modules/realtime/` con:
+     - `realtime.module.ts`
+     - `realtime.gateway.ts` (o varios gateways por dominio si lo consideras necesario)
+     - Adaptador/configuración de socket.io (autenticación en el handshake, extracción de `userId`, `workspaceId`, `deviceId` desde el JWT y los headers).
+   - Define la convención de:
+     - Namespace principal: `/realtime`.
+     - Rooms por workspace, usuario y dispositivo:
+       - `workspace:{workspaceId}`
+       - `user:{userId}`
+       - `device:{deviceId}`
+     - Rooms específicos para módulos donde tenga sentido (ej: `pos:workstation:{posId}`, `inventory:warehouse:{warehouseId}`, `chat:channel:{channelId}`).
 
-### 1.3. Alertas del sistema
-- Envío de alertas del backend:
-  - stock bajo,
-  - productos vencidos,
-  - límites de caja,
-  - tareas del sistema.
+2. **Integración con CQRS y eventos de dominio**:
+   - No pongas lógica de negocio en los gateways.
+   - La lógica debe seguir este flujo:
+     - El cliente dispara peticiones HTTP o comandos que ya existen (POS, inventario, compras, etc.).
+     - Los command handlers aplican la lógica de dominio y persisten en MongoDB.
+     - Desde los command handlers (o domain event handlers) se emiten eventos de dominio como:
+       - `SaleConfirmedEvent`
+       - `InventoryMovementAppliedEvent`
+       - `InventoryCountSessionUpdatedEvent`
+       - `CustomerCreditChangedEvent`
+     - Crea event handlers que escuchen estos eventos y usen el `RealtimeGateway` para publicar eventos a los sockets, siguiendo la convención descrita en `docs/16_REALTIME_AND_NOTIFICATIONS.md`.
 
-### 1.4. Chat interno del sistema
-- Soporte a:
-  - chat de soporte interno (administrador ↔ usuarios),
-  - chat de empleados (usuarios ↔ usuarios).
+3. **POS y ventas en tiempo real**:
+   - Implementa los eventos mínimos para POS:
+     - `pos:cart:updated` → cuando se actualiza un carrito (líneas, totales, descuentos).
+     - `pos:cart:confirmed` → cuando se confirma una venta.
+     - `pos:inventory:availability` → para avisar cambios relevantes de stock que afecten ventas.
+   - Publica estos eventos hacia:
+     - Room del workspace.
+     - Room del cajero / POS cuando aplique.
+   - Define interfaces TypeScript para los payloads de estos eventos, y mantenlos en una carpeta compartida (por ejemplo `src/shared/realtime/`).
 
-Todo administrado exclusivamente desde **NestJS WebSocket Gateway**.
+4. **Inventario en tiempo real**:
+   - Conecta el módulo de inventario ya existente con realtime:
+     - Cuando se aplique un `InventoryMovement`, emite `inventory:stock:updated` con la proyección actualizada.
+     - Cuando cambie el estado de una sesión de conteo físico, emite `inventory:count-session:updated`.
+   - Usa rooms tipo:
+     - `inventory:warehouse:{warehouseId}`
+     - `workspace:{workspaceId}` según corresponda.
+   - Asegúrate que estos eventos respeten las reglas de multitenancy (`workspaceId`) y solo notifiquen a quienes pertenezcan a ese workspace.
 
----
+5. **Dashboards y KPIs en tiempo real**:
+   - Diseña una forma de emitir eventos de dashboard en tiempo real, por ejemplo:
+     - `dashboard:sales:updated`
+     - `dashboard:inventory-kpis:updated`
+   - No calcules los KPIs completos dentro del gateway.
+   - Crea servicios/proyecciones que agreguen datos (ventas, inventario, etc.) y que sean invocados periódicamente o bajo ciertos eventos de dominio, y desde ahí emitan los eventos a los sockets.
+   - Incluye algún mecanismo básico (aunque sea solo a nivel de diseño/comentarios) de throttling para no saturar a los clientes.
 
-## 2. Arquitectura del módulo WebSockets
+6. **Chat de ayuda y chat interno (empleados)**:
+   - Define la estructura para soportar dos tipos de chat:
+     - Chat de ayuda/soporte (`chat:help`), por workspace, opcionalmente por ticket.
+     - Chat interno de empleados (`chat:staff`), por workspace, sucursal o canal.
+   - Crea modelos y endpoints mínimos para persistir mensajes (sin lógica compleja, pero dejando claro cómo se audita cada mensaje: `userId`, `workspaceId`, `deviceId`, `timestamp`).
+   - Implementa los eventos de socket para:
+     - `chat:help:new-message`, `chat:help:message-read`.
+     - `chat:staff:new-message`, `chat:staff:message-read`.
+   - Asegúrate de seguir los lineamientos de seguridad y auditoría de `docs/14_SECURITY_LOGS_AUDIT.md`.
 
-Estructura recomendada:
+7. **Seguridad, auditoría y multitenancy**:
+   - Implementa autenticación en el handshake de socket.io usando los mismos JWT que en HTTP.
+   - Resuelve y asigna siempre en el contexto del socket:
+     - `userId`
+     - `workspaceId`
+     - `deviceId`
+   - Integra logs y auditoría para:
+     - Conexión y desconexión de sockets.
+     - Eventos emitidos (al menos a nivel de resumen, sin payloads sensibles).
+   - Respeta la separación de datos por workspace en todos los canales y rooms.
 
-```
-src/modules/realtime/
-    realtime.module.ts
-    gateways/
-        pos.gateway.ts
-        inventory.gateway.ts
-        notifications.gateway.ts
-        chat.gateway.ts
-    services/
-        realtime.service.ts
-        pos-events.service.ts
-        inventory-events.service.ts
-        notifications.service.ts
-        chat.service.ts
-    dto/
-        pos.dto.ts
-        inventory.dto.ts
-        chat.dto.ts
-```
-
----
-
-## 3. Gateways incluidos
-
-### 3.1. POSGateway
-Eventos:
-- `pos.cart.updated`
-- `pos.cart.payment`
-- `pos.sale.completed`
-- `pos.daily-totals.updated`
-
-### 3.2. InventoryGateway
-Eventos:
-- `inventory.movement.created`
-- `inventory.movement.updated`
-- `inventory.count.updated`
-
-### 3.3. NotificationsGateway
-Eventos:
-- `system.alert`
-- `system.warning`
-- `system.info`
-
-### 3.4. ChatGateway
-Eventos:
-- `chat.message`
-- `chat.typing`
-- `chat.history`
-
----
-
-## 4. Integración con los módulos existentes
-
-Los siguientes módulos deben disparar eventos al WebSocket Gateway:
-
-### 4.1. Módulo POS
-Cada venta debe emitir:
-```
-this.realtime.posSaleCompleted(sale);
-this.realtime.updateDailyTotals(totals);
-```
-
-### 4.2. Módulo Inventory
-Cuando exista un movimiento:
-```
-this.realtime.inventoryMovementCreated(movement);
-```
-
-### 4.3. Módulo Notifications
-Para alertas:
-```
-this.realtime.systemAlert({ title, message });
-```
-
-### 4.4. Módulo Chat
-Para chat interno:
-```
-this.realtime.sendMessage(roomId, message);
-```
-
----
-
-## 5. Seguridad de WebSockets
-
-- Autenticación por **JWT**.
-- Validación de usuario y permisos por **middleware de socket**.
-- Diferenciar rooms:
-  - `company:{id}`
-  - `workspace:{id}`
-  - `pos:{deviceId}`
-  - `chat:{roomId}`
-
----
-
-## 6. Ejemplo de un Gateway limpio (NestJS)
-
-```ts
-@WebSocketGateway({ cors: true, namespace: '/pos' })
-export class PosGateway {
-  @WebSocketServer()
-  server: Server;
-
-  sendSaleCompleted(data: any) {
-    this.server.emit('pos.sale.completed', data);
-  }
-}
-```
-
----
-
-## 7. Variables de entorno necesarias
-
-Agregar al `.env`:
-
-```
-WEBSOCKET_ENABLED=true
-WEBSOCKET_PORT=3001
-```
-
-Crear `.env.example`:
-
-```
-WEBSOCKET_ENABLED=true
-WEBSOCKET_PORT=3001
-DATABASE_URI=
-JWT_SECRET=
-```
-
----
-
-## 8. Checklist de integración backend
-
-- [ ] Crear módulo `realtime`
-- [ ] Crear gateways
-- [ ] Crear servicios de emisión
-- [ ] Integrar eventos en POS
-- [ ] Integrar eventos en Inventory
-- [ ] Integrar eventos en Notifications
-- [ ] Integrar eventos en Chat
-- [ ] Asegurar autenticación por JWT
-- [ ] Documentar en Swagger
-
----
-
-## 9. Próximo documento sugerido  
-**17_EVENTS_AND_DOMAIN_DRIVEN_REALTIME_FLOWS.md**  
-Para documentar:  
-- flujo completo de venta → inventario → dashboard → notificaciones.
-
+Entrega esperada:
+- Archivos TypeScript que definan:
+  - `RealtimeModule`, `RealtimeGateway` y cualquier adaptador necesario.
+  - Interfaces de payload para eventos clave (POS, inventario, dashboards, chat).
+  - Event handlers que conecten los eventos de dominio existentes con la emisión de eventos de socket.
+- Comentarios claros donde algo quede como stub o diseño pendiente.
