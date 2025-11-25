@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
@@ -68,6 +68,8 @@ import { ReportsModule } from './modules/reports/reports.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(RequestIdMiddleware, AuditContextMiddleware, RateLimitMiddleware).forRoutes('*');
+    consumer
+      .apply(RequestIdMiddleware, AuditContextMiddleware, RateLimitMiddleware)
+      .forRoutes({ path: '*path', method: RequestMethod.ALL });
   }
 }
