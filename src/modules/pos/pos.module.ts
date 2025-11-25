@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
 import { InventoryModule } from '../inventory/inventory.module';
+import { RealtimeModule } from '../../realtime/realtime.module';
 import { PosController } from './pos.controller';
 import { PosService } from './pos.service';
 
 @Module({
-  imports: [InventoryModule],
+  imports: [InventoryModule, RealtimeModule],
   controllers: [PosController],
   providers: [PosService],
   exports: [PosService],

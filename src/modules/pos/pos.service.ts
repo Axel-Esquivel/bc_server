@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { v4 as uuid } from 'uuid';
 import { InventoryDirection } from '../inventory/entities/inventory-movement.entity';
 import { InventoryService } from '../inventory/inventory.service';
+import { RealtimeService } from '../../realtime/realtime.service';
 import { AddCartLineDto } from './dto/add-cart-line.dto';
 import { AddPaymentDto } from './dto/add-payment.dto';
 import { ConfirmCartDto } from './dto/confirm-cart.dto';
@@ -21,7 +22,10 @@ export class PosService {
   private readonly promotions: Promotion[] = [];
   private readonly combos: ComboRule[] = [];
 
-  constructor(private readonly inventoryService: InventoryService) {}
+  constructor(
+    private readonly inventoryService: InventoryService,
+    private readonly realtimeService: RealtimeService,
+  ) {}
 
   createCart(dto: CreateCartDto): CartRecord {
     const cart: CartRecord = {
@@ -42,6 +46,7 @@ export class PosService {
     };
 
     this.carts.push(cart);
+    this.realtimeService.emitPosCartUpdated(cart);
     return cart;
   }
 
@@ -65,7 +70,7 @@ export class PosService {
       total: 0,
     };
 
-    this.inventoryService.reserveStock(line.reservedOperationId, {
+    const projection = this.inventoryService.reserveStock(line.reservedOperationId, {
       variantId: dto.variantId,
       warehouseId: cart.warehouseId,
       locationId: dto.locationId,
@@ -77,7 +82,8 @@ export class PosService {
 
     cart.lines.push(line);
     this.applyPricing(cart);
-    // TODO: emit sockets: pos:cart:update, pos:inventory:availability
+    this.realtimeService.emitPosCartUpdated(cart);
+    this.realtimeService.emitPosInventoryAvailability(projection, cart.workspaceId);
     return cart;
   }
 
@@ -102,6 +108,7 @@ export class PosService {
 
     cart.payments.push(payment);
     cart.updatedAt = new Date();
+    this.realtimeService.emitPosCartUpdated(cart);
     return cart;
   }
 
@@ -141,8 +148,8 @@ export class PosService {
     };
 
     cart.lines.forEach((line) => {
-      this.inventoryService.releaseReservation(line.reservedOperationId);
-      this.inventoryService.recordMovement({
+      const releaseProjection = this.inventoryService.releaseReservation(line.reservedOperationId);
+      const { projection } = this.inventoryService.recordMovement({
         direction: InventoryDirection.OUT,
         variantId: line.variantId,
         warehouseId: cart.warehouseId,
@@ -154,6 +161,9 @@ export class PosService {
         workspaceId: cart.workspaceId,
         companyId: cart.companyId,
       });
+
+      this.realtimeService.emitPosInventoryAvailability(releaseProjection, cart.workspaceId);
+      this.realtimeService.emitPosInventoryAvailability(projection, cart.workspaceId);
 
       const saleLine: SaleLineRecord = {
         id: uuid(),
@@ -173,7 +183,8 @@ export class PosService {
     cart.status = CartStatus.CONFIRMED;
     cart.saleId = sale.id;
     cart.updatedAt = new Date();
-    // TODO: emit sockets for sale confirmation and inventory updates
+    this.realtimeService.emitPosCartUpdated(cart);
+    this.realtimeService.emitDashboardSalesTick(sale);
     return sale;
   }
 

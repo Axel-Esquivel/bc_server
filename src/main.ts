@@ -1,6 +1,7 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ExpressAdapter } from '@nestjs/platform-express';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import express from 'express';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './core/filters/http-exception.filter';
@@ -10,7 +11,12 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, new ExpressAdapter(server));
 
   app.setGlobalPrefix('api');
-  app.enableCors();
+  const allowedOrigins = process.env.CORS_ORIGINS?.split(',').map((origin) => origin.trim()) ?? ['*'];
+  app.enableCors({
+    origin: allowedOrigins,
+    credentials: true,
+  });
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   app.useGlobalFilters(app.get(HttpExceptionFilter));
 

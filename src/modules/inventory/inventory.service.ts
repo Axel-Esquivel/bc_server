@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { WarehousesService } from '../warehouses/warehouses.service';
+import { RealtimeService } from '../../realtime/realtime.service';
 import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto';
 import { StockQueryDto } from './dto/stock-query.dto';
 import {
@@ -26,7 +27,10 @@ export class InventoryService {
   private readonly operationIndex = new Map<string, InventoryMovementRecord>();
   private readonly reservations = new Map<string, ReserveStockDto>();
 
-  constructor(private readonly warehousesService: WarehousesService) {}
+  constructor(
+    private readonly warehousesService: WarehousesService,
+    private readonly realtimeService: RealtimeService,
+  ) {}
 
   listStock(filters: StockQueryDto): StockProjectionRecord[] {
     return this.projections.filter((projection) => {
@@ -85,6 +89,9 @@ export class InventoryService {
     this.movements.push(movement);
     this.operationIndex.set(dto.operationId, movement);
 
+    this.realtimeService.emitInventoryStockUpdated(projection);
+    this.realtimeService.emitInventoryAlert(projection);
+    this.realtimeService.auditMovementEvent(projection, movement);
     return { movement, projection };
   }
 
@@ -118,6 +125,8 @@ export class InventoryService {
     projection.available = nextAvailable;
     projection.version += 1;
     this.reservations.set(reservationId, dto);
+    this.realtimeService.emitInventoryStockUpdated(projection);
+    this.realtimeService.emitInventoryAlert(projection);
     return projection;
   }
 
@@ -144,6 +153,8 @@ export class InventoryService {
     projection.available = projection.onHand - projection.reserved;
     projection.version += 1;
     this.reservations.delete(reservationId);
+    this.realtimeService.emitInventoryStockUpdated(projection);
+    this.realtimeService.emitInventoryAlert(projection);
     return projection;
   }
 
