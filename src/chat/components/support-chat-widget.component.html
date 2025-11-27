@@ -1,0 +1,15 @@
+<div class="support-chat-widget">
+  <div class="header">Soporte</div>
+  <div class="messages">
+    <!-- Iterar mensajes de messages$ -->
+    <div class="message" *for="let message of messages$ | async">
+      <strong>{{ message.authorName || 'Tú' }}:</strong>
+      <span>{{ message.text }}</span>
+      <small>{{ message.createdAt | date:'shortTime' }}</small>
+    </div>
+  </div>
+  <div class="composer">
+    <input type="text" placeholder="Escribe tu mensaje" (input)="onMessageInput($event.target.value)" />
+    <button (click)="send()">Enviar</button>
+  </div>
+</div>

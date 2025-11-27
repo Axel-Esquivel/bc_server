@@ -1,0 +1,24 @@
+<div class="internal-chat">
+  <aside class="rooms">
+    <div class="room" *for="let room of rooms$ | async" (click)="selectRoom(room)">
+      <div class="name">{{ room.name }}</div>
+      <small>{{ room.description }}</small>
+    </div>
+  </aside>
+  <section class="messages-panel">
+    <header>
+      <div class="title">{{ (activeRoom$ | async)?.name || 'Selecciona una sala' }}</div>
+    </header>
+    <div class="messages">
+      <div class="message" *for="let message of messages$ | async">
+        <strong>{{ message.authorName || message.authorId || 'Usuario' }}:</strong>
+        <span>{{ message.text }}</span>
+        <small>{{ message.createdAt | date:'shortTime' }}</small>
+      </div>
+    </div>
+    <footer class="composer">
+      <input type="text" placeholder="Escribe un mensaje" (input)="onMessageInput($event.target.value)" />
+      <button (click)="sendMessage()">Enviar</button>
+    </footer>
+  </section>
+</div>
