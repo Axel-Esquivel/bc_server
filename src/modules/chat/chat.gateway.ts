@@ -11,7 +11,7 @@ import {
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
-import { RealtimeService } from '../realtime/realtime.service';
+import { RealtimeService } from '../../realtime/realtime.service';
 
 @WebSocketGateway({
   namespace: '/chat',

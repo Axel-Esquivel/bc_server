@@ -23,7 +23,7 @@ import { CustomersModule } from './modules/customers/customers.module';
 import { AccountingModule } from './modules/accounting/accounting.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { RealtimeModule } from './realtime/realtime.module';
-import { ChatModule } from './chat/chat.module';
+import { ChatModule } from './modules/chat/chat.module';
 
 @Module({
   imports: [

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
-import { RealtimeContext, RealtimeService } from '../realtime/realtime.service';
+import { RealtimeContext, RealtimeService } from '../../realtime/realtime.service';
 
 export interface ChatMessage {
   id: string;
