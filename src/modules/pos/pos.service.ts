@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { InventoryDirection } from '../inventory/entities/inventory-movement.entity';
 import { InventoryService } from '../inventory/inventory.service';
 import { RealtimeService } from '../../realtime/realtime.service';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { AddCartLineDto } from './dto/add-cart-line.dto';
 import { AddPaymentDto } from './dto/add-payment.dto';
 import { ConfirmCartDto } from './dto/confirm-cart.dto';
@@ -14,18 +15,41 @@ import { Promotion, ComboRule } from './entities/promotion.entity';
 import { SaleLineRecord } from './entities/sale-line.entity';
 import { SaleRecord, SaleStatus } from './entities/sale.entity';
 
+interface PosState {
+  carts: CartRecord[];
+  sales: SaleRecord[];
+  promotions: Promotion[];
+  combos: ComboRule[];
+}
+
 @Injectable()
-export class PosService {
+export class PosService implements OnModuleInit {
   // TODO: replace in-memory collections with MongoDB persistence and domain events for CQRS projections.
-  private readonly carts: CartRecord[] = [];
-  private readonly sales: SaleRecord[] = [];
-  private readonly promotions: Promotion[] = [];
-  private readonly combos: ComboRule[] = [];
+  private readonly logger = new Logger(PosService.name);
+  private readonly stateKey = 'module:pos';
+  private carts: CartRecord[] = [];
+  private sales: SaleRecord[] = [];
+  private promotions: Promotion[] = [];
+  private combos: ComboRule[] = [];
 
   constructor(
     private readonly inventoryService: InventoryService,
     private readonly realtimeService: RealtimeService,
+    private readonly moduleState: ModuleStateService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<PosState>(this.stateKey, {
+      carts: [],
+      sales: [],
+      promotions: [],
+      combos: [],
+    });
+    this.carts = state.carts ?? [];
+    this.sales = state.sales ?? [];
+    this.promotions = state.promotions ?? [];
+    this.combos = state.combos ?? [];
+  }
 
   createCart(dto: CreateCartDto): CartRecord {
     const cart: CartRecord = {
@@ -47,6 +71,7 @@ export class PosService {
 
     this.carts.push(cart);
     this.realtimeService.emitPosCartUpdated(cart);
+    this.persistState();
     return cart;
   }
 
@@ -84,6 +109,7 @@ export class PosService {
     this.applyPricing(cart);
     this.realtimeService.emitPosCartUpdated(cart);
     this.realtimeService.emitPosInventoryAvailability(projection, cart.workspaceId);
+    this.persistState();
     return cart;
   }
 
@@ -109,6 +135,7 @@ export class PosService {
     cart.payments.push(payment);
     cart.updatedAt = new Date();
     this.realtimeService.emitPosCartUpdated(cart);
+    this.persistState();
     return cart;
   }
 
@@ -185,6 +212,7 @@ export class PosService {
     cart.updatedAt = new Date();
     this.realtimeService.emitPosCartUpdated(cart);
     this.realtimeService.emitDashboardSalesTick(sale);
+    this.persistState();
     return sale;
   }
 
@@ -255,5 +283,19 @@ export class PosService {
     if (workspaceId !== expectedWorkspaceId || companyId !== expectedCompanyId) {
       throw new BadRequestException('Workspace or company mismatch');
     }
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<PosState>(this.stateKey, {
+        carts: this.carts,
+        sales: this.sales,
+        promotions: this.promotions,
+        combos: this.combos,
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist POS state: ${message}`);
+      });
   }
 }

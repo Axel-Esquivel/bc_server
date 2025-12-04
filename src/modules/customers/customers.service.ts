@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { ConfigureCreditDto } from './dto/configure-credit.dto';
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -25,12 +26,36 @@ export interface CustomerBalanceRecord extends CustomerBalance {
   id: string;
 }
 
+interface CustomersState {
+  customers: CustomerRecord[];
+  creditLines: CreditLineRecord[];
+  transactions: CustomerTransactionRecord[];
+  balances: CustomerBalanceRecord[];
+}
+
 @Injectable()
-export class CustomersService {
-  private readonly customers: CustomerRecord[] = [];
-  private readonly creditLines: CreditLineRecord[] = [];
-  private readonly transactions: CustomerTransactionRecord[] = [];
-  private readonly balances: Map<string, CustomerBalanceRecord> = new Map();
+export class CustomersService implements OnModuleInit {
+  private readonly logger = new Logger(CustomersService.name);
+  private readonly stateKey = 'module:customers';
+  private customers: CustomerRecord[] = [];
+  private creditLines: CreditLineRecord[] = [];
+  private transactions: CustomerTransactionRecord[] = [];
+  private balances: Map<string, CustomerBalanceRecord> = new Map();
+
+  constructor(private readonly moduleState: ModuleStateService) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<CustomersState>(this.stateKey, {
+      customers: [],
+      creditLines: [],
+      transactions: [],
+      balances: [],
+    });
+    this.customers = state.customers ?? [];
+    this.creditLines = state.creditLines ?? [];
+    this.transactions = state.transactions ?? [];
+    this.balances = new Map((state.balances ?? []).map((balance) => [balance.customerId, balance]));
+  }
 
   create(dto: CreateCustomerDto): CustomerRecord {
     const customer: CustomerRecord = {
@@ -45,6 +70,7 @@ export class CustomersService {
 
     this.customers.push(customer);
     this.initializeCredit(customer, dto.companyId, dto.workspaceId);
+    this.persistState();
     return customer;
   }
 
@@ -70,6 +96,7 @@ export class CustomersService {
       workspaceId: dto.workspaceId ?? customer.workspaceId,
       companyId: dto.companyId ?? customer.companyId,
     });
+    this.persistState();
     return customer;
   }
 
@@ -90,6 +117,7 @@ export class CustomersService {
       ...this.transactions.filter((txn) => txn.customerId !== id),
     );
     this.balances.delete(id);
+    this.persistState();
   }
 
   configureCredit(customerId: string, dto: ConfigureCreditDto): CreditLineRecord {
@@ -117,6 +145,7 @@ export class CustomersService {
     }
 
     this.recalculateBalance(customerId);
+    this.persistState();
     return creditLine;
   }
 
@@ -160,6 +189,7 @@ export class CustomersService {
 
     this.transactions.push(transaction);
     const updatedBalance = this.updateBalance(customerId, newBalance, creditLine);
+    this.persistState();
     return updatedBalance;
   }
 
@@ -258,5 +288,19 @@ export class CustomersService {
     if (companyId && companyId !== existingCompanyId) {
       throw new BadRequestException('Company mismatch');
     }
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<CustomersState>(this.stateKey, {
+        customers: this.customers,
+        creditLines: this.creditLines,
+        transactions: this.transactions,
+        balances: Array.from(this.balances.values()),
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist customers state: ${message}`);
+      });
   }
 }

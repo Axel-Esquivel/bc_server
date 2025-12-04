@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { RealtimeContext, RealtimeService } from '../../realtime/realtime.service';
+import { ModuleStateService } from '../../core/database/module-state.service';
 
 export interface ChatMessage {
   id: string;
@@ -13,11 +14,25 @@ export interface ChatMessage {
   metadata?: Record<string, any>;
 }
 
-@Injectable()
-export class ChatService {
-  private readonly messages: ChatMessage[] = [];
+interface ChatState {
+  messages: ChatMessage[];
+}
 
-  constructor(private readonly realtimeService: RealtimeService) {}
+@Injectable()
+export class ChatService implements OnModuleInit {
+  private readonly logger = new Logger(ChatService.name);
+  private readonly stateKey = 'module:chat:messages';
+  private messages: ChatMessage[] = [];
+
+  constructor(
+    private readonly realtimeService: RealtimeService,
+    private readonly moduleState: ModuleStateService,
+  ) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<ChatState>(this.stateKey, { messages: [] });
+    this.messages = state.messages ?? [];
+  }
 
   buildMessage(context: RealtimeContext, payload: { workspaceId: string; channelId?: string; toUserId?: string; content: string }): ChatMessage {
     if (!context.userId) {
@@ -40,8 +55,14 @@ export class ChatService {
   }
 
   async persistMessage(message: ChatMessage) {
-    // Placeholder for MongoDB persistence layer
     this.messages.push(message);
+    try {
+      await this.moduleState.saveState<ChatState>(this.stateKey, { messages: this.messages });
+    } catch (error) {
+      const messageText = error instanceof Error ? error.stack ?? error.message : String(error);
+      this.logger.error(`Failed to persist chat message: ${messageText}`);
+      throw error;
+    }
   }
 
   getHistory(workspaceId: string, channelId?: string): ChatMessage[] {

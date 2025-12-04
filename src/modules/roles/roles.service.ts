@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 
 export interface RoleEntity {
@@ -9,9 +10,22 @@ export interface RoleEntity {
   workspaceId?: string;
 }
 
+interface RolesState {
+  roles: RoleEntity[];
+}
+
 @Injectable()
-export class RolesService {
-  private readonly roles: RoleEntity[] = [];
+export class RolesService implements OnModuleInit {
+  private readonly logger = new Logger(RolesService.name);
+  private readonly stateKey = 'module:roles';
+  private roles: RoleEntity[] = [];
+
+  constructor(private readonly moduleState: ModuleStateService) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<RolesState>(this.stateKey, { roles: [] });
+    this.roles = state.roles ?? [];
+  }
 
   createRole(dto: CreateRoleDto): RoleEntity {
     const role: RoleEntity = {
@@ -22,6 +36,7 @@ export class RolesService {
     };
 
     this.roles.push(role);
+    this.persistState();
     return role;
   }
 
@@ -33,6 +48,7 @@ export class RolesService {
 
     const merged = new Set([...role.permissions, ...permissions]);
     role.permissions = Array.from(merged);
+    this.persistState();
     return role;
   }
 
@@ -49,5 +65,14 @@ export class RolesService {
     }
 
     return role;
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<RolesState>(this.stateKey, { roles: this.roles })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist roles: ${message}`);
+      });
   }
 }

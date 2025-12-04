@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { UsersService } from '../users/users.service';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 
@@ -11,11 +12,25 @@ export interface WorkspaceEntity {
   createdAt: Date;
 }
 
-@Injectable()
-export class WorkspacesService {
-  private readonly workspaces: WorkspaceEntity[] = [];
+interface WorkspacesState {
+  workspaces: WorkspaceEntity[];
+}
 
-  constructor(private readonly usersService: UsersService) {}
+@Injectable()
+export class WorkspacesService implements OnModuleInit {
+  private readonly logger = new Logger(WorkspacesService.name);
+  private readonly stateKey = 'module:workspaces';
+  private workspaces: WorkspaceEntity[] = [];
+
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly moduleState: ModuleStateService,
+  ) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<WorkspacesState>(this.stateKey, { workspaces: [] });
+    this.workspaces = state.workspaces ?? [];
+  }
 
   createWorkspace(dto: CreateWorkspaceDto): WorkspaceEntity {
     const workspace: WorkspaceEntity = {
@@ -34,6 +49,7 @@ export class WorkspacesService {
     }
 
     this.workspaces.push(workspace);
+    this.persistState();
     return workspace;
   }
 
@@ -55,6 +71,7 @@ export class WorkspacesService {
       roles: member.roles,
     });
 
+    this.persistState();
     return workspace;
   }
 
@@ -65,5 +82,14 @@ export class WorkspacesService {
     }
 
     return workspace;
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<WorkspacesState>(this.stateKey, { workspaces: this.workspaces })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist workspaces: ${message}`);
+      });
   }
 }

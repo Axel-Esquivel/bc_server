@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { Warehouse } from './entities/warehouse.entity';
@@ -8,9 +9,22 @@ export interface WarehouseRecord extends Warehouse {
   id: string;
 }
 
+interface WarehousesState {
+  warehouses: WarehouseRecord[];
+}
+
 @Injectable()
-export class WarehousesService {
-  private readonly warehouses: WarehouseRecord[] = [];
+export class WarehousesService implements OnModuleInit {
+  private readonly logger = new Logger(WarehousesService.name);
+  private readonly stateKey = 'module:warehouses';
+  private warehouses: WarehouseRecord[] = [];
+
+  constructor(private readonly moduleState: ModuleStateService) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<WarehousesState>(this.stateKey, { warehouses: [] });
+    this.warehouses = state.warehouses ?? [];
+  }
 
   create(dto: CreateWarehouseDto): WarehouseRecord {
     const exists = this.warehouses.some((warehouse) => warehouse.code === dto.code);
@@ -30,6 +44,7 @@ export class WarehousesService {
     };
 
     this.warehouses.push(warehouse);
+    this.persistState();
     return warehouse;
   }
 
@@ -42,6 +57,7 @@ export class WarehousesService {
     if (!warehouse) {
       throw new NotFoundException('Warehouse not found');
     }
+    this.persistState();
     return warehouse;
   }
 
@@ -74,5 +90,15 @@ export class WarehousesService {
       throw new NotFoundException('Warehouse not found');
     }
     this.warehouses.splice(index, 1);
+    this.persistState();
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<WarehousesState>(this.stateKey, { warehouses: this.warehouses })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist warehouses: ${message}`);
+      });
   }
 }

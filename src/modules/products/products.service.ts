@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Product } from './entities/product.entity';
@@ -8,9 +9,22 @@ export interface ProductRecord extends Product {
   id: string;
 }
 
+interface ProductsState {
+  products: ProductRecord[];
+}
+
 @Injectable()
-export class ProductsService {
-  private readonly products: ProductRecord[] = [];
+export class ProductsService implements OnModuleInit {
+  private readonly logger = new Logger(ProductsService.name);
+  private readonly stateKey = 'module:products';
+  private products: ProductRecord[] = [];
+
+  constructor(private readonly moduleState: ModuleStateService) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<ProductsState>(this.stateKey, { products: [] });
+    this.products = state.products ?? [];
+  }
 
   create(dto: CreateProductDto): ProductRecord {
     const product: ProductRecord = {
@@ -25,6 +39,7 @@ export class ProductsService {
     };
 
     this.products.push(product);
+    this.persistState();
     return product;
   }
 
@@ -37,6 +52,7 @@ export class ProductsService {
     if (!product) {
       throw new NotFoundException('Product not found');
     }
+    this.persistState();
     return product;
   }
 
@@ -60,5 +76,15 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
     this.products.splice(index, 1);
+    this.persistState();
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<ProductsState>(this.stateKey, { products: this.products })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist products: ${message}`);
+      });
   }
 }

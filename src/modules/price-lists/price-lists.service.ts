@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreatePriceListDto, PriceListItemDto } from './dto/create-price-list.dto';
 import { UpdatePriceListDto } from './dto/update-price-list.dto';
 import { PriceList, PriceListItem } from './entities/price-list.entity';
@@ -8,9 +9,22 @@ export interface PriceListRecord extends PriceList {
   id: string;
 }
 
+interface PriceListsState {
+  priceLists: PriceListRecord[];
+}
+
 @Injectable()
-export class PriceListsService {
-  private readonly priceLists: PriceListRecord[] = [];
+export class PriceListsService implements OnModuleInit {
+  private readonly logger = new Logger(PriceListsService.name);
+  private readonly stateKey = 'module:price-lists';
+  private priceLists: PriceListRecord[] = [];
+
+  constructor(private readonly moduleState: ModuleStateService) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<PriceListsState>(this.stateKey, { priceLists: [] });
+    this.priceLists = state.priceLists ?? [];
+  }
 
   create(dto: CreatePriceListDto): PriceListRecord {
     const priceList: PriceListRecord = {
@@ -23,6 +37,7 @@ export class PriceListsService {
     };
 
     this.priceLists.push(priceList);
+    this.persistState();
     return priceList;
   }
 
@@ -47,6 +62,7 @@ export class PriceListsService {
     if (dto.items !== undefined) {
       priceList.items = this.mapItems(dto.items);
     }
+    this.persistState();
     return priceList;
   }
 
@@ -56,6 +72,7 @@ export class PriceListsService {
       throw new NotFoundException('Price list not found');
     }
     this.priceLists.splice(index, 1);
+    this.persistState();
   }
 
   private mapItems(items: PriceListItemDto[] = []): PriceListItem[] {
@@ -68,5 +85,14 @@ export class PriceListsService {
       channel: item.channel,
       discountPercentage: item.discountPercentage,
     }));
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<PriceListsState>(this.stateKey, { priceLists: this.priceLists })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist price lists: ${message}`);
+      });
   }
 }

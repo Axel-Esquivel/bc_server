@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateLocationDto } from './dto/create-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { Location } from './entities/location.entity';
@@ -9,9 +10,22 @@ export interface LocationRecord extends Location {
   id: string;
 }
 
+interface LocationsState {
+  locations: LocationRecord[];
+}
+
 @Injectable()
-export class LocationsService {
-  private readonly locations: LocationRecord[] = [];
+export class LocationsService implements OnModuleInit {
+  private readonly logger = new Logger(LocationsService.name);
+  private readonly stateKey = 'module:warehouse-locations';
+  private locations: LocationRecord[] = [];
+
+  constructor(private readonly moduleState: ModuleStateService) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<LocationsState>(this.stateKey, { locations: [] });
+    this.locations = state.locations ?? [];
+  }
 
   createForWarehouse(warehouse: WarehouseRecord, dto: CreateLocationDto): LocationRecord {
     if (dto.workspaceId !== warehouse.workspaceId || dto.companyId !== warehouse.companyId) {
@@ -35,6 +49,7 @@ export class LocationsService {
     };
 
     this.locations.push(location);
+    this.persistState();
     return location;
   }
 
@@ -47,6 +62,7 @@ export class LocationsService {
     if (!location) {
       throw new NotFoundException('Location not found');
     }
+    this.persistState();
     return location;
   }
 
@@ -80,5 +96,15 @@ export class LocationsService {
 
     // TODO: prevent removal if stock exists once inventory storage is implemented.
     this.locations.splice(index, 1);
+    this.persistState();
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<LocationsState>(this.stateKey, { locations: this.locations })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist warehouse locations: ${message}`);
+      });
   }
 }

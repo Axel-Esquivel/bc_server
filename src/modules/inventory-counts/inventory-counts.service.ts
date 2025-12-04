@@ -1,9 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { InventoryService } from '../inventory/inventory.service';
 import { CreateInventoryMovementDto } from '../inventory/dto/create-inventory-movement.dto';
 import { InventoryDirection } from '../inventory/entities/inventory-movement.entity';
 import { StockProjectionRecord } from '../inventory/entities/stock-projection.entity';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { AddInventoryCountRoundDto } from './dto/add-round.dto';
 import { CreateInventoryCountSessionDto } from './dto/create-inventory-count-session.dto';
 import { ReviewInventoryCountDto } from './dto/review-inventory-count.dto';
@@ -19,14 +20,36 @@ import {
 } from './entities/inventory-count-session.entity';
 import { InventoryCountRoundRecord } from './entities/inventory-count-round.entity';
 
-@Injectable()
-export class InventoryCountsService {
-  // TODO: Replace in-memory stores with MongoDB persistence and proper repositories.
-  private readonly sessions: InventoryCountSessionRecord[] = [];
-  private readonly lines: InventoryCountLineRecord[] = [];
-  private readonly rounds: InventoryCountRoundRecord[] = [];
+interface InventoryCountsState {
+  sessions: InventoryCountSessionRecord[];
+  lines: InventoryCountLineRecord[];
+  rounds: InventoryCountRoundRecord[];
+}
 
-  constructor(private readonly inventoryService: InventoryService) {}
+@Injectable()
+export class InventoryCountsService implements OnModuleInit {
+  // TODO: Replace in-memory stores with MongoDB persistence and proper repositories.
+  private readonly logger = new Logger(InventoryCountsService.name);
+  private readonly stateKey = 'module:inventory-counts';
+  private sessions: InventoryCountSessionRecord[] = [];
+  private lines: InventoryCountLineRecord[] = [];
+  private rounds: InventoryCountRoundRecord[] = [];
+
+  constructor(
+    private readonly inventoryService: InventoryService,
+    private readonly moduleState: ModuleStateService,
+  ) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<InventoryCountsState>(this.stateKey, {
+      sessions: [],
+      lines: [],
+      rounds: [],
+    });
+    this.sessions = state.sessions ?? [];
+    this.lines = state.lines ?? [];
+    this.rounds = state.rounds ?? [];
+  }
 
   createSession(dto: CreateInventoryCountSessionDto) {
     const session: InventoryCountSessionRecord = {
@@ -77,6 +100,7 @@ export class InventoryCountsService {
       return countLine;
     });
 
+    this.persistState();
     return { session, lines: sessionLines };
   }
 
@@ -122,11 +146,13 @@ export class InventoryCountsService {
       return round;
     });
 
-    return {
+    const response = {
       session,
       roundNumber: nextRoundNumber,
       rounds: createdRounds,
     };
+    this.persistState();
+    return response;
   }
 
   review(sessionId: string, dto: ReviewInventoryCountDto) {
@@ -150,10 +176,12 @@ export class InventoryCountsService {
 
     session.status = InventoryCountStatus.REVIEW;
 
-    return {
+    const response = {
       session,
       lines: this.lines.filter((line) => line.sessionId === sessionId),
     };
+    this.persistState();
+    return response;
   }
 
   post(sessionId: string) {
@@ -195,10 +223,12 @@ export class InventoryCountsService {
     session.status = InventoryCountStatus.POSTED;
     session.closedAt = new Date();
 
-    return {
+    const result = {
       session,
       lines: sessionLines,
     };
+    this.persistState();
+    return result;
   }
 
   list(sessionId: string) {
@@ -251,5 +281,18 @@ export class InventoryCountsService {
     );
 
     return matching ? matching.onHand : 0;
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<InventoryCountsState>(this.stateKey, {
+        sessions: this.sessions,
+        lines: this.lines,
+        rounds: this.rounds,
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist inventory counts state: ${message}`);
+      });
   }
 }

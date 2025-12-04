@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateProviderDto, ProviderVariantInput } from './dto/create-provider.dto';
 import { UpdateProviderDto } from './dto/update-provider.dto';
 import { CostHistoryEntry, Provider, ProviderVariant } from './entities/provider.entity';
@@ -8,9 +9,22 @@ export interface ProviderRecord extends Provider {
   id: string;
 }
 
+interface ProvidersState {
+  providers: ProviderRecord[];
+}
+
 @Injectable()
-export class ProvidersService {
-  private readonly providers: ProviderRecord[] = [];
+export class ProvidersService implements OnModuleInit {
+  private readonly logger = new Logger(ProvidersService.name);
+  private readonly stateKey = 'module:providers';
+  private providers: ProviderRecord[] = [];
+
+  constructor(private readonly moduleState: ModuleStateService) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<ProvidersState>(this.stateKey, { providers: [] });
+    this.providers = state.providers ?? [];
+  }
 
   create(dto: CreateProviderDto): ProviderRecord {
     const variants = this.mapVariants(dto.variants);
@@ -25,6 +39,7 @@ export class ProvidersService {
     };
 
     this.providers.push(provider);
+    this.persistState();
     return provider;
   }
 
@@ -37,6 +52,7 @@ export class ProvidersService {
     if (!provider) {
       throw new NotFoundException('Provider not found');
     }
+    this.persistState();
     return provider;
   }
 
@@ -59,6 +75,7 @@ export class ProvidersService {
       throw new NotFoundException('Provider not found');
     }
     this.providers.splice(index, 1);
+    this.persistState();
   }
 
   private mapVariants(inputs?: ProviderVariantInput[]): ProviderVariant[] {
@@ -83,5 +100,14 @@ export class ProvidersService {
         costHistory: history,
       } satisfies ProviderVariant;
     });
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<ProvidersState>(this.stateKey, { providers: this.providers })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist providers: ${message}`);
+      });
   }
 }

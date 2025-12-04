@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { ModuleConfig } from './module.config';
 
 export interface ModuleDescriptor {
@@ -17,25 +18,38 @@ export interface ModuleDescriptor {
   degraded: boolean;
 }
 
+interface ModuleLoaderState {
+  modules: ModuleConfig[];
+}
+
 @Injectable()
-export class ModuleLoaderService {
+export class ModuleLoaderService implements OnModuleInit {
+  private readonly logger = new Logger(ModuleLoaderService.name);
+  private readonly stateKey = 'module:module-loader';
   /**
    * In-memory store of available modules. Replace with MongoDB persistence when ready.
    */
   private readonly modules = new Map<string, ModuleDescriptor>();
 
-  constructor() {
-    // Seed initial modules. Later this will be loaded from MongoDB or configuration service.
-    const initialModules: ModuleConfig[] = [
-      {
-        name: 'module-loader',
-        version: '1.0.0',
-        enabled: true,
-        dependencies: [],
-      },
-    ];
+  private readonly initialModules: ModuleConfig[] = [
+    {
+      name: 'module-loader',
+      version: '1.0.0',
+      enabled: true,
+      dependencies: [],
+    },
+  ];
 
-    this.loadModules(initialModules);
+  constructor(private readonly moduleState: ModuleStateService) {}
+
+  async onModuleInit(): Promise<void> {
+    const storedState = await this.moduleState.loadState<ModuleLoaderState>(this.stateKey, { modules: [] });
+    if (storedState.modules?.length) {
+      this.loadModules(storedState.modules);
+    } else {
+      this.loadModules(this.initialModules);
+      this.persistModules();
+    }
   }
 
   listModules(): ModuleDescriptor[] {
@@ -55,6 +69,7 @@ export class ModuleLoaderService {
 
     descriptor.config.enabled = true;
     this.resolveDependencies();
+    this.persistModules();
     return this.modules.get(name)!;
   }
 
@@ -66,6 +81,7 @@ export class ModuleLoaderService {
 
     descriptor.config.enabled = false;
     this.resolveDependencies();
+    this.persistModules();
     return this.modules.get(name)!;
   }
 
@@ -103,5 +119,17 @@ export class ModuleLoaderService {
       descriptor.missingDependencies = missingDependencies;
       descriptor.degraded = missingDependencies.length > 0;
     });
+  }
+
+  private persistModules() {
+    const configs = Array.from(this.modules.values()).map((descriptor) => ({
+      ...descriptor.config,
+    }));
+    void this.moduleState
+      .saveState<ModuleLoaderState>(this.stateKey, { modules: configs })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist module loader state: ${message}`);
+      });
   }
 }

@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { CreateJournalEntryDto, JournalEntryLineDto } from './dto/create-journal-entry.dto';
 import { CreateTaxRuleDto } from './dto/create-tax-rule.dto';
@@ -10,12 +11,36 @@ import { JournalEntry, JournalEntryStatus } from './entities/journal-entry.entit
 import { JournalEntryLine } from './entities/journal-entry-line.entity';
 import { TaxRule } from './entities/tax-rule.entity';
 
+interface AccountingState {
+  accounts: Account[];
+  taxRules: TaxRule[];
+  journalEntries: JournalEntry[];
+  closedPeriods: string[];
+}
+
 @Injectable()
-export class AccountingService {
-  private readonly accounts: Account[] = [];
-  private readonly taxRules: TaxRule[] = [];
-  private readonly journalEntries: JournalEntry[] = [];
-  private readonly closedPeriods = new Set<string>();
+export class AccountingService implements OnModuleInit {
+  private readonly logger = new Logger(AccountingService.name);
+  private readonly stateKey = 'module:accounting';
+  private accounts: Account[] = [];
+  private taxRules: TaxRule[] = [];
+  private journalEntries: JournalEntry[] = [];
+  private closedPeriods = new Set<string>();
+
+  constructor(private readonly moduleState: ModuleStateService) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<AccountingState>(this.stateKey, {
+      accounts: [],
+      taxRules: [],
+      journalEntries: [],
+      closedPeriods: [],
+    });
+    this.accounts = state.accounts ?? [];
+    this.taxRules = state.taxRules ?? [];
+    this.journalEntries = state.journalEntries ?? [];
+    this.closedPeriods = new Set(state.closedPeriods ?? []);
+  }
 
   createAccount(dto: CreateAccountDto): Account {
     const duplicate = this.accounts.find(
@@ -36,6 +61,7 @@ export class AccountingService {
       companyId: dto.companyId,
     };
     this.accounts.push(account);
+    this.persistState();
     return account;
   }
 
@@ -58,6 +84,7 @@ export class AccountingService {
       companyId: dto.companyId,
     };
     this.taxRules.push(rule);
+    this.persistState();
     return rule;
   }
 
@@ -99,6 +126,7 @@ export class AccountingService {
     };
 
     this.journalEntries.push(entry);
+    this.persistState();
     return entry;
   }
 
@@ -126,6 +154,7 @@ export class AccountingService {
 
   closePeriod(dto: ClosePeriodDto): { closed: string } {
     this.closedPeriods.add(dto.period);
+    this.persistState();
     return { closed: dto.period };
   }
 
@@ -156,5 +185,19 @@ export class AccountingService {
       workspaceId: line.workspaceId,
       companyId: line.companyId,
     };
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<AccountingState>(this.stateKey, {
+        accounts: this.accounts,
+        taxRules: this.taxRules,
+        journalEntries: this.journalEntries,
+        closedPeriods: Array.from(this.closedPeriods),
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Could not persist accounting state: ${message}`);
+      });
   }
 }

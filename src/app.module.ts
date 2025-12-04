@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
 import { CoreModule } from './core/core.module';
+import { DatabaseModule } from './core/database/database.module';
 import { RequestIdMiddleware } from './core/middlewares/request-id.middleware';
 import { AuditContextMiddleware } from './core/middlewares/audit-context.middleware';
 import { RateLimitMiddleware } from './core/middlewares/rate-limit.middleware';
@@ -50,6 +51,7 @@ import { ChatModule } from './modules/chat/chat.module';
       }),
     }),
     CoreModule,
+    DatabaseModule,
     ModuleLoaderModule,
     UsersModule,
     RolesModule,

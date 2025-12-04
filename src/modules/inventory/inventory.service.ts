@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { WarehousesService } from '../warehouses/warehouses.service';
 import { RealtimeService } from '../../realtime/realtime.service';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto';
 import { StockQueryDto } from './dto/stock-query.dto';
 import {
@@ -20,17 +21,45 @@ interface ReserveStockDto {
   companyId: string;
 }
 
+interface InventoryState {
+  movements: InventoryMovementRecord[];
+  projections: StockProjectionRecord[];
+  reservations: (ReserveStockDto & { reservationId: string })[];
+}
+
 @Injectable()
-export class InventoryService {
-  private readonly movements: InventoryMovementRecord[] = [];
-  private readonly projections: StockProjectionRecord[] = [];
-  private readonly operationIndex = new Map<string, InventoryMovementRecord>();
-  private readonly reservations = new Map<string, ReserveStockDto>();
+export class InventoryService implements OnModuleInit {
+  private readonly logger = new Logger(InventoryService.name);
+  private readonly stateKey = 'module:inventory';
+  private movements: InventoryMovementRecord[] = [];
+  private projections: StockProjectionRecord[] = [];
+  private operationIndex = new Map<string, InventoryMovementRecord>();
+  private reservations = new Map<string, ReserveStockDto>();
 
   constructor(
     private readonly warehousesService: WarehousesService,
     private readonly realtimeService: RealtimeService,
+    private readonly moduleState: ModuleStateService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<InventoryState>(this.stateKey, {
+      movements: [],
+      projections: [],
+      reservations: [],
+    });
+    this.movements = state.movements ?? [];
+    this.projections = state.projections ?? [];
+    this.operationIndex = new Map(
+      this.movements.map((movement) => [movement.operationId, movement]),
+    );
+    this.reservations = new Map(
+      (state.reservations ?? []).map((reservation) => {
+        const { reservationId, ...payload } = reservation;
+        return [reservationId, payload];
+      }),
+    );
+  }
 
   listStock(filters: StockQueryDto): StockProjectionRecord[] {
     return this.projections.filter((projection) => {
@@ -88,6 +117,7 @@ export class InventoryService {
 
     this.movements.push(movement);
     this.operationIndex.set(dto.operationId, movement);
+    this.persistState();
 
     this.realtimeService.emitInventoryStockUpdated(projection);
     this.realtimeService.emitInventoryAlert(projection);
@@ -125,6 +155,7 @@ export class InventoryService {
     projection.available = nextAvailable;
     projection.version += 1;
     this.reservations.set(reservationId, dto);
+    this.persistState();
     this.realtimeService.emitInventoryStockUpdated(projection);
     this.realtimeService.emitInventoryAlert(projection);
     return projection;
@@ -153,6 +184,7 @@ export class InventoryService {
     projection.available = projection.onHand - projection.reserved;
     projection.version += 1;
     this.reservations.delete(reservationId);
+    this.persistState();
     this.realtimeService.emitInventoryStockUpdated(projection);
     this.realtimeService.emitInventoryAlert(projection);
     return projection;
@@ -234,5 +266,21 @@ export class InventoryService {
 
     this.projections.push(projection);
     return projection;
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<InventoryState>(this.stateKey, {
+        movements: this.movements,
+        projections: this.projections,
+        reservations: Array.from(this.reservations.entries()).map(([reservationId, payload]) => ({
+          reservationId,
+          ...payload,
+        })),
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist inventory state: ${message}`);
+      });
   }
 }

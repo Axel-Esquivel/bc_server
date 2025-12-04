@@ -1,12 +1,26 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuid } from 'uuid';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { SafeUser, UserEntity, WorkspaceMembership } from './entities/user.entity';
 
+interface UsersState {
+  users: UserEntity[];
+}
+
 @Injectable()
-export class UsersService {
-  private readonly users: UserEntity[] = [];
+export class UsersService implements OnModuleInit {
+  private readonly logger = new Logger(UsersService.name);
+  private readonly stateKey = 'module:users';
+  private users: UserEntity[] = [];
+
+  constructor(private readonly moduleState: ModuleStateService) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<UsersState>(this.stateKey, { users: [] });
+    this.users = state.users ?? [];
+  }
 
   async createUser(dto: CreateUserDto): Promise<SafeUser> {
     const passwordHash = await bcrypt.hash(dto.password, 10);
@@ -22,6 +36,7 @@ export class UsersService {
     };
 
     this.users.push(newUser);
+    this.persistState();
     return this.toSafeUser(newUser);
   }
 
@@ -48,7 +63,9 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    return this.toSafeUser(user);
+    const safeUser = this.toSafeUser(user);
+    this.persistState();
+    return safeUser;
   }
 
   addWorkspaceMembership(userId: string, membership: WorkspaceMembership): SafeUser {
@@ -77,11 +94,22 @@ export class UsersService {
       user.devices.push(deviceId);
     }
 
-    return this.toSafeUser(user);
+    const safeUser = this.toSafeUser(user);
+    this.persistState();
+    return safeUser;
   }
 
   private toSafeUser(user: UserEntity): SafeUser {
     const { passwordHash, ...safe } = user;
     return safe;
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<UsersState>(this.stateKey, { users: this.users })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist users: ${message}`);
+      });
   }
 }

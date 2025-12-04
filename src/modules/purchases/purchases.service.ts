@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { InventoryDirection } from '../inventory/entities/inventory-movement.entity';
 import { InventoryService } from '../inventory/inventory.service';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateGoodsReceiptDto, GoodsReceiptLineDto } from './dto/create-goods-receipt.dto';
 import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
 import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto';
@@ -26,16 +27,49 @@ export interface PurchaseSuggestion {
   companyId: string;
 }
 
-@Injectable()
-export class PurchasesService {
-  // TODO: replace in-memory collections with MongoDB persistence and CQRS projections.
-  private readonly suggestions: PurchaseSuggestion[] = [];
-  private readonly purchaseOrders: PurchaseOrder[] = [];
-  private readonly receipts: GoodsReceiptNote[] = [];
-  private readonly costHistory: SupplierCostHistory[] = [];
-  private readonly averageCosts = new Map<string, { averageCost: number; quantity: number }>();
+interface PurchasesState {
+  suggestions: PurchaseSuggestion[];
+  purchaseOrders: PurchaseOrder[];
+  receipts: GoodsReceiptNote[];
+  costHistory: SupplierCostHistory[];
+  averageCosts: { variantId: string; averageCost: number; quantity: number }[];
+}
 
-  constructor(private readonly inventoryService: InventoryService) {}
+@Injectable()
+export class PurchasesService implements OnModuleInit {
+  // TODO: replace in-memory collections with MongoDB persistence and CQRS projections.
+  private readonly logger = new Logger(PurchasesService.name);
+  private readonly stateKey = 'module:purchases';
+  private suggestions: PurchaseSuggestion[] = [];
+  private purchaseOrders: PurchaseOrder[] = [];
+  private receipts: GoodsReceiptNote[] = [];
+  private costHistory: SupplierCostHistory[] = [];
+  private averageCosts = new Map<string, { averageCost: number; quantity: number }>();
+
+  constructor(
+    private readonly inventoryService: InventoryService,
+    private readonly moduleState: ModuleStateService,
+  ) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<PurchasesState>(this.stateKey, {
+      suggestions: [],
+      purchaseOrders: [],
+      receipts: [],
+      costHistory: [],
+      averageCosts: [],
+    });
+    this.suggestions = state.suggestions ?? [];
+    this.purchaseOrders = state.purchaseOrders ?? [];
+    this.receipts = state.receipts ?? [];
+    this.costHistory = state.costHistory ?? [];
+    this.averageCosts = new Map(
+      (state.averageCosts ?? []).map((entry) => [
+        entry.variantId,
+        { averageCost: entry.averageCost, quantity: entry.quantity },
+      ]),
+    );
+  }
 
   generateSuggestions(query: PurchaseSuggestionQueryDto): PurchaseSuggestion[] {
     const minOnHand = query.minOnHand ?? 10;
@@ -85,9 +119,11 @@ export class PurchasesService {
       this.suggestions.push(suggestion);
     });
 
-    return this.suggestions.filter(
+    const result = this.suggestions.filter(
       (suggestion) => suggestion.workspaceId === query.workspaceId && suggestion.companyId === query.companyId,
     );
+    this.persistState();
+    return result;
   }
 
   createPurchaseOrder(dto: CreatePurchaseOrderDto): PurchaseOrder {
@@ -103,6 +139,7 @@ export class PurchasesService {
 
     this.applySuggestionDecisions(order, dto.rejectedSuggestionIds ?? []);
     this.purchaseOrders.push(order);
+    this.persistState();
     return order;
   }
 
@@ -111,6 +148,7 @@ export class PurchasesService {
     this.ensureSameTenant(order.workspaceId, order.companyId, dto.workspaceId, dto.companyId);
 
     order.status = PurchaseOrderStatus.CONFIRMED;
+    this.persistState();
     return order;
   }
 
@@ -177,6 +215,7 @@ export class PurchasesService {
     }
 
     this.receipts.push(receipt);
+    this.persistState();
     return { receipt, order };
   }
 
@@ -274,5 +313,24 @@ export class PurchasesService {
       throw new NotFoundException('Purchase order not found');
     }
     return order;
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<PurchasesState>(this.stateKey, {
+        suggestions: this.suggestions,
+        purchaseOrders: this.purchaseOrders,
+        receipts: this.receipts,
+        costHistory: this.costHistory,
+        averageCosts: Array.from(this.averageCosts.entries()).map(([variantId, value]) => ({
+          variantId,
+          averageCost: value.averageCost,
+          quantity: value.quantity,
+        })),
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist purchases state: ${message}`);
+      });
   }
 }

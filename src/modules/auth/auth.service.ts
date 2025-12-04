@@ -1,5 +1,6 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { UsersService } from '../users/users.service';
 import { DevicesService } from '../devices/devices.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
@@ -12,16 +13,28 @@ export interface TokenBundle {
   refreshToken: string;
 }
 
+interface AuthState {
+  tokens: { key: string; value: string }[];
+}
+
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
+  private readonly logger = new Logger(AuthService.name);
   private readonly refreshTokens = new Map<string, string>();
+  private readonly stateKey = 'module:auth:refresh-tokens';
 
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly devicesService: DevicesService,
     private readonly workspacesService: WorkspacesService,
+    private readonly moduleState: ModuleStateService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<AuthState>(this.stateKey, { tokens: [] });
+    state.tokens?.forEach(({ key, value }) => this.refreshTokens.set(key, value));
+  }
 
   async login(dto: LoginDto) {
     const user = await this.usersService.validateCredentials(dto.identifier, dto.password);
@@ -136,9 +149,21 @@ export class AuthService {
   private storeRefreshToken(userId: string, deviceId: string, refreshToken: string) {
     const key = this.refreshKey(userId, deviceId);
     this.refreshTokens.set(key, refreshToken);
+    this.persistTokens();
   }
 
   private refreshKey(userId: string, deviceId?: string) {
     return `${userId}:${deviceId || 'unknown-device'}`;
+  }
+
+  private persistTokens() {
+    void this.moduleState
+      .saveState<AuthState>(this.stateKey, {
+        tokens: Array.from(this.refreshTokens.entries()).map(([key, value]) => ({ key, value })),
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist refresh tokens: ${message}`);
+      });
   }
 }

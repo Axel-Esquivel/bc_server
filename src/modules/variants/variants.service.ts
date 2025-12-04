@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 import { ProductVariant } from './entities/product-variant.entity';
@@ -8,9 +9,22 @@ export interface VariantRecord extends ProductVariant {
   id: string;
 }
 
+interface VariantsState {
+  variants: VariantRecord[];
+}
+
 @Injectable()
-export class VariantsService {
-  private readonly variants: VariantRecord[] = [];
+export class VariantsService implements OnModuleInit {
+  private readonly logger = new Logger(VariantsService.name);
+  private readonly stateKey = 'module:variants';
+  private variants: VariantRecord[] = [];
+
+  constructor(private readonly moduleState: ModuleStateService) {}
+
+  async onModuleInit(): Promise<void> {
+    const state = await this.moduleState.loadState<VariantsState>(this.stateKey, { variants: [] });
+    this.variants = state.variants ?? [];
+  }
 
   create(dto: CreateVariantDto): VariantRecord {
     const variant: VariantRecord = {
@@ -26,6 +40,7 @@ export class VariantsService {
     };
 
     this.variants.push(variant);
+    this.persistState();
     return variant;
   }
 
@@ -38,6 +53,7 @@ export class VariantsService {
     if (!variant) {
       throw new NotFoundException('Variant not found');
     }
+    this.persistState();
     return variant;
   }
 
@@ -62,5 +78,15 @@ export class VariantsService {
       throw new NotFoundException('Variant not found');
     }
     this.variants.splice(index, 1);
+    this.persistState();
+  }
+
+  private persistState() {
+    void this.moduleState
+      .saveState<VariantsState>(this.stateKey, { variants: this.variants })
+      .catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to persist variants: ${message}`);
+      });
   }
 }
