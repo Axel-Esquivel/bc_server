@@ -35,35 +35,47 @@ import { ChatModule } from './modules/chat/chat.module';
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => {
-        const directUri =
+        let uri =
           configService.get<string>('MONGO_URI')?.trim() ||
           configService.get<string>('MONGODB_URI')?.trim();
-        const dbName = configService.get<string>('MONGODB_DB') || 'business-control';
-        let uri = directUri;
-        const mongooseOptions: Record<string, unknown> = {
-          dbName,
-          appName: 'business-control-backend',
-        };
+        const dbName =
+          configService.get<string>('MONGO_DB')?.trim() ||
+          configService.get<string>('MONGODB_DB')?.trim() ||
+          'business-control';
 
         if (!uri) {
-          const host = configService.get<string>('MONGODB_HOST') || 'localhost';
-          const port = configService.get<string>('MONGODB_PORT') || '27017';
-          const user = configService.get<string>('MONGODB_USER');
-          const pass = configService.get<string>('MONGODB_PASS');
-          const authSource = configService.get<string>('MONGODB_AUTH_SOURCE');
+          const host =
+            configService.get<string>('MONGO_HOST')?.trim() ||
+            configService.get<string>('MONGODB_HOST')?.trim() ||
+            'localhost';
+          const port =
+            configService.get<string>('MONGO_PORT')?.trim() ||
+            configService.get<string>('MONGODB_PORT')?.trim() ||
+            '27017';
+          const user =
+            configService.get<string>('MONGO_USER')?.trim() ||
+            configService.get<string>('MONGODB_USER')?.trim();
+          const pass =
+            configService.get<string>('MONGO_PASSWORD') ??
+            configService.get<string>('MONGODB_PASS');
+          const authSource =
+            configService.get<string>('MONGO_AUTH_SOURCE')?.trim() ||
+            configService.get<string>('MONGODB_AUTH_SOURCE')?.trim() ||
+            'admin';
 
-          if (user && pass) {
+          if (user && pass !== undefined && pass !== null) {
+            const encodedUser = encodeURIComponent(user);
             const encodedPass = encodeURIComponent(pass);
-            uri = `mongodb://${user}:${encodedPass}@${host}:${port}`;
-            mongooseOptions.authSource = authSource || 'admin';
+            uri = `mongodb://${encodedUser}:${encodedPass}@${host}:${port}/${dbName}?authSource=${authSource}`;
           } else {
-            uri = `mongodb://${host}:${port}`;
+            uri = `mongodb://${host}:${port}/${dbName}`;
           }
         }
 
         return {
           uri,
-          ...mongooseOptions,
+          dbName,
+          appName: 'business-control-backend',
           connectionFactory: (connection: Connection) => {
             connection.on('error', (error) => {
               // eslint-disable-next-line no-console
