@@ -34,24 +34,48 @@ import { ChatModule } from './modules/chat/chat.module';
     }),
     MongooseModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: async (configService: ConfigService) => ({
-        uri:
+      useFactory: async (configService: ConfigService) => {
+        const directUri =
           configService.get<string>('MONGO_URI')?.trim() ||
-          configService.get<string>('MONGODB_URI')?.trim() ||
-          'mongodb://localhost:27017/business-control',
-        dbName: configService.get<string>('MONGODB_DB') || 'business-control',
-        appName: 'business-control-backend',
-        connectionFactory: (connection: Connection) => {
-          connection.on('error', (error) => {
-            // eslint-disable-next-line no-console
-            console.error(
-              'No se pudo conectar a MongoDB. Verifica la variable MONGO_URI o usa la URI por defecto.',
-              error,
-            );
-          });
-          return connection;
-        },
-      }),
+          configService.get<string>('MONGODB_URI')?.trim();
+        const dbName = configService.get<string>('MONGODB_DB') || 'business-control';
+        let uri = directUri;
+        const mongooseOptions: Record<string, unknown> = {
+          dbName,
+          appName: 'business-control-backend',
+        };
+
+        if (!uri) {
+          const host = configService.get<string>('MONGODB_HOST') || 'localhost';
+          const port = configService.get<string>('MONGODB_PORT') || '27017';
+          const user = configService.get<string>('MONGODB_USER');
+          const pass = configService.get<string>('MONGODB_PASS');
+          const authSource = configService.get<string>('MONGODB_AUTH_SOURCE');
+
+          if (user && pass) {
+            const encodedPass = encodeURIComponent(pass);
+            uri = `mongodb://${user}:${encodedPass}@${host}:${port}`;
+            mongooseOptions.authSource = authSource || 'admin';
+          } else {
+            uri = `mongodb://${host}:${port}`;
+          }
+        }
+
+        return {
+          uri,
+          ...mongooseOptions,
+          connectionFactory: (connection: Connection) => {
+            connection.on('error', (error) => {
+              // eslint-disable-next-line no-console
+              console.error(
+                'No se pudo conectar a MongoDB. Verifica la variable MONGO_URI o usa la URI por defecto.',
+                error,
+              );
+            });
+            return connection;
+          },
+        };
+      },
     }),
     CoreModule,
     DatabaseModule,
