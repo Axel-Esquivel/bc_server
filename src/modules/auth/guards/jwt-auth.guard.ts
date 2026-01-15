@@ -24,6 +24,7 @@ export class JwtAuthGuard implements CanActivate {
         secret: process.env.JWT_SECRET || 'demo-secret',
       });
       request.user = payload;
+      request.userId = payload.sub;
       request.workspaceId = payload.workspaceId;
       request.deviceId = payload.deviceId;
       return true;

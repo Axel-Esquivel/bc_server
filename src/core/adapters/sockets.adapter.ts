@@ -8,14 +8,19 @@ export class SocketsAdapter extends IoAdapter {
   }
 
   override createIOServer(port: number, options?: ServerOptions) {
-    const allowedOrigins = process.env.CORS_ORIGINS?.split(',').map((origin) => origin.trim()) ?? ['*'];
+    const envOrigins =
+      process.env.CORS_ORIGINS?.split(',')
+        .map((origin) => origin.trim())
+        .filter(Boolean) ?? [];
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    const allowedOrigins = envOrigins.length > 0 ? envOrigins : isDevelopment ? ['http://localhost:4200'] : [];
     const { path, ...restOptions } = options ?? {};
     const mergedOptions: Partial<ServerOptions> = {
       cors: {
-        origin: allowedOrigins,
+        origin: allowedOrigins.length > 0 ? allowedOrigins : false,
         credentials: true,
       },
-      ...(path ? { path } : {}),
+      path: path ?? '/socket.io',
       ...restOptions,
     };
 

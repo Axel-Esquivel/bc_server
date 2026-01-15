@@ -27,3 +27,12 @@ export const moduleTemplate: ModuleConfig = {
   enabled: false,
   dependencies: [],
 };
+
+const moduleConfig: ModuleConfig = {
+  name: 'module-loader',
+  version: '1.0.0',
+  enabled: true,
+  dependencies: [],
+};
+
+export default moduleConfig;

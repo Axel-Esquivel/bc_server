@@ -11,9 +11,16 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, new ExpressAdapter(server));
 
   app.setGlobalPrefix('api');
-  const allowedOrigins = process.env.CORS_ORIGINS?.split(',').map((origin) => origin.trim()) ?? ['*'];
+  const logger = new Logger('Bootstrap');
+  logger.log('Global prefix set to /api');
+  const envOrigins =
+    process.env.CORS_ORIGINS?.split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean) ?? [];
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  const allowedOrigins = envOrigins.length > 0 ? envOrigins : isDevelopment ? ['http://localhost:4200'] : [];
   app.enableCors({
-    origin: allowedOrigins,
+    origin: allowedOrigins.length > 0 ? allowedOrigins : false,
     credentials: true,
   });
   app.useWebSocketAdapter(new SocketsAdapter(app));
@@ -32,8 +39,21 @@ async function bootstrap() {
     }),
   );
 
-  const logger = new Logger('Bootstrap');
   await app.init();
+
+  const httpAdapter = app.getHttpAdapter().getInstance();
+  const router = httpAdapter?._router;
+  if (router?.stack) {
+    const routes = router.stack
+      .filter((layer: { route?: { path?: string; methods?: Record<string, boolean> } }) => layer.route?.path)
+      .map((layer: { route: { path: string; methods: Record<string, boolean> } }) => {
+        const methods = Object.keys(layer.route.methods).filter((method) => layer.route.methods[method]);
+        return `${methods.join(',').toUpperCase()} ${layer.route.path}`;
+      });
+    if (routes.length > 0) {
+      logger.log(`Routes mounted: ${routes.join(' | ')}`);
+    }
+  }
 
   const port = process.env.PORT || 3000;
   await app.listen(port);

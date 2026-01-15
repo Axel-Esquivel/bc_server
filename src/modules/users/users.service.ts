@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuid } from 'uuid';
 import { ModuleStateService } from '../../core/database/module-state.service';
@@ -23,15 +23,23 @@ export class UsersService implements OnModuleInit {
   }
 
   async createUser(dto: CreateUserDto): Promise<SafeUser> {
+    const normalizedEmail = dto.email.toLowerCase();
+    const existing = this.users.find((user) => user.email === normalizedEmail);
+    if (existing) {
+      throw new ConflictException('Email already in use');
+    }
+
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
     const newUser: UserEntity = {
       id: uuid(),
-      email: dto.email.toLowerCase(),
+      email: normalizedEmail,
+      name: dto.name,
       username: dto.username,
       passwordHash,
       workspaces: dto.workspaceId ? [{ workspaceId: dto.workspaceId, roles: [] }] : [],
       devices: [],
+      defaultWorkspaceId: dto.defaultWorkspaceId ?? dto.workspaceId,
       createdAt: new Date(),
     };
 

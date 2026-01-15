@@ -75,9 +75,11 @@ export class AuthService implements OnModuleInit {
   async register(dto: RegisterDto) {
     const user = await this.usersService.createUser({
       email: dto.email,
+      name: dto.name,
       username: dto.username,
       password: dto.password,
       workspaceId: dto.workspaceId,
+      defaultWorkspaceId: dto.workspaceId,
     });
 
     const workspaceId = dto.workspaceId;

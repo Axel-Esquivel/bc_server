@@ -12,10 +12,17 @@ import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { RealtimeService } from './realtime.service';
 
+const envOrigins =
+  process.env.CORS_ORIGINS?.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean) ?? [];
+const isDevelopment = process.env.NODE_ENV === 'development';
+const allowedOrigins = envOrigins.length > 0 ? envOrigins : isDevelopment ? ['http://localhost:4200'] : ['*'];
+
 @WebSocketGateway({
   namespace: '/realtime',
   cors: {
-    origin: process.env.CORS_ORIGINS?.split(',') ?? true,
+    origin: allowedOrigins,
     credentials: true,
   },
 })
@@ -37,6 +44,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       const context = await this.realtimeService.authenticateClient(client);
       this.realtimeService.registerDefaultRooms(client, context);
       this.realtimeService.logConnection(context, 'connected', client);
+      this.logger.log(`Socket connected: ${client.id}`);
     } catch (error) {
       this.logger.warn(`Disconnecting socket ${client.id}: ${error.message}`);
       client.disconnect(true);

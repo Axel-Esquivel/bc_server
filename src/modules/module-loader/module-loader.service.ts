@@ -1,4 +1,6 @@
 import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
 import { ModuleStateService } from '../../core/database/module-state.service';
 import { ModuleConfig } from './module.config';
 
@@ -31,25 +33,19 @@ export class ModuleLoaderService implements OnModuleInit {
    */
   private readonly modules = new Map<string, ModuleDescriptor>();
 
-  private readonly initialModules: ModuleConfig[] = [
-    {
-      name: 'module-loader',
-      version: '1.0.0',
-      enabled: true,
-      dependencies: [],
-    },
-  ];
+  private readonly modulesDir = path.resolve(__dirname, '..');
 
   constructor(private readonly moduleState: ModuleStateService) {}
 
   async onModuleInit(): Promise<void> {
     const storedState = await this.moduleState.loadState<ModuleLoaderState>(this.stateKey, { modules: [] });
-    if (storedState.modules?.length) {
-      this.loadModules(storedState.modules);
-    } else {
-      this.loadModules(this.initialModules);
-      this.persistModules();
+    const filesystemModules = this.readModuleConfigs();
+    const configs = this.mergeConfigs(filesystemModules, storedState.modules ?? []);
+    if (configs.length === 0) {
+      this.logger.warn('No module.config.ts files found. Module catalog will be empty.');
     }
+    this.loadModules(configs);
+    this.persistModules();
   }
 
   listModules(): ModuleDescriptor[] {
@@ -96,6 +92,62 @@ export class ModuleLoaderService implements OnModuleInit {
     });
 
     this.resolveDependencies();
+  }
+
+  private readModuleConfigs(): ModuleConfig[] {
+    const entries = fs.readdirSync(this.modulesDir, { withFileTypes: true });
+    const configs: ModuleConfig[] = [];
+
+    entries.forEach((entry) => {
+      if (!entry.isDirectory()) return;
+
+      const configPathJs = path.join(this.modulesDir, entry.name, 'module.config.js');
+      const configPathTs = path.join(this.modulesDir, entry.name, 'module.config.ts');
+      const configPath = fs.existsSync(configPathJs)
+        ? configPathJs
+        : fs.existsSync(configPathTs)
+          ? configPathTs
+          : null;
+
+      if (!configPath) {
+        return;
+      }
+
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const loaded = require(configPath);
+        const rawConfig = (loaded?.default ?? loaded?.moduleConfig ?? loaded?.config ?? loaded) as ModuleConfig;
+        if (!rawConfig || !rawConfig.name) {
+          this.logger.warn(`Invalid module.config in ${entry.name}`);
+          return;
+        }
+
+        const normalized: ModuleConfig = {
+          name: rawConfig.name || entry.name,
+          version: rawConfig.version || '1.0.0',
+          enabled: rawConfig.enabled ?? true,
+          dependencies: rawConfig.dependencies ?? [],
+        };
+
+        configs.push(normalized);
+      } catch (error) {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.warn(`Failed to load module config for ${entry.name}: ${message}`);
+      }
+    });
+
+    return configs;
+  }
+
+  private mergeConfigs(filesystemConfigs: ModuleConfig[], storedConfigs: ModuleConfig[]): ModuleConfig[] {
+    const stored = new Map(storedConfigs.map((config) => [config.name, config]));
+    return filesystemConfigs.map((config) => {
+      const persisted = stored.get(config.name);
+      return {
+        ...config,
+        enabled: persisted?.enabled ?? config.enabled,
+      };
+    });
   }
 
   private resolveDependencies(): void {

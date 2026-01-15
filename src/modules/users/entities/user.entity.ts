@@ -6,10 +6,12 @@ export interface WorkspaceMembership {
 export interface UserEntity {
   id: string;
   email: string;
+  name: string;
   username: string;
   passwordHash: string;
   workspaces: WorkspaceMembership[];
   devices: string[];
+  defaultWorkspaceId?: string;
   createdAt: Date;
 }
 

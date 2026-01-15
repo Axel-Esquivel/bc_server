@@ -8,6 +8,7 @@ import { RequestIdMiddleware } from './core/middlewares/request-id.middleware';
 import { AuditContextMiddleware } from './core/middlewares/audit-context.middleware';
 import { RateLimitMiddleware } from './core/middlewares/rate-limit.middleware';
 import { ModuleLoaderModule } from './modules/module-loader/module-loader.module';
+import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { DevicesModule } from './modules/devices/devices.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
@@ -25,6 +26,7 @@ import { AccountingModule } from './modules/accounting/accounting.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { SetupModule } from './modules/setup/setup.module';
 
 @Module({
   imports: [
@@ -89,9 +91,10 @@ import { ChatModule } from './modules/chat/chat.module';
         };
       },
     }),
-    CoreModule,
     DatabaseModule,
     ModuleLoaderModule,
+    HealthModule,
+    SetupModule,
     UsersModule,
     RolesModule,
     PermissionsModule,
@@ -109,6 +112,7 @@ import { ChatModule } from './modules/chat/chat.module';
     ReportsModule,
     RealtimeModule,
     ChatModule,
+    CoreModule,
   ],
 })
 export class AppModule implements NestModule {
