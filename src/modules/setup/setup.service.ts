@@ -68,8 +68,7 @@ export class SetupService {
 
     const workspace = this.workspacesService.createWorkspace({
       name: dto.dbName,
-      ownerUserId: adminUser.id,
-    });
+    }, adminUser.id);
 
     const superadminRole =
       this.rolesService.getRoleByName('superadmin', workspace.id) ??
@@ -81,7 +80,7 @@ export class SetupService {
 
     this.workspacesService.addMember(workspace.id, {
       userId: adminUser.id,
-      roles: ['superadmin'],
+      role: 'admin',
     });
 
     await this.collection.updateOne(

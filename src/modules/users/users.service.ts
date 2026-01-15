@@ -107,6 +107,23 @@ export class UsersService implements OnModuleInit {
     return safeUser;
   }
 
+  setDefaultWorkspace(userId: string, workspaceId: string): SafeUser {
+    const user = this.users.find((candidate) => candidate.id === userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const belongs = user.workspaces.some((membership) => membership.workspaceId === workspaceId);
+    if (!belongs) {
+      throw new NotFoundException('Workspace membership not found');
+    }
+
+    user.defaultWorkspaceId = workspaceId;
+    const safeUser = this.toSafeUser(user);
+    this.persistState();
+    return safeUser;
+  }
+
   private toSafeUser(user: UserEntity): SafeUser {
     const { passwordHash, ...safe } = user;
     return safe;
