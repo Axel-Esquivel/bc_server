@@ -7,18 +7,26 @@ import { UpdateWorkspaceModulesDto } from './dto/update-workspace-modules.dto';
 import { WorkspaceAdminGuard } from './guards/workspace-admin.guard';
 import { WorkspaceMemberGuard } from './guards/workspace-member.guard';
 import { WorkspacesService } from './workspaces.service';
+import { UsersService } from '../users/users.service';
 
 @Controller('workspaces')
 export class WorkspacesController {
-  constructor(private readonly workspacesService: WorkspacesService) {}
+  constructor(
+    private readonly workspacesService: WorkspacesService,
+    private readonly usersService: UsersService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Get()
   list(@Req() req: any) {
     const workspaces = this.workspacesService.listByUser(req.user.sub);
+    const user = this.usersService.findById(req.user.sub);
     return {
       message: 'Workspaces loaded',
-      result: workspaces,
+      result: {
+        workspaces,
+        defaultWorkspaceId: user.defaultWorkspaceId,
+      },
     };
   }
 
@@ -42,7 +50,7 @@ export class WorkspacesController {
     };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, WorkspaceAdminGuard)
   @Post(':id/members')
   addMember(@Param('id') id: string, @Body() dto: AddMemberDto) {
     const workspace = this.workspacesService.addMember(id, dto);

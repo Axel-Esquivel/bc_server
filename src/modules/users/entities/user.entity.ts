@@ -6,8 +6,9 @@ export interface WorkspaceMembership {
 export interface UserEntity {
   id: string;
   email: string;
-  name: string;
-  username: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
   passwordHash: string;
   workspaces: WorkspaceMembership[];
   devices: string[];

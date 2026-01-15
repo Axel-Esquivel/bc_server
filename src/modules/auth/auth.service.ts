@@ -37,16 +37,16 @@ export class AuthService implements OnModuleInit {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.usersService.validateCredentials(dto.identifier, dto.password);
+    const user = await this.usersService.validateCredentials(dto.email, dto.password);
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const workspaceId = dto.workspaceId || user.workspaces?.[0]?.workspaceId;
+    const workspaceId = user.defaultWorkspaceId || user.workspaces?.[0]?.workspaceId;
     if (workspaceId) {
       this.workspacesService.getWorkspace(workspaceId);
     }
-    const deviceId = dto.deviceId || 'untracked-device';
+    const deviceId = 'untracked-device';
 
     this.devicesService.upsertDevice(user.id, deviceId, workspaceId);
 
@@ -75,19 +75,31 @@ export class AuthService implements OnModuleInit {
   async register(dto: RegisterDto) {
     const user = await this.usersService.createUser({
       email: dto.email,
-      name: dto.name,
-      username: dto.username,
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      phone: dto.phone,
       password: dto.password,
-      workspaceId: dto.workspaceId,
-      defaultWorkspaceId: dto.workspaceId,
     });
 
-    const workspaceId = dto.workspaceId;
+    const workspaceId = user.defaultWorkspaceId || user.workspaces?.[0]?.workspaceId;
+    const deviceId = 'untracked-device';
+    const tokens = this.issueTokens({
+      sub: user.id,
+      email: user.email,
+      workspaceId,
+      deviceId,
+      workspaces: user.workspaces,
+      permissions: [],
+    });
+
+    this.storeRefreshToken(user.id, deviceId, tokens.refreshToken);
     return {
       message: 'User registered',
       result: {
         user,
         workspaceId,
+        deviceId,
+        ...tokens,
       },
     };
   }

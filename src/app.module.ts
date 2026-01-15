@@ -26,7 +26,6 @@ import { AccountingModule } from './modules/accounting/accounting.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { ChatModule } from './modules/chat/chat.module';
-import { SetupModule } from './modules/setup/setup.module';
 
 @Module({
   imports: [
@@ -94,7 +93,6 @@ import { SetupModule } from './modules/setup/setup.module';
     DatabaseModule,
     ModuleLoaderModule,
     HealthModule,
-    SetupModule,
     UsersModule,
     RolesModule,
     PermissionsModule,

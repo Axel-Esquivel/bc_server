@@ -34,8 +34,9 @@ export class UsersService implements OnModuleInit {
     const newUser: UserEntity = {
       id: uuid(),
       email: normalizedEmail,
-      name: dto.name,
-      username: dto.username,
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      phone: dto.phone,
       passwordHash,
       workspaces: dto.workspaceId ? [{ workspaceId: dto.workspaceId, roles: [] }] : [],
       devices: [],
@@ -48,8 +49,8 @@ export class UsersService implements OnModuleInit {
     return this.toSafeUser(newUser);
   }
 
-  async validateCredentials(identifier: string, password: string): Promise<SafeUser | null> {
-    const user = this.findByIdentifier(identifier);
+  async validateCredentials(email: string, password: string): Promise<SafeUser | null> {
+    const user = this.findByEmail(email);
     if (!user) {
       return null;
     }
@@ -58,11 +59,9 @@ export class UsersService implements OnModuleInit {
     return matches ? this.toSafeUser(user) : null;
   }
 
-  findByIdentifier(identifier: string): UserEntity | undefined {
-    const normalized = identifier.toLowerCase();
-    return this.users.find(
-      (user) => user.email === normalized || user.username.toLowerCase() === normalized,
-    );
+  findByEmail(email: string): UserEntity | undefined {
+    const normalized = email.toLowerCase();
+    return this.users.find((user) => user.email === normalized);
   }
 
   findById(id: string): SafeUser {

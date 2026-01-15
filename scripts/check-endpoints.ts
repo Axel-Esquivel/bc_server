@@ -2,7 +2,7 @@ import http from 'http';
 
 const port = process.env.PORT || 3000;
 const baseUrl = `http://localhost:${port}`;
-const paths = ['/api/health', '/api/setup/status'];
+const paths = ['/api/health'];
 
 function checkPath(path: string): Promise<{ path: string; status?: number; error?: string }> {
   return new Promise((resolve) => {

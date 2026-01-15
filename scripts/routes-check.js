@@ -2,7 +2,7 @@ const http = require('http');
 
 const port = process.env.PORT || 3000;
 const baseUrl = `http://localhost:${port}`;
-const paths = ['/api/health', '/api/setup/status'];
+const paths = ['/api/health'];
 
 function checkPath(path) {
   return new Promise((resolve) => {

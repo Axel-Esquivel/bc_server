@@ -127,12 +127,6 @@ export const MODULE_CATALOG: ModuleCatalogEntry[] = [
     version: '1.0.0',
   },
   {
-    key: 'setup',
-    name: 'Setup',
-    description: 'Initial system setup',
-    version: '1.0.0',
-  },
-  {
     key: 'health',
     name: 'Health',
     description: 'Health checks and status',
