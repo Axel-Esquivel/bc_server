@@ -22,6 +22,8 @@ export interface WorkspaceEntity {
   ownerUserId: string;
   members: { userId: string; role: WorkspaceRole }[];
   enabledModules: WorkspaceModuleState[];
+  moduleSettings: Record<string, any>;
+  setupCompleted: boolean;
   createdAt: Date;
 }
 
@@ -59,6 +61,8 @@ export class WorkspacesService implements OnModuleInit {
       ownerUserId,
       members: [],
       enabledModules: [],
+      moduleSettings: {},
+      setupCompleted: false,
       createdAt: new Date(),
     };
 
@@ -158,6 +162,88 @@ export class WorkspacesService implements OnModuleInit {
     return workspace.enabledModules;
   }
 
+  setEnabledModules(workspaceId: string, userId: string, enabledModules: string[]) {
+    const workspace = this.getWorkspace(workspaceId);
+    const now = new Date();
+    const catalogKeys = new Set(MODULE_CATALOG.map((entry) => entry.key));
+    const invalidKeys = enabledModules.filter((key) => !catalogKeys.has(key));
+
+    if (invalidKeys.length > 0) {
+      throw new BadRequestException(`Invalid module keys: ${invalidKeys.join(', ')}`);
+    }
+
+    const existing = new Map(workspace.enabledModules.map((module) => [module.key, module]));
+    const next: WorkspaceModuleState[] = [];
+
+    catalogKeys.forEach((key) => {
+      const enabled = enabledModules.includes(key);
+      const current = existing.get(key);
+      if (current) {
+        current.enabled = enabled;
+        if (enabled) {
+          current.enabledAt = current.enabledAt ?? now;
+          current.enabledBy = userId;
+        } else {
+          current.enabledAt = undefined;
+          current.enabledBy = undefined;
+        }
+        next.push(current);
+        return;
+      }
+
+      next.push({
+        key,
+        enabled,
+        enabledAt: enabled ? now : undefined,
+        enabledBy: enabled ? userId : undefined,
+      });
+    });
+
+    workspace.enabledModules = next;
+    this.persistState();
+    return workspace.enabledModules;
+  }
+
+  getEnabledModuleKeys(workspaceId: string): string[] {
+    const workspace = this.getWorkspace(workspaceId);
+    return workspace.enabledModules.filter((module) => module.enabled).map((module) => module.key);
+  }
+
+  getModuleSettings(workspaceId: string, moduleId: string): Record<string, any> {
+    const workspace = this.getWorkspace(workspaceId);
+    const enabled = workspace.enabledModules.some((module) => module.key === moduleId && module.enabled);
+    if (!enabled) {
+      throw new BadRequestException('Module not enabled');
+    }
+
+    return workspace.moduleSettings?.[moduleId] ?? {};
+  }
+
+  updateModuleSettings(workspaceId: string, moduleId: string, updates: Record<string, any>) {
+    const workspace = this.getWorkspace(workspaceId);
+    const enabled = workspace.enabledModules.some((module) => module.key === moduleId && module.enabled);
+    if (!enabled) {
+      throw new BadRequestException('Module not enabled');
+    }
+
+    workspace.moduleSettings = {
+      ...(workspace.moduleSettings ?? {}),
+      [moduleId]: {
+        ...(workspace.moduleSettings?.[moduleId] ?? {}),
+        ...(updates ?? {}),
+      },
+    };
+    this.persistState();
+    return workspace.moduleSettings[moduleId];
+  }
+
+  markSetupCompleted(workspaceId: string): WorkspaceEntity {
+    const workspace = this.getWorkspace(workspaceId);
+    workspace.setupCompleted = true;
+    this.persistState();
+    return workspace;
+  }
+
   joinByCode(userId: string, code: string): WorkspaceEntity {
     const normalizedCode = code.trim().toUpperCase();
     const workspace = this.workspaces.find((item) => item.code === normalizedCode);
@@ -239,14 +325,22 @@ export class WorkspacesService implements OnModuleInit {
         ? raw.modules
         : [];
 
-    const enabledModules = rawModules
-          .filter((module: any) => typeof module?.key === 'string')
-          .map((module: any) => ({
-            key: module.key,
-            enabled: Boolean(module.enabled),
-            enabledAt: module.enabledAt ? new Date(module.enabledAt) : undefined,
-            enabledBy: module.enabledBy,
+    const enabledModules =
+      typeof rawModules[0] === 'string'
+        ? rawModules.map((key: string) => ({
+            key,
+            enabled: true,
+            enabledAt: undefined,
+            enabledBy: undefined,
           }))
+        : rawModules
+            .filter((module: any) => typeof module?.key === 'string')
+            .map((module: any) => ({
+              key: module.key,
+              enabled: Boolean(module.enabled),
+              enabledAt: module.enabledAt ? new Date(module.enabledAt) : undefined,
+              enabledBy: module.enabledBy,
+            }));
     const ownerUserId =
       raw.ownerUserId || members.find((member) => member.role === 'admin')?.userId || members[0]?.userId || 'unknown';
 
@@ -257,6 +351,8 @@ export class WorkspacesService implements OnModuleInit {
       ownerUserId,
       members,
       enabledModules,
+      moduleSettings: raw.moduleSettings ?? {},
+      setupCompleted: raw.setupCompleted ?? raw.isInitialized ?? false,
       createdAt: raw.createdAt ? new Date(raw.createdAt) : new Date(),
     };
   }

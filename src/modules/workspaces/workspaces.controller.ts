@@ -66,17 +66,58 @@ export class WorkspacesController {
     const overview = this.workspacesService.getModulesOverview(id, req.user.sub);
     return {
       message: 'Workspace modules loaded',
-      result: overview,
+      result: {
+        ...overview,
+        enabledModuleKeys: this.workspacesService.getEnabledModuleKeys(id),
+      },
     };
   }
 
   @UseGuards(JwtAuthGuard, WorkspaceAdminGuard)
   @Patch(':id/modules')
   updateModules(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateWorkspaceModulesDto) {
-    const modules = this.workspacesService.updateWorkspaceModules(id, req.user.sub, dto.modules);
+    if (dto.enabledModules !== undefined) {
+      const modules = this.workspacesService.setEnabledModules(id, req.user.sub, dto.enabledModules);
+      return {
+        message: 'Workspace modules updated',
+        result: modules,
+      };
+    }
+
+    const modules = this.workspacesService.updateWorkspaceModules(id, req.user.sub, dto.modules ?? []);
     return {
       message: 'Workspace modules updated',
       result: modules,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, WorkspaceMemberGuard)
+  @Get(':id/module-settings/:moduleId')
+  getModuleSettings(@Param('id') id: string, @Param('moduleId') moduleId: string) {
+    const settings = this.workspacesService.getModuleSettings(id, moduleId);
+    return {
+      message: 'Module settings loaded',
+      result: settings,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, WorkspaceAdminGuard)
+  @Patch(':id/module-settings/:moduleId')
+  updateModuleSettings(@Param('id') id: string, @Param('moduleId') moduleId: string, @Body() body: Record<string, any>) {
+    const settings = this.workspacesService.updateModuleSettings(id, moduleId, body ?? {});
+    return {
+      message: 'Module settings updated',
+      result: settings,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, WorkspaceAdminGuard)
+  @Patch(':id/setup-complete')
+  markSetupComplete(@Param('id') id: string) {
+    const workspace = this.workspacesService.markSetupCompleted(id);
+    return {
+      message: 'Workspace setup completed',
+      result: workspace,
     };
   }
 }

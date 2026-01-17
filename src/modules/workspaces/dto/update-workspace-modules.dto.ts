@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsOptional, IsString, ValidateNested } from 'class-validator';
 
 class WorkspaceModuleUpdateDto {
   @IsString()
@@ -10,8 +10,14 @@ class WorkspaceModuleUpdateDto {
 }
 
 export class UpdateWorkspaceModulesDto {
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => WorkspaceModuleUpdateDto)
-  modules!: WorkspaceModuleUpdateDto[];
+  modules?: WorkspaceModuleUpdateDto[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  enabledModules?: string[];
 }

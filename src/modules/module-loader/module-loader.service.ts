@@ -127,6 +127,10 @@ export class ModuleLoaderService implements OnModuleInit {
           version: rawConfig.version || '1.0.0',
           enabled: rawConfig.enabled ?? true,
           dependencies: rawConfig.dependencies ?? [],
+          isSystem: rawConfig.isSystem ?? false,
+          isInstallable: rawConfig.isInstallable ?? true,
+          setupWizard: rawConfig.setupWizard,
+          settingsSchema: rawConfig.settingsSchema,
         };
 
         configs.push(normalized);
