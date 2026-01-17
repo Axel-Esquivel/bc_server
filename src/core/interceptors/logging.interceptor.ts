@@ -23,9 +23,22 @@ export class LoggingInterceptor implements NestInterceptor {
     const logPayload = (statusCode?: number) => {
       const context = request.auditContext || {};
       const userId =
-        context.userId || request.user?.id || request.user?._id || request.headers['x-user-id'];
-      const workspaceId = context.workspaceId || request.workspaceId || request.headers['x-workspace-id'];
-      const deviceId = context.deviceId || request.deviceId || request.headers['x-device-id'];
+        context.userId ||
+        request.userId ||
+        request.user?.sub ||
+        request.user?.id ||
+        request.user?._id ||
+        request.headers['x-user-id'];
+      const workspaceId =
+        context.workspaceId ||
+        request.workspaceId ||
+        request.user?.workspaceId ||
+        request.headers['x-workspace-id'];
+      const deviceId =
+        context.deviceId ||
+        request.deviceId ||
+        request.user?.deviceId ||
+        request.headers['x-device-id'];
       const durationMs = Date.now() - startTime;
       const requestId = request.requestId || context.requestId;
       const ip = context.ip || request.ip;
