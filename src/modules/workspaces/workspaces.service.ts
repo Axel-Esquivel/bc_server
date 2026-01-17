@@ -32,6 +32,7 @@ export type WorkspaceRole = 'admin' | 'member';
 export interface WorkspaceModuleState {
   key: string;
   enabled: boolean;
+  configured: boolean;
   enabledAt?: Date;
   enabledBy?: string;
 }
@@ -164,10 +165,14 @@ export class WorkspacesService implements OnModuleInit {
     updates.forEach((update) => {
       const existing = workspace.enabledModules.find((module) => module.key === update.key);
       if (existing) {
+        const wasEnabled = existing.enabled;
         existing.enabled = update.enabled;
         if (update.enabled) {
           existing.enabledAt = now;
           existing.enabledBy = userId;
+          if (!wasEnabled) {
+            existing.configured = false;
+          }
         } else {
           existing.enabledAt = undefined;
           existing.enabledBy = undefined;
@@ -176,6 +181,7 @@ export class WorkspacesService implements OnModuleInit {
         workspace.enabledModules.push({
           key: update.key,
           enabled: update.enabled,
+          configured: update.enabled ? false : false,
           enabledAt: update.enabled ? now : undefined,
           enabledBy: update.enabled ? userId : undefined,
         });
@@ -203,10 +209,14 @@ export class WorkspacesService implements OnModuleInit {
       const enabled = enabledModules.includes(key);
       const current = existing.get(key);
       if (current) {
+        const wasEnabled = current.enabled;
         current.enabled = enabled;
         if (enabled) {
           current.enabledAt = current.enabledAt ?? now;
           current.enabledBy = userId;
+          if (!wasEnabled) {
+            current.configured = false;
+          }
         } else {
           current.enabledAt = undefined;
           current.enabledBy = undefined;
@@ -218,6 +228,7 @@ export class WorkspacesService implements OnModuleInit {
       next.push({
         key,
         enabled,
+        configured: enabled ? false : false,
         enabledAt: enabled ? now : undefined,
         enabledBy: enabled ? userId : undefined,
       });
@@ -241,6 +252,10 @@ export class WorkspacesService implements OnModuleInit {
   updateModuleSettings(workspaceId: string, moduleId: string, updates: Record<string, any>) {
     const workspace = this.getWorkspace(workspaceId);
     const result = this.moduleSettings.patchSettings(workspace, moduleId, updates);
+    const moduleState = workspace.enabledModules.find((module) => module.key === moduleId);
+    if (moduleState && moduleState.enabled) {
+      moduleState.configured = true;
+    }
     this.persistState();
     return result;
   }
@@ -632,6 +647,7 @@ export class WorkspacesService implements OnModuleInit {
         ? rawModules.map((key: string) => ({
             key,
             enabled: true,
+            configured: false,
             enabledAt: undefined,
             enabledBy: undefined,
           }))
@@ -640,6 +656,7 @@ export class WorkspacesService implements OnModuleInit {
             .map((module: any) => ({
               key: module.key,
               enabled: Boolean(module.enabled),
+              configured: typeof module.configured === 'boolean' ? module.configured : false,
               enabledAt: module.enabledAt ? new Date(module.enabledAt) : undefined,
               enabledBy: module.enabledBy,
             }));
