@@ -10,6 +10,10 @@ export class ConfirmCartDto {
   companyId!: string;
 
   @IsString()
+  @IsNotEmpty()
+  terminalId!: string;
+
+  @IsString()
   @IsOptional()
   customerId?: string;
 }

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { InventoryDirection } from '../inventory/entities/inventory-movement.entity';
 import { InventoryService } from '../inventory/inventory.service';
@@ -14,6 +14,8 @@ import { PaymentRecord } from './entities/payment.entity';
 import { Promotion, ComboRule } from './entities/promotion.entity';
 import { SaleLineRecord } from './entities/sale-line.entity';
 import { SaleRecord, SaleStatus } from './entities/sale.entity';
+import { WorkspacesService } from '../workspaces/workspaces.service';
+import { PosTerminal } from '../workspaces/dto/pos-terminal.dto';
 
 interface PosState {
   carts: CartRecord[];
@@ -36,6 +38,7 @@ export class PosService implements OnModuleInit {
     private readonly inventoryService: InventoryService,
     private readonly realtimeService: RealtimeService,
     private readonly moduleState: ModuleStateService,
+    private readonly workspacesService: WorkspacesService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -139,9 +142,19 @@ export class PosService implements OnModuleInit {
     return cart;
   }
 
-  confirmCart(cartId: string, dto: ConfirmCartDto): SaleRecord {
+  confirmCart(cartId: string, dto: ConfirmCartDto, cashierUserId: string): SaleRecord {
     const cart = this.findCart(cartId);
     this.ensureTenant(cart.workspaceId, cart.companyId, dto.workspaceId, dto.companyId);
+    const terminal = this.getTerminal(dto.workspaceId, dto.terminalId);
+    if (terminal.companyId !== cart.companyId) {
+      throw new BadRequestException('Terminal does not belong to the company');
+    }
+    if (terminal.warehouseId !== cart.warehouseId) {
+      throw new BadRequestException('Terminal does not belong to the warehouse');
+    }
+    if (!terminal.allowedUsers.includes(cashierUserId)) {
+      throw new ForbiddenException('User not allowed for terminal');
+    }
 
     if (cart.status !== CartStatus.OPEN) {
       throw new BadRequestException('Cart is already processed');
@@ -161,6 +174,9 @@ export class PosService implements OnModuleInit {
       workspaceId: cart.workspaceId,
       companyId: cart.companyId,
       warehouseId: cart.warehouseId,
+      branchId: terminal.branchId,
+      terminalId: terminal.id,
+      cashierUserId,
       cartId: cart.id,
       customerId: dto.customerId,
       currency: cart.currency,
@@ -224,10 +240,21 @@ export class PosService implements OnModuleInit {
     });
   }
 
-  listSales(workspaceId?: string, companyId?: string): SaleRecord[] {
+  listSales(params: {
+    workspaceId?: string;
+    companyId?: string;
+    terminalId?: string;
+    cashierUserId?: string;
+    dateFrom?: Date;
+    dateTo?: Date;
+  } = {}): SaleRecord[] {
     return this.sales.filter((sale) => {
-      if (workspaceId && sale.workspaceId !== workspaceId) return false;
-      if (companyId && sale.companyId !== companyId) return false;
+      if (params.workspaceId && sale.workspaceId !== params.workspaceId) return false;
+      if (params.companyId && sale.companyId !== params.companyId) return false;
+      if (params.terminalId && sale.terminalId !== params.terminalId) return false;
+      if (params.cashierUserId && sale.cashierUserId !== params.cashierUserId) return false;
+      if (params.dateFrom && sale.createdAt < params.dateFrom) return false;
+      if (params.dateTo && sale.createdAt > params.dateTo) return false;
       return true;
     });
   }
@@ -297,5 +324,14 @@ export class PosService implements OnModuleInit {
         const message = error instanceof Error ? error.stack ?? error.message : String(error);
         this.logger.error(`Failed to persist POS state: ${message}`);
       });
+  }
+
+  private getTerminal(workspaceId: string, terminalId: string): PosTerminal {
+    const settings = this.workspacesService.listPosTerminals(workspaceId);
+    const terminal = settings.terminals.find((item) => item.id === terminalId);
+    if (!terminal) {
+      throw new NotFoundException('POS terminal not found');
+    }
+    return terminal;
   }
 }

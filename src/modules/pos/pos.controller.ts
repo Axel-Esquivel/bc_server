@@ -1,9 +1,10 @@
-import { Body, Controller, Param, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AddCartLineDto } from './dto/add-cart-line.dto';
 import { AddPaymentDto } from './dto/add-payment.dto';
 import { ConfirmCartDto } from './dto/confirm-cart.dto';
 import { CreateCartDto } from './dto/create-cart.dto';
 import { PosService } from './pos.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('pos')
 export class PosController {
@@ -34,10 +35,43 @@ export class PosController {
   }
 
   @Post('carts/:id/confirm')
-  confirm(@Param('id') cartId: string, @Body() dto: ConfirmCartDto) {
+  @UseGuards(JwtAuthGuard)
+  confirm(@Param('id') cartId: string, @Body() dto: ConfirmCartDto, @Req() req: any) {
     return {
       message: 'Sale confirmed from cart',
-      result: this.posService.confirmCart(cartId, dto),
+      result: this.posService.confirmCart(cartId, dto, req.userId ?? req.user?.sub ?? req.user?.id),
+    };
+  }
+
+  @Get('sales')
+  @UseGuards(JwtAuthGuard)
+  listSales(
+    @Query('workspaceId') workspaceId?: string,
+    @Query('companyId') companyId?: string,
+    @Query('terminalId') terminalId?: string,
+    @Query('cashierUserId') cashierUserId?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    const from = dateFrom ? new Date(dateFrom) : undefined;
+    const to = dateTo ? new Date(dateTo) : undefined;
+    if (from && Number.isNaN(from.getTime())) {
+      throw new BadRequestException('Invalid dateFrom');
+    }
+    if (to && Number.isNaN(to.getTime())) {
+      throw new BadRequestException('Invalid dateTo');
+    }
+
+    return {
+      message: 'POS sales loaded',
+      result: this.posService.listSales({
+        workspaceId,
+        companyId,
+        terminalId,
+        cashierUserId,
+        dateFrom: from,
+        dateTo: to,
+      }),
     };
   }
 }

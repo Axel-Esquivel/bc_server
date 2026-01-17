@@ -5,6 +5,27 @@ import { UsersService } from '../users/users.service';
 import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateWorkspaceDto } from './dto/create-workspace.dto';
 import { AddMemberDto } from './dto/add-member.dto';
+import { WorkspaceModuleSettingsService } from './workspace-module-settings.service';
+import { WarehousesService } from '../warehouses/warehouses.service';
+import {
+  CreatePosTerminalDto,
+  PosTerminal,
+  PosTerminalSettings,
+  UpdatePosTerminalDto,
+} from './dto/pos-terminal.dto';
+import { InventorySettings, UpdateInventorySettingsDto } from './dto/inventory-settings.dto';
+import { AccountingDefaults, UpdateAccountingDefaultsDto } from './dto/accounting-defaults.dto';
+import { AccountingService } from '../accounting/accounting.service';
+import {
+  AccountingTax,
+  CreateAccountingTaxDto,
+  UpdateAccountingTaxDto,
+} from './dto/accounting-tax.dto';
+import {
+  AccountingCategoryMapping,
+  CreateAccountingCategoryMappingDto,
+  UpdateAccountingCategoryMappingDto,
+} from './dto/accounting-category-mapping.dto';
 
 export type WorkspaceRole = 'admin' | 'member';
 
@@ -40,6 +61,9 @@ export class WorkspacesService implements OnModuleInit {
   constructor(
     private readonly usersService: UsersService,
     private readonly moduleState: ModuleStateService,
+    private readonly moduleSettings: WorkspaceModuleSettingsService,
+    private readonly warehousesService: WarehousesService,
+    private readonly accountingService: AccountingService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -211,30 +235,308 @@ export class WorkspacesService implements OnModuleInit {
 
   getModuleSettings(workspaceId: string, moduleId: string): Record<string, any> {
     const workspace = this.getWorkspace(workspaceId);
-    const enabled = workspace.enabledModules.some((module) => module.key === moduleId && module.enabled);
-    if (!enabled) {
-      throw new BadRequestException('Module not enabled');
-    }
-
-    return workspace.moduleSettings?.[moduleId] ?? {};
+    return this.moduleSettings.getSettings(workspace, moduleId);
   }
 
   updateModuleSettings(workspaceId: string, moduleId: string, updates: Record<string, any>) {
     const workspace = this.getWorkspace(workspaceId);
-    const enabled = workspace.enabledModules.some((module) => module.key === moduleId && module.enabled);
-    if (!enabled) {
-      throw new BadRequestException('Module not enabled');
+    const result = this.moduleSettings.patchSettings(workspace, moduleId, updates);
+    this.persistState();
+    return result;
+  }
+
+  getInventorySettings(workspaceId: string): InventorySettings {
+    const workspace = this.getWorkspace(workspaceId);
+    const settings = this.moduleSettings.getSettings(workspace, 'inventory');
+    return this.normalizeInventorySettings(settings);
+  }
+
+  updateInventorySettings(workspaceId: string, dto: UpdateInventorySettingsDto): InventorySettings {
+    const workspace = this.getWorkspace(workspaceId);
+    const current = this.normalizeInventorySettings(
+      this.moduleSettings.getSettings(workspace, 'inventory')
+    );
+    const next: InventorySettings = {
+      costMethod: dto.costMethod ?? current.costMethod,
+      stockLevel: dto.stockLevel ?? current.stockLevel,
+      allowNegative: dto.allowNegative ?? current.allowNegative,
+    };
+    this.moduleSettings.patchSettings(workspace, 'inventory', next);
+    this.persistState();
+    return next;
+  }
+
+  getAccountingDefaults(workspaceId: string): AccountingDefaults {
+    const workspace = this.getWorkspace(workspaceId);
+    const settings = this.moduleSettings.getSettings(workspace, 'accounting');
+    return this.normalizeAccountingDefaults(settings?.defaults ?? {});
+  }
+
+  updateAccountingDefaults(workspaceId: string, dto: UpdateAccountingDefaultsDto): AccountingDefaults {
+    const workspace = this.getWorkspace(workspaceId);
+    const current = this.getAccountingDefaults(workspaceId);
+    const next: AccountingDefaults = {
+      salesIncomeAccountId: dto.salesIncomeAccountId ?? current.salesIncomeAccountId,
+      salesDiscountAccountId: dto.salesDiscountAccountId ?? current.salesDiscountAccountId,
+      inventoryAccountId: dto.inventoryAccountId ?? current.inventoryAccountId,
+      cogsAccountId: dto.cogsAccountId ?? current.cogsAccountId,
+      purchasesAccountId: dto.purchasesAccountId ?? current.purchasesAccountId,
+      taxPayableAccountId: dto.taxPayableAccountId ?? current.taxPayableAccountId,
+      taxReceivableAccountId: dto.taxReceivableAccountId ?? current.taxReceivableAccountId,
+    };
+
+    this.validateAccountIds(workspaceId, [
+      next.salesIncomeAccountId,
+      next.salesDiscountAccountId,
+      next.inventoryAccountId,
+      next.cogsAccountId,
+      next.purchasesAccountId,
+      next.taxPayableAccountId,
+      next.taxReceivableAccountId,
+    ]);
+
+    this.moduleSettings.patchSettings(workspace, 'accounting', { defaults: next });
+    this.persistState();
+    return next;
+  }
+
+  listAccountingTaxes(workspaceId: string): AccountingTax[] {
+    const workspace = this.getWorkspace(workspaceId);
+    const settings = this.moduleSettings.getSettings(workspace, 'accounting');
+    const taxes = settings?.taxes;
+    return Array.isArray(taxes) ? taxes : [];
+  }
+
+  createAccountingTax(workspaceId: string, dto: CreateAccountingTaxDto): AccountingTax {
+    const workspace = this.getWorkspace(workspaceId);
+    if (dto.accountId) {
+      this.validateAccountIds(workspaceId, [dto.accountId]);
     }
 
-    workspace.moduleSettings = {
-      ...(workspace.moduleSettings ?? {}),
-      [moduleId]: {
-        ...(workspace.moduleSettings?.[moduleId] ?? {}),
-        ...(updates ?? {}),
-      },
+    const taxes = this.listAccountingTaxes(workspaceId);
+    const tax: AccountingTax = {
+      id: uuid(),
+      name: dto.name,
+      rate: dto.rate,
+      type: dto.type,
+      accountId: dto.accountId,
+      isActive: dto.isActive ?? true,
     };
+
+    this.moduleSettings.patchSettings(workspace, 'accounting', {
+      taxes: [...taxes, tax],
+    });
     this.persistState();
-    return workspace.moduleSettings[moduleId];
+    return tax;
+  }
+
+  updateAccountingTax(workspaceId: string, taxId: string, dto: UpdateAccountingTaxDto): AccountingTax {
+    const workspace = this.getWorkspace(workspaceId);
+    const taxes = this.listAccountingTaxes(workspaceId);
+    const tax = taxes.find((item) => item.id === taxId);
+    if (!tax) {
+      throw new NotFoundException('Accounting tax not found');
+    }
+
+    if (dto.accountId) {
+      this.validateAccountIds(workspaceId, [dto.accountId]);
+    }
+
+    Object.assign(tax, {
+      name: dto.name ?? tax.name,
+      rate: dto.rate ?? tax.rate,
+      type: dto.type ?? tax.type,
+      accountId: dto.accountId ?? tax.accountId,
+      isActive: dto.isActive ?? tax.isActive,
+    });
+
+    this.moduleSettings.patchSettings(workspace, 'accounting', { taxes });
+    this.persistState();
+    return tax;
+  }
+
+  deleteAccountingTax(workspaceId: string, taxId: string): { id: string } {
+    const workspace = this.getWorkspace(workspaceId);
+    const taxes = this.listAccountingTaxes(workspaceId);
+    const index = taxes.findIndex((item) => item.id === taxId);
+    if (index === -1) {
+      throw new NotFoundException('Accounting tax not found');
+    }
+    taxes.splice(index, 1);
+    this.moduleSettings.patchSettings(workspace, 'accounting', { taxes });
+    this.persistState();
+    return { id: taxId };
+  }
+
+  listAccountingCategoryMappings(workspaceId: string): AccountingCategoryMapping[] {
+    const workspace = this.getWorkspace(workspaceId);
+    const settings = this.moduleSettings.getSettings(workspace, 'accounting');
+    const mappings = settings?.categoryMappings;
+    return Array.isArray(mappings) ? mappings : [];
+  }
+
+  createAccountingCategoryMapping(
+    workspaceId: string,
+    dto: CreateAccountingCategoryMappingDto
+  ): AccountingCategoryMapping {
+    const workspace = this.getWorkspace(workspaceId);
+    this.validateAccountIds(workspaceId, [
+      dto.salesIncomeAccountId,
+      dto.cogsAccountId,
+      dto.inventoryAccountId,
+    ]);
+
+    const mappings = this.listAccountingCategoryMappings(workspaceId);
+    const mapping: AccountingCategoryMapping = {
+      id: uuid(),
+      categoryId: dto.categoryId,
+      salesIncomeAccountId: dto.salesIncomeAccountId,
+      cogsAccountId: dto.cogsAccountId,
+      inventoryAccountId: dto.inventoryAccountId,
+    };
+
+    this.moduleSettings.patchSettings(workspace, 'accounting', {
+      categoryMappings: [...mappings, mapping],
+    });
+    this.persistState();
+    return mapping;
+  }
+
+  updateAccountingCategoryMapping(
+    workspaceId: string,
+    mappingId: string,
+    dto: UpdateAccountingCategoryMappingDto
+  ): AccountingCategoryMapping {
+    const workspace = this.getWorkspace(workspaceId);
+    const mappings = this.listAccountingCategoryMappings(workspaceId);
+    const mapping = mappings.find((item) => item.id === mappingId);
+    if (!mapping) {
+      throw new NotFoundException('Accounting category mapping not found');
+    }
+
+    this.validateAccountIds(workspaceId, [
+      dto.salesIncomeAccountId,
+      dto.cogsAccountId,
+      dto.inventoryAccountId,
+    ]);
+
+    Object.assign(mapping, {
+      categoryId: dto.categoryId ?? mapping.categoryId,
+      salesIncomeAccountId: dto.salesIncomeAccountId ?? mapping.salesIncomeAccountId,
+      cogsAccountId: dto.cogsAccountId ?? mapping.cogsAccountId,
+      inventoryAccountId: dto.inventoryAccountId ?? mapping.inventoryAccountId,
+    });
+
+    this.moduleSettings.patchSettings(workspace, 'accounting', { categoryMappings: mappings });
+    this.persistState();
+    return mapping;
+  }
+
+  deleteAccountingCategoryMapping(workspaceId: string, mappingId: string): { id: string } {
+    const workspace = this.getWorkspace(workspaceId);
+    const mappings = this.listAccountingCategoryMappings(workspaceId);
+    const index = mappings.findIndex((item) => item.id === mappingId);
+    if (index === -1) {
+      throw new NotFoundException('Accounting category mapping not found');
+    }
+    mappings.splice(index, 1);
+    this.moduleSettings.patchSettings(workspace, 'accounting', { categoryMappings: mappings });
+    this.persistState();
+    return { id: mappingId };
+  }
+
+  listPosTerminals(workspaceId: string): PosTerminalSettings {
+    const workspace = this.getWorkspace(workspaceId);
+    this.moduleSettings.validateModuleEnabled(workspace, 'pos');
+    return this.getPosSettings(workspace);
+  }
+
+  createPosTerminal(workspaceId: string, dto: CreatePosTerminalDto): PosTerminal {
+    const workspace = this.getWorkspace(workspaceId);
+    this.moduleSettings.validateModuleEnabled(workspace, 'pos');
+    this.assertWarehouse(dto.warehouseId, workspace.id, dto.companyId);
+    this.assertUsers(dto.allowedUsers);
+
+    const terminal: PosTerminal = {
+      id: uuid(),
+      name: dto.name,
+      companyId: dto.companyId,
+      branchId: dto.branchId,
+      warehouseId: dto.warehouseId,
+      currencyId: dto.currencyId,
+      allowedUsers: Array.from(new Set(dto.allowedUsers ?? [])),
+      isActive: dto.isActive ?? true,
+    };
+
+    const settings = this.getPosSettings(workspace);
+    const next = {
+      ...settings,
+      terminals: [...settings.terminals, terminal],
+    };
+
+    this.moduleSettings.patchSettings(workspace, 'pos', next);
+    this.persistState();
+    return terminal;
+  }
+
+  updatePosTerminal(
+    workspaceId: string,
+    terminalId: string,
+    dto: UpdatePosTerminalDto
+  ): PosTerminal {
+    const workspace = this.getWorkspace(workspaceId);
+    this.moduleSettings.validateModuleEnabled(workspace, 'pos');
+
+    const settings = this.getPosSettings(workspace);
+    const terminal = settings.terminals.find((item) => item.id === terminalId);
+    if (!terminal) {
+      throw new NotFoundException('POS terminal not found');
+    }
+
+    const nextWarehouseId = dto.warehouseId ?? terminal.warehouseId;
+    const nextCompanyId = dto.companyId ?? terminal.companyId;
+    this.assertWarehouse(nextWarehouseId, workspace.id, nextCompanyId);
+
+    if (dto.allowedUsers !== undefined) {
+      this.assertUsers(dto.allowedUsers);
+    }
+
+    Object.assign(terminal, {
+      name: dto.name ?? terminal.name,
+      companyId: nextCompanyId,
+      branchId: dto.branchId ?? terminal.branchId,
+      warehouseId: nextWarehouseId,
+      currencyId: dto.currencyId ?? terminal.currencyId,
+      allowedUsers:
+        dto.allowedUsers !== undefined
+          ? Array.from(new Set(dto.allowedUsers))
+          : terminal.allowedUsers,
+      isActive: dto.isActive ?? terminal.isActive,
+    });
+
+    this.moduleSettings.patchSettings(workspace, 'pos', settings);
+    this.persistState();
+    return terminal;
+  }
+
+  deletePosTerminal(workspaceId: string, terminalId: string): { id: string } {
+    const workspace = this.getWorkspace(workspaceId);
+    this.moduleSettings.validateModuleEnabled(workspace, 'pos');
+
+    const settings = this.getPosSettings(workspace);
+    const index = settings.terminals.findIndex((item) => item.id === terminalId);
+    if (index === -1) {
+      throw new NotFoundException('POS terminal not found');
+    }
+
+    settings.terminals.splice(index, 1);
+    if (settings.defaults?.terminalId === terminalId) {
+      settings.defaults = { ...settings.defaults, terminalId: undefined };
+    }
+
+    this.moduleSettings.patchSettings(workspace, 'pos', settings);
+    this.persistState();
+    return { id: terminalId };
   }
 
   markSetupCompleted(workspaceId: string): WorkspaceEntity {
@@ -364,5 +666,66 @@ export class WorkspacesService implements OnModuleInit {
         const message = error instanceof Error ? error.stack ?? error.message : String(error);
         this.logger.error(`Failed to persist workspaces: ${message}`);
       });
+  }
+
+  private getPosSettings(workspace: WorkspaceEntity): PosTerminalSettings {
+    const raw = (workspace.moduleSettings?.pos ?? {}) as PosTerminalSettings;
+    const terminals = Array.isArray(raw.terminals) ? raw.terminals : [];
+    const defaults = raw.defaults ?? {};
+    return { terminals, defaults };
+  }
+
+  private normalizeInventorySettings(payload: Record<string, any>): InventorySettings {
+    return {
+      costMethod:
+        payload?.costMethod === 'fifo' || payload?.costMethod === 'standard'
+          ? payload.costMethod
+          : 'weighted_avg',
+      stockLevel: payload?.stockLevel === 'location' ? 'location' : 'warehouse',
+      allowNegative: payload?.allowNegative === true,
+    };
+  }
+
+  private normalizeAccountingDefaults(payload: Record<string, any>): AccountingDefaults {
+    return {
+      salesIncomeAccountId: payload?.salesIncomeAccountId,
+      salesDiscountAccountId: payload?.salesDiscountAccountId,
+      inventoryAccountId: payload?.inventoryAccountId,
+      cogsAccountId: payload?.cogsAccountId,
+      purchasesAccountId: payload?.purchasesAccountId,
+      taxPayableAccountId: payload?.taxPayableAccountId,
+      taxReceivableAccountId: payload?.taxReceivableAccountId,
+    };
+  }
+
+  private validateAccountIds(workspaceId: string, accountIds: Array<string | undefined>): void {
+    const ids = accountIds.filter((id): id is string => Boolean(id));
+    if (ids.length === 0) {
+      return;
+    }
+    const accounts = this.accountingService.listAccounts(workspaceId);
+    const accountMap = new Set(accounts.map((account) => account.id));
+    ids.forEach((id) => {
+      if (!accountMap.has(id)) {
+        throw new BadRequestException('Account not found');
+      }
+    });
+  }
+
+  private assertUsers(userIds?: string[]): void {
+    if (!userIds || userIds.length === 0) {
+      return;
+    }
+    userIds.forEach((id) => this.usersService.findById(id));
+  }
+
+  private assertWarehouse(warehouseId: string, workspaceId: string, companyId?: string): void {
+    const warehouse = this.warehousesService.findOne(warehouseId);
+    if (warehouse.workspaceId !== workspaceId) {
+      throw new BadRequestException('Warehouse does not belong to the workspace');
+    }
+    if (companyId && warehouse.companyId !== companyId) {
+      throw new BadRequestException('Warehouse does not belong to the company');
+    }
   }
 }

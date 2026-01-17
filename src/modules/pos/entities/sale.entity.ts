@@ -20,6 +20,15 @@ export class Sale {
   warehouseId!: string;
 
   @prop({ index: true })
+  branchId?: string;
+
+  @prop({ index: true })
+  terminalId?: string;
+
+  @prop({ index: true })
+  cashierUserId?: string;
+
+  @prop({ index: true })
   cartId?: string;
 
   @prop({ index: true })

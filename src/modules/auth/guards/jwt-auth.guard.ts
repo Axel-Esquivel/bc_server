@@ -1,35 +1,17 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import { ExecutionContext, Injectable } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 
 @Injectable()
-export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly jwtService: JwtService) {}
-
+export class JwtAuthGuard extends AuthGuard('jwt') {
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const result = (await super.canActivate(context)) as boolean;
     const request = context.switchToHttp().getRequest();
-    const authHeader: string | undefined = request.headers['authorization'];
-
-    if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
-      throw new UnauthorizedException('Missing bearer token');
+    const user = request.user;
+    if (user) {
+      request.userId = user.sub ?? user.id;
+      request.workspaceId = user.workspaceId;
+      request.deviceId = user.deviceId;
     }
-
-    const token = authHeader.split(' ')[1];
-    try {
-      const payload = await this.jwtService.verifyAsync(token, {
-        secret: process.env.JWT_SECRET || 'demo-secret',
-      });
-      request.user = payload;
-      request.userId = payload.sub;
-      request.workspaceId = payload.workspaceId;
-      request.deviceId = payload.deviceId;
-      return true;
-    } catch (error) {
-      throw new UnauthorizedException('Invalid token');
-    }
+    return result;
   }
 }
