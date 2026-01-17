@@ -25,6 +25,13 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  logout(@Req() req: any) {
+    const deviceId = req.user?.deviceId ?? req.headers['x-device-id'];
+    return this.authService.logout(req.user?.sub, deviceId);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('me')
   me(@Req() req: any) {
     return this.authService.getProfile(req.user.sub);

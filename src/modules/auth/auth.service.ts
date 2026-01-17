@@ -136,6 +136,19 @@ export class AuthService implements OnModuleInit {
     };
   }
 
+  logout(userId?: string, deviceId?: string) {
+    if (userId) {
+      const key = this.refreshKey(userId, deviceId);
+      this.refreshTokens.delete(key);
+      this.persistTokens();
+    }
+
+    return {
+      message: 'Logout successful',
+      result: { success: true },
+    };
+  }
+
   private issueTokens(payload: any): TokenBundle {
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET || 'demo-secret',
