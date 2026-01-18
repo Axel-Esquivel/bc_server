@@ -92,7 +92,15 @@ export class WorkspacesController {
       };
     }
 
-    const modules = this.workspacesService.updateWorkspaceModules(id, req.user.sub, dto.modules ?? []);
+    const modules = this.workspacesService.updateWorkspaceModules(
+      id,
+      req.user.sub,
+      (dto.modules ?? []).map((module) => ({
+        key: module.key,
+        enabled: module.enabled,
+        configured: false,
+      }))
+    );
     return {
       message: 'Workspace modules updated',
       result: modules,
