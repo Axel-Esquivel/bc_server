@@ -2,7 +2,7 @@
   name: 'workspaces',
   version: '1.0.0',
   enabled: true,
-  dependencies: [],
+  dependencies: ['users', 'warehouses', 'accounting', 'auth'],
 };
 
 export default moduleConfig;

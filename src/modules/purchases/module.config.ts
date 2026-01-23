@@ -2,7 +2,7 @@
   name: 'purchases',
   version: '1.0.0',
   enabled: true,
-  dependencies: [],
+  dependencies: ['inventory'],
 };
 
 export default moduleConfig;

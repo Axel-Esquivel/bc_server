@@ -16,6 +16,7 @@ import {
 import { InventorySettings, UpdateInventorySettingsDto } from './dto/inventory-settings.dto';
 import { AccountingDefaults, UpdateAccountingDefaultsDto } from './dto/accounting-defaults.dto';
 import { AccountingService } from '../accounting/accounting.service';
+import { ModuleLoaderService } from '../module-loader/module-loader.service';
 import {
   AccountingTax,
   CreateAccountingTaxDto,
@@ -65,6 +66,7 @@ export class WorkspacesService implements OnModuleInit {
     private readonly moduleSettings: WorkspaceModuleSettingsService,
     private readonly warehousesService: WarehousesService,
     private readonly accountingService: AccountingService,
+    private readonly moduleLoader: ModuleLoaderService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -162,7 +164,57 @@ export class WorkspacesService implements OnModuleInit {
       throw new BadRequestException(`Invalid module keys: ${invalidKeys.join(', ')}`);
     }
 
+    const dependencyMap = this.getDependencyMap(catalogKeys);
+    const originalEnabled = new Set(
+      workspace.enabledModules.filter((module) => module.enabled).map((module) => module.key)
+    );
+    const desiredEnabled = new Set(originalEnabled);
     updates.forEach((update) => {
+      if (update.enabled) {
+        desiredEnabled.add(update.key);
+      } else {
+        desiredEnabled.delete(update.key);
+      }
+    });
+
+    const expandedEnabled = this.expandEnabledSet(desiredEnabled, dependencyMap);
+    const blocked = updates
+      .filter((update) => !update.enabled)
+      .map((update) => {
+        const dependents = this.getDependents(update.key, expandedEnabled, dependencyMap);
+        return { key: update.key, dependents };
+      })
+      .filter((entry) => entry.dependents.length > 0);
+
+    if (blocked.length > 0) {
+      const first = blocked[0];
+      throw new BadRequestException(
+        `Cannot disable ${first.key} because ${first.dependents.join(', ')} depends on it.`
+      );
+    }
+
+    const expandedUpdates = new Map<string, boolean>();
+    updates.forEach((update) => {
+      expandedUpdates.set(update.key, update.enabled);
+    });
+    expandedEnabled.forEach((key) => {
+      if (!originalEnabled.has(key) && !expandedUpdates.has(key)) {
+        expandedUpdates.set(key, true);
+      }
+    });
+
+    if (expandedUpdates.size > updates.length) {
+      this.logger.debug('[workspaces] auto-enabled dependencies', {
+        workspaceId,
+        requested: updates.map((update) => update.key),
+        expanded: Array.from(expandedUpdates.entries())
+          .filter(([, enabled]) => enabled)
+          .map(([key]) => key),
+      });
+    }
+
+    Array.from(expandedUpdates.entries()).forEach(([key, enabled]) => {
+      const update = { key, enabled, configured: false };
       const existing = workspace.enabledModules.find((module) => module.key === update.key);
       if (existing) {
         const wasEnabled = existing.enabled;
@@ -202,11 +254,26 @@ export class WorkspacesService implements OnModuleInit {
       throw new BadRequestException(`Invalid module keys: ${invalidKeys.join(', ')}`);
     }
 
+    if (invalidKeys.length > 0) {
+      throw new BadRequestException(`Invalid module keys: ${invalidKeys.join(', ')}`);
+    }
+
+    const dependencyMap = this.getDependencyMap(catalogKeys);
+    const requestedEnabled = new Set(enabledModules);
+    const expandedEnabled = this.expandEnabledSet(requestedEnabled, dependencyMap);
+    if (expandedEnabled.size > requestedEnabled.size) {
+      this.logger.debug('[workspaces] auto-enabled dependencies', {
+        workspaceId,
+        requested: enabledModules,
+        expanded: Array.from(expandedEnabled),
+      });
+    }
+
     const existing = new Map(workspace.enabledModules.map((module) => [module.key, module]));
     const next: WorkspaceModuleState[] = [];
 
     catalogKeys.forEach((key) => {
-      const enabled = enabledModules.includes(key);
+      const enabled = expandedEnabled.has(key);
       const current = existing.get(key);
       if (current) {
         const wasEnabled = current.enabled;
@@ -744,5 +811,83 @@ export class WorkspacesService implements OnModuleInit {
     if (companyId && warehouse.companyId !== companyId) {
       throw new BadRequestException('Warehouse does not belong to the company');
     }
+  }
+
+  private getDependencyMap(catalogKeys: Set<string>): Map<string, string[]> {
+    const descriptors = this.moduleLoader.listModules();
+    const dependencyMap = new Map<string, string[]>();
+    descriptors.forEach((descriptor) => {
+      const key = descriptor.config.name;
+      if (!catalogKeys.has(key)) {
+        return;
+      }
+      const deps = (descriptor.config.dependencies ?? []).filter((dep) => catalogKeys.has(dep));
+      dependencyMap.set(key, deps);
+    });
+    return dependencyMap;
+  }
+
+  private expandEnabledSet(enabled: Set<string>, dependencyMap: Map<string, string[]>): Set<string> {
+    const expanded = new Set(enabled);
+    const visiting = new Set<string>();
+    const visited = new Set<string>();
+
+    const visit = (key: string) => {
+      if (visited.has(key) || visiting.has(key)) {
+        return;
+      }
+      visiting.add(key);
+      const deps = dependencyMap.get(key) ?? [];
+      deps.forEach((dep) => {
+        expanded.add(dep);
+        visit(dep);
+      });
+      visiting.delete(key);
+      visited.add(key);
+    };
+
+    enabled.forEach((key) => visit(key));
+    return expanded;
+  }
+
+  private resolveDependencies(moduleKey: string, dependencyMap: Map<string, string[]>): Set<string> {
+    const resolved = new Set<string>();
+    const visiting = new Set<string>();
+
+    const visit = (key: string) => {
+      if (visiting.has(key)) {
+        return;
+      }
+      visiting.add(key);
+      const deps = dependencyMap.get(key) ?? [];
+      deps.forEach((dep) => {
+        if (!resolved.has(dep)) {
+          resolved.add(dep);
+        }
+        visit(dep);
+      });
+      visiting.delete(key);
+    };
+
+    visit(moduleKey);
+    return resolved;
+  }
+
+  private getDependents(
+    moduleKey: string,
+    enabled: Set<string>,
+    dependencyMap: Map<string, string[]>
+  ): string[] {
+    const dependents: string[] = [];
+    enabled.forEach((key) => {
+      if (key === moduleKey) {
+        return;
+      }
+      const deps = this.resolveDependencies(key, dependencyMap);
+      if (deps.has(moduleKey)) {
+        dependents.push(key);
+      }
+    });
+    return dependents;
   }
 }

@@ -2,7 +2,7 @@
   name: 'chat',
   version: '1.0.0',
   enabled: true,
-  dependencies: [],
+  dependencies: ['auth', 'realtime'],
 };
 
 export default moduleConfig;

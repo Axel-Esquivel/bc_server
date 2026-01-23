@@ -2,7 +2,7 @@
   name: 'pos',
   version: '1.0.0',
   enabled: true,
-  dependencies: [],
+  dependencies: ['inventory', 'workspaces'],
   setupWizard: {
     steps: [
       {

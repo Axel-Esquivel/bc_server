@@ -2,7 +2,7 @@
   name: 'roles',
   version: '1.0.0',
   enabled: true,
-  dependencies: [],
+  dependencies: ['auth'],
   isSystem: true,
   isInstallable: false,
 };
