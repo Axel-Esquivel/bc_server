@@ -106,6 +106,21 @@ export class UsersService implements OnModuleInit {
     return safeUser;
   }
 
+  resolveUsers(ids: string[]): Array<{ id: string; email: string; name?: string }> {
+    if (!ids || ids.length === 0) {
+      return [];
+    }
+    const unique = Array.from(new Set(ids.filter((id) => typeof id === 'string' && id.length > 0)));
+    return unique
+      .map((id) => this.users.find((candidate) => candidate.id === id))
+      .filter((user): user is UserEntity => Boolean(user))
+      .map((user) => ({
+        id: user.id,
+        email: user.email,
+        name: [user.firstName, user.lastName].filter(Boolean).join(' ') || undefined,
+      }));
+  }
+
   setDefaultWorkspace(userId: string, workspaceId: string): SafeUser {
     const user = this.users.find((candidate) => candidate.id === userId);
     if (!user) {

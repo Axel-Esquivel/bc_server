@@ -28,4 +28,8 @@ export class CreateWarehouseDto {
   @IsString()
   @IsNotEmpty()
   companyId!: string;
+
+  @IsString()
+  @IsOptional()
+  branchId?: string;
 }

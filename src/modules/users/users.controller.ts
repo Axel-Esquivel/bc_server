@@ -1,5 +1,6 @@
-import { Body, Controller, Patch, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ResolveUsersDto } from './dto/resolve-users.dto';
 import { SetDefaultWorkspaceDto } from './dto/set-default-workspace.dto';
 import { UsersService } from './users.service';
 
@@ -14,6 +15,16 @@ export class UsersController {
     return {
       message: 'Default workspace updated',
       result: user,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('resolve')
+  resolveUsers(@Body() dto: ResolveUsersDto) {
+    const users = this.usersService.resolveUsers(dto.ids ?? []);
+    return {
+      message: 'Users resolved',
+      result: users,
     };
   }
 }

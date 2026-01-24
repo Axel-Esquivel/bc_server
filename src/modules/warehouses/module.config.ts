@@ -2,7 +2,7 @@
   name: 'warehouses',
   version: '1.0.0',
   enabled: true,
-  dependencies: [],
+  dependencies: ['companies', 'branches', 'auth'],
 };
 
 export default moduleConfig;

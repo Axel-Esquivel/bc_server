@@ -14,7 +14,11 @@ import { DevicesModule } from './modules/devices/devices.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { UsersModule } from './modules/users/users.module';
+import { OrganizationsModule } from './modules/organizations/organizations.module';
+import { CompaniesModule } from './modules/companies/companies.module';
 import { WorkspacesModule } from './modules/workspaces/workspaces.module';
+import { CountriesModule } from './modules/countries/countries.module';
+import { BranchesModule } from './modules/branches/branches.module';
 import { CatalogsModule } from './modules/catalogs/catalogs.module';
 import { WarehousesModule } from './modules/warehouses/warehouses.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -94,9 +98,13 @@ import { ChatModule } from './modules/chat/chat.module';
     ModuleLoaderModule,
     HealthModule,
     UsersModule,
+    OrganizationsModule,
+    CompaniesModule,
     RolesModule,
     PermissionsModule,
     WorkspacesModule,
+    CountriesModule,
+    BranchesModule,
     DevicesModule,
     AuthModule,
     CatalogsModule,

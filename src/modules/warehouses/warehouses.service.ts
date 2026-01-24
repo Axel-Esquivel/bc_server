@@ -1,9 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { ModuleStateService } from '../../core/database/module-state.service';
+import { BranchesService } from '../branches/branches.service';
+import { CompaniesService } from '../companies/companies.service';
+import { CreateCompanyWarehouseDto } from './dto/create-company-warehouse.dto';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
-import { Warehouse } from './entities/warehouse.entity';
+import { Warehouse, WarehouseType } from './entities/warehouse.entity';
 
 export interface WarehouseRecord extends Warehouse {
   id: string;
@@ -19,7 +22,11 @@ export class WarehousesService implements OnModuleInit {
   private readonly stateKey = 'module:warehouses';
   private warehouses: WarehouseRecord[] = [];
 
-  constructor(private readonly moduleState: ModuleStateService) {}
+  constructor(
+    private readonly moduleState: ModuleStateService,
+    private readonly companiesService: CompaniesService,
+    private readonly branchesService: BranchesService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     const state = await this.moduleState.loadState<WarehousesState>(this.stateKey, { warehouses: [] });
@@ -41,6 +48,7 @@ export class WarehousesService implements OnModuleInit {
       allowCountingLock: dto.allowCountingLock ?? true,
       workspaceId: dto.workspaceId,
       companyId: dto.companyId,
+      branchId: dto.branchId ?? 'unknown',
     };
 
     this.warehouses.push(warehouse);
@@ -79,6 +87,7 @@ export class WarehousesService implements OnModuleInit {
       allowCountingLock: dto.allowCountingLock ?? warehouse.allowCountingLock,
       workspaceId: dto.workspaceId ?? warehouse.workspaceId,
       companyId: dto.companyId ?? warehouse.companyId,
+      branchId: dto.branchId ?? warehouse.branchId,
     });
 
     return warehouse;
@@ -93,6 +102,42 @@ export class WarehousesService implements OnModuleInit {
     this.persistState();
   }
 
+  createForCompany(companyId: string, dto: CreateCompanyWarehouseDto): WarehouseRecord {
+    this.companiesService.getCompany(companyId);
+    const branch = this.branchesService.findOne(dto.branchId);
+    if (branch.companyId !== companyId) {
+      throw new BadRequestException('Branch does not belong to the company');
+    }
+
+    const code = dto.code?.trim() || this.generateCode(dto.name);
+    const type: WarehouseType = dto.type ?? WarehouseType.WAREHOUSE;
+
+    const warehouse: WarehouseRecord = {
+      id: uuid(),
+      name: dto.name,
+      code,
+      type,
+      allowNegativeStock: dto.allowNegativeStock ?? false,
+      allowCountingLock: dto.allowCountingLock ?? true,
+      workspaceId: 'company',
+      companyId,
+      branchId: dto.branchId,
+    };
+
+    if (this.warehouses.some((item) => item.code === warehouse.code)) {
+      throw new BadRequestException('Warehouse code already exists');
+    }
+
+    this.warehouses.push(warehouse);
+    this.persistState();
+    return warehouse;
+  }
+
+  listByCompany(companyId: string): WarehouseRecord[] {
+    this.companiesService.getCompany(companyId);
+    return this.warehouses.filter((warehouse) => warehouse.companyId === companyId);
+  }
+
   private persistState() {
     void this.moduleState
       .saveState<WarehousesState>(this.stateKey, { warehouses: this.warehouses })
@@ -100,5 +145,16 @@ export class WarehousesService implements OnModuleInit {
         const message = error instanceof Error ? error.stack ?? error.message : String(error);
         this.logger.error(`Failed to persist warehouses: ${message}`);
       });
+  }
+
+  private generateCode(name: string): string {
+    const base = name
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 8);
+    const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+    return base ? `${base}-${suffix}` : `WH-${suffix}`;
   }
 }

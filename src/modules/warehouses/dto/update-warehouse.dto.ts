@@ -29,4 +29,8 @@ export class UpdateWarehouseDto {
   @IsString()
   @IsOptional()
   companyId?: string;
+
+  @IsString()
+  @IsOptional()
+  branchId?: string;
 }

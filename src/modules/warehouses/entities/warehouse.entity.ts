@@ -29,4 +29,7 @@ export class Warehouse {
 
   @prop({ required: true, index: true })
   companyId!: string;
+
+  @prop({ required: true, index: true })
+  branchId!: string;
 }
