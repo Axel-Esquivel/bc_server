@@ -26,5 +26,7 @@ export interface OrganizationEntity {
   createdBy: string;
   members: OrganizationMember[];
   roles: OrganizationRoleDefinition[];
+  moduleStates?: Record<string, 'inactive' | 'enabled' | 'pendingConfig' | 'configured' | 'ready' | 'error'>;
+  moduleSettings?: Record<string, { configured?: boolean }>;
   createdAt: Date;
 }

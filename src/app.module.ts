@@ -18,6 +18,7 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { CompaniesModule } from './modules/companies/companies.module';
 import { WorkspacesModule } from './modules/workspaces/workspaces.module';
 import { CountriesModule } from './modules/countries/countries.module';
+import { CurrenciesModule } from './modules/currencies/currencies.module';
 import { BranchesModule } from './modules/branches/branches.module';
 import { CatalogsModule } from './modules/catalogs/catalogs.module';
 import { WarehousesModule } from './modules/warehouses/warehouses.module';
@@ -30,6 +31,7 @@ import { AccountingModule } from './modules/accounting/accounting.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -104,6 +106,7 @@ import { ChatModule } from './modules/chat/chat.module';
     PermissionsModule,
     WorkspacesModule,
     CountriesModule,
+    CurrenciesModule,
     BranchesModule,
     DevicesModule,
     AuthModule,
@@ -116,6 +119,7 @@ import { ChatModule } from './modules/chat/chat.module';
     CustomersModule,
     AccountingModule,
     ReportsModule,
+    DashboardModule,
     RealtimeModule,
     ChatModule,
     CoreModule,

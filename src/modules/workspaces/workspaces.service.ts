@@ -94,7 +94,7 @@ export interface WorkspaceEntity {
 export interface WorkspaceCoreSettings {
   countryId?: string;
   baseCurrencyId?: string;
-  currencies: WorkspaceCurrencyDto[];
+  currencyIds: string[];
   companies: WorkspaceCompanyDto[];
   branches: WorkspaceBranchDto[];
   warehouses: WorkspaceWarehouseDto[];
@@ -117,6 +117,7 @@ export class WorkspacesService implements OnModuleInit {
     'roles.manage',
     'modules.enable',
     'modules.configure',
+    'workspaces.configure',
   ];
 
   constructor(
@@ -237,18 +238,11 @@ export class WorkspacesService implements OnModuleInit {
   }
 
   getMemberRole(workspaceId: string, userId?: string): WorkspaceRoleKey | null {
-    if (!userId) {
+    const member = this.getMember(workspaceId, userId);
+    if (!member || member.status !== 'active') {
       return null;
     }
-
-    if (this.compatMode) {
-      this.warnCompat('getMemberRole');
-      return this.companiesService.getMemberRole(workspaceId, userId);
-    }
-
-    const workspace = this.getWorkspace(workspaceId);
-    const member = workspace.members.find((item) => item.userId === userId && item.status === 'active');
-    return member?.roleKey ?? null;
+    return member.roleKey ?? null;
   }
 
   listRoles(workspaceId: string): WorkspaceRoleDefinition[] {
@@ -379,20 +373,16 @@ export class WorkspacesService implements OnModuleInit {
   }
 
   getMemberPermissions(workspaceId: string, userId?: string): string[] {
-    if (!userId) {
+    const member = this.getMember(workspaceId, userId);
+    if (!member || member.status !== 'active') {
       return [];
     }
-
     if (this.compatMode) {
       this.warnCompat('getMemberPermissions');
-      return this.companiesService.getMemberPermissions(workspaceId, userId);
+      return this.companiesService.getMemberPermissions(workspaceId, member.userId);
     }
 
     const workspace = this.getWorkspace(workspaceId);
-    const member = workspace.members.find((item) => item.userId === userId && item.status === 'active');
-    if (!member) {
-      return [];
-    }
     const role = workspace.roles.find((item) => item.key === member.roleKey);
     return role ? [...role.permissions] : [];
   }
@@ -432,6 +422,7 @@ export class WorkspacesService implements OnModuleInit {
       availableModules: this.getAvailableModulesCatalog(),
       enabledModules: workspace.enabledModules ?? [],
       userRole: roleKey,
+      userPermissions: this.getMemberPermissions(workspaceId, userId),
     };
   }
 
@@ -747,10 +738,17 @@ export class WorkspacesService implements OnModuleInit {
 
     const workspace = this.getWorkspace(workspaceId);
     const stored = (workspace.moduleSettings?.core ?? {}) as Partial<WorkspaceCoreSettings>;
+    const storedCurrencies = (stored as any).currencies as WorkspaceCurrencyDto[] | undefined;
+    const currencyIds =
+      stored.currencyIds ??
+      (Array.isArray(storedCurrencies)
+        ? storedCurrencies.map((currency) => currency.id).filter(Boolean) as string[]
+        : []);
+    const baseCurrencyId = stored.baseCurrencyId ?? workspace.baseCurrencyId;
     return {
       countryId: stored.countryId ?? workspace.countryId,
-      baseCurrencyId: stored.baseCurrencyId ?? workspace.baseCurrencyId,
-      currencies: Array.isArray(stored.currencies) ? stored.currencies : [],
+      baseCurrencyId,
+      currencyIds: this.normalizeCurrencyIds(currencyIds, baseCurrencyId),
       companies: Array.isArray(stored.companies) ? stored.companies : [],
       branches: Array.isArray(stored.branches) ? stored.branches : [],
       warehouses: Array.isArray(stored.warehouses) ? stored.warehouses : [],
@@ -760,32 +758,76 @@ export class WorkspacesService implements OnModuleInit {
   updateCoreSettings(workspaceId: string, dto: WorkspaceCoreSettingsDto): WorkspaceCoreSettings {
     if (this.compatMode) {
       this.warnCompat('updateCoreSettings');
+      const baseCurrencyId = dto.baseCurrencyId;
+      const normalizedCompanies = (dto.companies ?? [])
+        .filter((company) => Boolean(company.name))
+        .map((company) => ({
+          id: company.id ?? uuid(),
+          name: company.name!,
+        }));
+      const normalizedBranches = (dto.branches ?? [])
+        .filter((branch) => Boolean(branch.companyId))
+        .map((branch) => ({
+          id: branch.id ?? uuid(),
+          companyId: branch.companyId,
+          name: branch.name!,
+        }));
+      const normalizedWarehouses = (dto.warehouses ?? [])
+        .filter((warehouse) => Boolean(warehouse.branchId))
+        .map((warehouse) => ({
+          id: warehouse.id ?? uuid(),
+          branchId: warehouse.branchId,
+          name: warehouse.name!,
+        }));
+      const currencyIds =
+        dto.currencyIds ??
+        (dto.currencies ?? []).map((currency) => currency.id).filter(Boolean);
       const compatPayload = {
         countryId: dto.countryId,
-        baseCurrencyId: dto.baseCurrencyId,
-        currencies: dto.currencies,
-        companies: dto.companies
-          ?.filter((company) => Boolean(company.name))
-          .map((company) => ({ id: company.id, name: company.name! })),
-        branches: dto.branches
-          ?.filter((branch) => Boolean(branch.name))
-          .map((branch) => ({ id: branch.id, companyId: branch.companyId, name: branch.name! })),
-        warehouses: dto.warehouses
-          ?.filter((warehouse) => Boolean(warehouse.name))
-          .map((warehouse) => ({ id: warehouse.id, branchId: warehouse.branchId, name: warehouse.name! })),
+        baseCurrencyId,
+        currencyIds: this.normalizeCurrencyIds(currencyIds, baseCurrencyId),
+        companies: normalizedCompanies,
+        branches: normalizedBranches,
+        warehouses: normalizedWarehouses,
       };
       return this.companiesService.updateCoreSettings(workspaceId, compatPayload) as WorkspaceCoreSettings;
     }
 
     const workspace = this.getWorkspace(workspaceId);
     const current = this.getCoreSettings(workspaceId);
+    const baseCurrencyId = dto.baseCurrencyId ?? current.baseCurrencyId;
+    const rawCurrencyIds =
+      dto.currencyIds ??
+      (dto.currencies ?? []).map((currency) => currency.id).filter(Boolean) ??
+      current.currencyIds;
+    const currencyIds = this.normalizeCurrencyIds(rawCurrencyIds, baseCurrencyId);
+    const companies = (dto.companies ?? current.companies)
+      .filter((company) => Boolean(company.name))
+      .map((company) => ({
+        id: company.id ?? uuid(),
+        name: company.name!,
+      }));
+    const branches = (dto.branches ?? current.branches)
+      .filter((branch) => Boolean(branch.companyId))
+      .map((branch) => ({
+        id: branch.id ?? uuid(),
+        companyId: branch.companyId,
+        name: branch.name!,
+      }));
+    const warehouses = (dto.warehouses ?? current.warehouses)
+      .filter((warehouse) => Boolean(warehouse.branchId))
+      .map((warehouse) => ({
+        id: warehouse.id ?? uuid(),
+        branchId: warehouse.branchId,
+        name: warehouse.name!,
+      }));
     const next: WorkspaceCoreSettings = {
       countryId: dto.countryId ?? current.countryId,
-      baseCurrencyId: dto.baseCurrencyId ?? current.baseCurrencyId,
-      currencies: dto.currencies ?? current.currencies,
-      companies: dto.companies ?? current.companies,
-      branches: dto.branches ?? current.branches,
-      warehouses: dto.warehouses ?? current.warehouses,
+      baseCurrencyId,
+      currencyIds,
+      companies,
+      branches,
+      warehouses,
     };
 
     this.validateCoreSettings(next);
@@ -1802,6 +1844,20 @@ export class WorkspacesService implements OnModuleInit {
     });
   }
 
+  private normalizeCurrencyIds(
+    rawCurrencyIds: Array<string | undefined> | undefined,
+    baseCurrencyId?: string,
+  ): string[] {
+    const list = Array.isArray(rawCurrencyIds) ? rawCurrencyIds : [];
+    const normalized = list
+      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      .map((item) => item.trim());
+    if (baseCurrencyId && !normalized.includes(baseCurrencyId)) {
+      normalized.push(baseCurrencyId);
+    }
+    return Array.from(new Set(normalized));
+  }
+
   private buildDefaultRoles(): WorkspaceRoleDefinition[] {
     return [
       {
@@ -1824,10 +1880,66 @@ export class WorkspacesService implements OnModuleInit {
   }
 
   private assertPermission(workspaceId: string, userId: string, permission: string): void {
-    const permissions = this.getMemberPermissions(workspaceId, userId);
-    if (!permissions.includes(permission)) {
-      throw new ForbiddenException('Permission denied');
+    const member = this.getMember(workspaceId, userId);
+    if (!member) {
+      throw new ForbiddenException('User is not a member of workspace');
     }
+    if (member.status !== 'active') {
+      this.logger.warn('[workspaces] permission denied: pending approval', {
+        workspaceId,
+        userId,
+        roleKey: member.roleKey,
+        permission,
+      });
+      throw new ForbiddenException('Pending approval');
+    }
+    const permissions = this.getMemberPermissions(workspaceId, userId);
+    if (!this.hasPermission(permissions, permission)) {
+      this.logger.warn('[workspaces] permission denied: missing permission', {
+        workspaceId,
+        userId,
+        roleKey: member.roleKey,
+        permission,
+        permissions,
+      });
+      throw new ForbiddenException(`Missing permission: ${permission}`);
+    }
+  }
+
+  hasPermission(permissions: string[], required: string): boolean {
+    if (permissions.includes('*') || permissions.includes(required)) {
+      return true;
+    }
+    return permissions.some((permission) => {
+      if (!permission.endsWith('.*')) {
+        return false;
+      }
+      const prefix = permission.slice(0, -1);
+      return required.startsWith(prefix);
+    });
+  }
+
+  getMember(workspaceId: string, userId?: string): WorkspaceMember | null {
+    if (!userId) {
+      return null;
+    }
+
+    if (this.compatMode) {
+      this.warnCompat('getMember');
+      const company = this.companiesService.getCompany(workspaceId);
+      const member = company.members?.find((item) => item.userId === userId);
+      if (!member) {
+        return null;
+      }
+      return {
+        userId: member.userId,
+        roleKey: member.roleKey ?? 'member',
+        status: member.status ?? 'active',
+      };
+    }
+
+    const workspace = this.getWorkspace(workspaceId);
+    return workspace.members.find((item) => item.userId === userId) ?? null;
   }
 
   private normalizePermissions(permissions: string[] | undefined): string[] {

@@ -3,7 +3,8 @@ import { IsArray, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class
 
 export class WorkspaceCurrencyDto {
   @IsString()
-  id!: string;
+  @IsOptional()
+  id?: string;
 
   @IsString()
   @IsOptional()
@@ -16,7 +17,8 @@ export class WorkspaceCurrencyDto {
 
 export class WorkspaceCompanyDto {
   @IsString()
-  id!: string;
+  @IsOptional()
+  id?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -25,7 +27,8 @@ export class WorkspaceCompanyDto {
 
 export class WorkspaceBranchDto {
   @IsString()
-  id!: string;
+  @IsOptional()
+  id?: string;
 
   @IsString()
   companyId!: string;
@@ -37,7 +40,8 @@ export class WorkspaceBranchDto {
 
 export class WorkspaceWarehouseDto {
   @IsString()
-  id!: string;
+  @IsOptional()
+  id?: string;
 
   @IsString()
   branchId!: string;
@@ -55,6 +59,11 @@ export class WorkspaceCoreSettingsDto {
   @IsString()
   @IsOptional()
   baseCurrencyId?: string;
+
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  currencyIds?: string[];
 
   @IsArray()
   @IsOptional()

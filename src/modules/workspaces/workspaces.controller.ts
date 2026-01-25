@@ -220,7 +220,8 @@ export class WorkspacesController {
     };
   }
 
-  @UseGuards(JwtAuthGuard, WorkspaceAdminGuard)
+  @UseGuards(JwtAuthGuard, WorkspacePermissionGuard)
+  @WorkspacePermission('workspaces.configure')
   @Patch(':id/modules')
   updateModules(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateWorkspaceModulesDto) {
     if (dto.enabledModules !== undefined) {

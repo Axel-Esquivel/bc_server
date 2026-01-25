@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ModuleLoaderModule } from '../module-loader/module-loader.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { UsersModule } from '../users/users.module';
@@ -8,7 +8,7 @@ import { CompanyMemberGuard } from './guards/company-member.guard';
 import { CompanyPermissionGuard } from './guards/company-permission.guard';
 
 @Module({
-  imports: [UsersModule, OrganizationsModule, ModuleLoaderModule],
+  imports: [UsersModule, forwardRef(() => OrganizationsModule), ModuleLoaderModule],
   controllers: [CompaniesController],
   providers: [CompaniesService, CompanyMemberGuard, CompanyPermissionGuard],
   exports: [CompaniesService, CompanyMemberGuard, CompanyPermissionGuard],

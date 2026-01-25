@@ -19,12 +19,15 @@ export class WorkspaceMemberGuard implements CanActivate {
     }
 
     const userId: string | undefined = request.user?.sub;
-    const roleKey = this.workspacesService.getMemberRole(workspaceId, userId);
-    if (!roleKey) {
+    const member = this.workspacesService.getMember(workspaceId, userId);
+    if (!member) {
       throw new ForbiddenException('User is not a member of workspace');
     }
+    if (member.status !== 'active') {
+      throw new ForbiddenException('Pending approval');
+    }
 
-    request.workspaceRoleKey = roleKey;
+    request.workspaceRoleKey = member.roleKey;
     return true;
   }
 }

@@ -53,14 +53,29 @@ export class CountriesService implements OnModuleInit {
   }
 
   create(dto: CreateCountryDto): CountryEntity {
-    const iso2 = dto.iso2.trim().toUpperCase();
-    const iso3 = dto.iso3.trim().toUpperCase();
-    const nameEs = dto.nameEs.trim();
-    const nameEn = dto.nameEn.trim();
+    const iso2 = (dto.iso2 ?? dto.code ?? '').trim().toUpperCase();
+    if (!iso2 || iso2.length !== 2) {
+      throw new BadRequestException('Country code is required');
+    }
 
-    if (!nameEs || !nameEn) {
+    let iso3 = (dto.iso3 ?? '').trim().toUpperCase();
+    if (!iso3) {
+      iso3 = (dto.code ?? dto.iso2 ?? '').trim().toUpperCase();
+    }
+    if (iso3.length !== 3) {
+      iso3 = `${iso2}X`.slice(0, 3);
+    }
+
+    const fallbackName = dto.name?.trim() ?? '';
+    const nameEs = (dto.nameEs ?? dto.name ?? '').trim();
+    const nameEn = (dto.nameEn ?? dto.name ?? fallbackName).trim();
+
+    if (!nameEs && !nameEn && !fallbackName) {
       throw new BadRequestException('Country name is required');
     }
+
+    const resolvedNameEs = nameEs || nameEn || fallbackName;
+    const resolvedNameEn = nameEn || nameEs || fallbackName;
 
     if (this.countries.some((country) => country.iso2 === iso2 || country.iso3 === iso3)) {
       throw new ConflictException('Country code already exists');
@@ -70,8 +85,8 @@ export class CountriesService implements OnModuleInit {
       id: iso2,
       iso2,
       iso3,
-      nameEs,
-      nameEn,
+      nameEs: resolvedNameEs,
+      nameEn: resolvedNameEn,
       phoneCode: dto.phoneCode?.trim() || undefined,
     };
 
@@ -100,12 +115,30 @@ export class CountriesService implements OnModuleInit {
       }
       country.nameEn = trimmed;
     }
+    if (dto.name !== undefined) {
+      const trimmed = dto.name.trim();
+      if (!trimmed) {
+        throw new BadRequestException('Country name is required');
+      }
+      country.nameEs = trimmed;
+      country.nameEn = trimmed;
+    }
     if (dto.phoneCode !== undefined) {
       country.phoneCode = dto.phoneCode?.trim() || undefined;
     }
 
     this.persistState();
     return country;
+  }
+
+  delete(id: string): { id: string } {
+    const index = this.countries.findIndex((item) => item.id === id || item.iso2 === id);
+    if (index === -1) {
+      throw new NotFoundException('Country not found');
+    }
+    const [removed] = this.countries.splice(index, 1);
+    this.persistState();
+    return { id: removed.id };
   }
 
   private normalizeCountry(raw: any): CountryEntity {

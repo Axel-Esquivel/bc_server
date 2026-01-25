@@ -2,16 +2,24 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
   OnModuleInit,
   UnauthorizedException,
+  forwardRef,
 } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { ModuleStateService } from '../../core/database/module-state.service';
 import { MODULE_CATALOG } from '../../core/constants/modules.catalog';
 import { UsersService } from '../users/users.service';
+import { CompaniesService } from '../companies/companies.service';
+import { BranchesService } from '../branches/branches.service';
+import { WarehousesService } from '../warehouses/warehouses.service';
+import { WarehouseType } from '../warehouses/entities/warehouse.entity';
+import { ModuleLoaderService } from '../module-loader/module-loader.service';
+import { BootstrapOrganizationDto } from './dto/bootstrap-organization.dto';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import {
@@ -53,6 +61,13 @@ export class OrganizationsService implements OnModuleInit {
   constructor(
     private readonly moduleState: ModuleStateService,
     private readonly usersService: UsersService,
+    @Inject(forwardRef(() => CompaniesService))
+    private readonly companiesService: CompaniesService,
+    @Inject(forwardRef(() => BranchesService))
+    private readonly branchesService: BranchesService,
+    @Inject(forwardRef(() => WarehousesService))
+    private readonly warehousesService: WarehousesService,
+    private readonly moduleLoader: ModuleLoaderService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -81,6 +96,8 @@ export class OrganizationsService implements OnModuleInit {
       code: this.generateUniqueCode(),
       ownerUserId,
       createdBy: ownerUserId,
+      moduleStates: {},
+      moduleSettings: {},
       members: [
         {
           userId: ownerUserId,
@@ -99,9 +116,135 @@ export class OrganizationsService implements OnModuleInit {
     return organization;
   }
 
+  createOrganizationBootstrap(dto: BootstrapOrganizationDto, ownerUserId: string): {
+    organization: OrganizationEntity;
+    companies: Array<{ id: string; name: string }>;
+    branches: Array<{ id: string; name: string; companyId: string }>;
+    warehouses: Array<{ id: string; name: string; companyId: string; branchId: string }>;
+  } {
+    if (!ownerUserId) {
+      throw new UnauthorizedException();
+    }
+
+    const organization = this.createOrganization({ name: dto.name }, ownerUserId);
+    const currencyIds = this.normalizeIds(dto.currencyIds);
+    const countryIds = this.normalizeIds(dto.countryIds);
+
+    if (currencyIds.length === 0) {
+      throw new BadRequestException('At least one currency is required');
+    }
+    if (countryIds.length === 0) {
+      throw new BadRequestException('At least one country is required');
+    }
+
+    const createdCompanies: Array<{ id: string; name: string }> = [];
+    const createdBranches: Array<{ id: string; name: string; companyId: string }> = [];
+    const createdWarehouses: Array<{ id: string; name: string; companyId: string; branchId: string }> = [];
+
+    (dto.companies ?? []).forEach((companyPayload) => {
+      if (!countryIds.includes(companyPayload.countryId)) {
+        throw new BadRequestException('Company country is not in selected countries');
+      }
+
+      const baseCurrencyId = (companyPayload.baseCurrencyId ?? currencyIds[0]).trim();
+      if (!baseCurrencyId) {
+        throw new BadRequestException('Company base currency is required');
+      }
+      const companyCurrencyIds = this.normalizeIds(
+        companyPayload.currencyIds?.length ? companyPayload.currencyIds : currencyIds,
+      );
+      if (!companyCurrencyIds.includes(baseCurrencyId)) {
+        companyCurrencyIds.push(baseCurrencyId);
+      }
+
+      const company = this.companiesService.createCompany(organization.id, ownerUserId, {
+        name: companyPayload.name,
+        baseCountryId: companyPayload.countryId,
+        baseCurrencyId,
+        currencies: companyCurrencyIds,
+      });
+      createdCompanies.push({ id: company.id, name: company.name });
+
+      const branchMap = new Map<string, string>();
+      (companyPayload.branches ?? []).forEach((branchPayload) => {
+        const branch = this.branchesService.create(company.id, {
+          name: branchPayload.name,
+          countryId: branchPayload.countryId ?? companyPayload.countryId,
+          type: branchPayload.type ?? 'retail',
+          currencyIds: branchPayload.currencyIds,
+          settings: undefined,
+        });
+        createdBranches.push({ id: branch.id, name: branch.name, companyId: company.id });
+        if (branchPayload.tempKey) {
+          branchMap.set(branchPayload.tempKey, branch.id);
+        }
+      });
+
+      const branchIds = createdBranches.filter((item) => item.companyId === company.id).map((item) => item.id);
+      (companyPayload.warehouses ?? []).forEach((warehousePayload) => {
+        let branchId = warehousePayload.branchId?.trim();
+        if (!branchId && warehousePayload.branchTempKey) {
+          branchId = branchMap.get(warehousePayload.branchTempKey);
+        }
+        if (!branchId) {
+          if (branchIds.length === 1) {
+            branchId = branchIds[0];
+          } else {
+            throw new BadRequestException('Warehouse must reference a branch');
+          }
+        }
+
+        const warehouse = this.warehousesService.createForCompany(company.id, {
+          name: warehousePayload.name,
+          branchId,
+          type: warehousePayload.type ?? WarehouseType.WAREHOUSE,
+        });
+        createdWarehouses.push({
+          id: warehouse.id,
+          name: warehouse.name,
+          companyId: company.id,
+          branchId: warehouse.branchId,
+        });
+      });
+    });
+
+    return {
+      organization,
+      companies: createdCompanies,
+      branches: createdBranches,
+      warehouses: createdWarehouses,
+    };
+  }
+
   listByUser(userId: string): OrganizationEntity[] {
     return this.organizations.filter((org) =>
       org.members.some((member) => member.userId === userId),
+    );
+  }
+
+  listMembershipsByUser(
+    userId: string,
+  ): Array<{ organizationId: string; name: string; code: string; roleKey: string; status: 'pending' | 'active' }> {
+    return this.organizations
+      .map((organization) => {
+        const member = organization.members.find((item) => item.userId === userId);
+        if (!member) {
+          return null;
+        }
+        return {
+          organizationId: organization.id,
+          name: organization.name,
+          code: organization.code,
+          roleKey: member.roleKey,
+          status: member.status,
+        };
+      })
+      .filter((item): item is { organizationId: string; name: string; code: string; roleKey: string; status: 'pending' | 'active' } => Boolean(item));
+  }
+
+  hasActiveMemberships(userId: string): boolean {
+    return this.organizations.some((organization) =>
+      organization.members.some((member) => member.userId === userId && member.status === 'active'),
     );
   }
 
@@ -116,7 +259,7 @@ export class OrganizationsService implements OnModuleInit {
   }
 
   listPermissions(): Array<{ moduleKey: string; permissions: string[] }> {
-    return MODULE_CATALOG.map((entry) => ({
+    const catalog = MODULE_CATALOG.map((entry) => ({
       moduleKey: entry.key,
       permissions: [
         `${entry.key}.read`,
@@ -124,6 +267,7 @@ export class OrganizationsService implements OnModuleInit {
         `${entry.key}.configure`,
       ],
     }));
+    return [...catalog, { moduleKey: 'modules', permissions: ['modules.configure'] }];
   }
 
   getOrganization(organizationId: string): OrganizationEntity {
@@ -133,6 +277,14 @@ export class OrganizationsService implements OnModuleInit {
     }
 
     return organization;
+  }
+
+  findByCode(code: string): OrganizationEntity | null {
+    const normalized = code.trim().toUpperCase();
+    if (!normalized) {
+      return null;
+    }
+    return this.organizations.find((item) => item.code === normalized) ?? null;
   }
 
   async listWorkspaces(organizationId: string): Promise<WorkspaceSnapshot[]> {
@@ -206,6 +358,57 @@ export class OrganizationsService implements OnModuleInit {
 
     this.persistState();
     return organization;
+  }
+
+  getModules(organizationId: string, userId: string): {
+    enabledModules: string[];
+    moduleStates: Record<string, 'inactive' | 'enabled' | 'pendingConfig' | 'configured' | 'ready' | 'error'>;
+  } {
+    const organization = this.getOrganization(organizationId);
+    this.assertPermission(organization, userId, 'modules.configure');
+    const states = this.buildModuleStates(organization);
+    const enabledModules = Object.entries(states)
+      .filter(([, status]) => status !== 'inactive')
+      .map(([key]) => key);
+    return { enabledModules, moduleStates: states };
+  }
+
+  setModules(
+    organizationId: string,
+    userId: string,
+    enabledModules: string[],
+  ): {
+    enabledModules: string[];
+    moduleStates: Record<string, 'inactive' | 'enabled' | 'pendingConfig' | 'configured' | 'ready' | 'error'>;
+  } {
+    const organization = this.getOrganization(organizationId);
+    this.assertPermission(organization, userId, 'modules.configure');
+
+    const dependencyMap = this.getDependencyMap();
+    const toEnable = this.expandDependencies(new Set(this.normalizeIds(enabledModules)), dependencyMap);
+    this.assertGlobalModulesEnabled(Array.from(toEnable));
+
+    const nextStates = this.buildModuleStates(organization);
+    MODULE_CATALOG.forEach((entry) => {
+      const isEnabled = toEnable.has(entry.key);
+      if (!isEnabled) {
+        nextStates[entry.key] = 'inactive';
+        return;
+      }
+      nextStates[entry.key] = entry.requiresConfig ? 'pendingConfig' : 'enabled';
+    });
+
+    organization.moduleStates = nextStates;
+    const moduleSettings = organization.moduleSettings ?? {};
+    toEnable.forEach((moduleKey) => {
+      if (!moduleSettings[moduleKey]) {
+        moduleSettings[moduleKey] = { configured: false };
+      }
+    });
+    organization.moduleSettings = moduleSettings;
+
+    this.persistState();
+    return { enabledModules: Array.from(toEnable), moduleStates: nextStates };
   }
 
   addMember(
@@ -331,6 +534,56 @@ export class OrganizationsService implements OnModuleInit {
     });
     this.persistState();
     return organization;
+  }
+
+  requestJoinByCode(
+    code: string,
+    requesterId: string,
+    roleKey?: OrganizationRole,
+  ): OrganizationEntity {
+    const organization = this.findByCode(code);
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+    return this.requestJoin(organization.id, requesterId, roleKey);
+  }
+
+  requestJoinBySelector(
+    payload: { code?: string; organizationId?: string; email?: string; roleKey?: OrganizationRole },
+    requesterId: string,
+  ): OrganizationEntity {
+    const trimmedCode = payload.code?.trim();
+    const trimmedOrgId = payload.organizationId?.trim();
+    const trimmedEmail = payload.email?.trim().toLowerCase();
+
+    if (trimmedOrgId) {
+      return this.requestJoin(trimmedOrgId, requesterId, payload.roleKey);
+    }
+
+    if (trimmedCode) {
+      return this.requestJoinByCode(trimmedCode, requesterId, payload.roleKey);
+    }
+
+    if (trimmedEmail) {
+      const user = this.usersService.findById(requesterId);
+      if (user.email.toLowerCase() !== trimmedEmail) {
+        throw new BadRequestException('Email does not match requester');
+      }
+
+      const memberships = this.listMembershipsByUser(requesterId);
+      if (memberships.length === 0) {
+        throw new NotFoundException('Organization invitation not found');
+      }
+      if (memberships.length > 1) {
+        throw new BadRequestException('Multiple invitations found, use code instead');
+      }
+
+      const target = memberships[0];
+      const organization = this.getOrganization(target.organizationId);
+      return organization;
+    }
+
+    throw new BadRequestException('Join selector is required');
   }
 
   acceptMember(
@@ -636,6 +889,8 @@ export class OrganizationsService implements OnModuleInit {
       createdBy,
       members,
       roles,
+      moduleStates: raw.moduleStates ?? {},
+      moduleSettings: raw.moduleSettings ?? {},
       createdAt: raw.createdAt ? new Date(raw.createdAt) : new Date(),
     };
   }
@@ -682,6 +937,7 @@ export class OrganizationsService implements OnModuleInit {
       set.add(`${entry.key}.write`);
       set.add(`${entry.key}.configure`);
     });
+    set.add('modules.configure');
     return set;
   }
 
@@ -716,6 +972,22 @@ export class OrganizationsService implements OnModuleInit {
     }
   }
 
+  hasPermissionAnyOrganization(userId: string, permission: string): boolean {
+    return this.organizations.some((organization) => {
+      const member = organization.members.find(
+        (item) => item.userId === userId && item.status === 'active',
+      );
+      if (!member) {
+        return false;
+      }
+      const role = organization.roles.find((item) => item.key === member.roleKey);
+      if (!role) {
+        return false;
+      }
+      return this.hasPermission(role.permissions, permission);
+    });
+  }
+
   private validatePermissions(permissions: string[]): void {
     if (permissions.includes('*')) {
       return;
@@ -734,6 +1006,101 @@ export class OrganizationsService implements OnModuleInit {
     const normalized = permissions
       .map((permission) => permission.trim())
       .filter((permission) => permission.length > 0);
+    return Array.from(new Set(normalized));
+  }
+
+  private hasPermission(permissions: string[], required: string): boolean {
+    if (permissions.includes('*') || permissions.includes(required)) {
+      return true;
+    }
+    return permissions.some((permission) => {
+      if (!permission.endsWith('.*')) {
+        return false;
+      }
+      const prefix = permission.slice(0, -1);
+      return required.startsWith(prefix);
+    });
+  }
+
+  private buildModuleStates(
+    organization: OrganizationEntity,
+  ): Record<string, 'inactive' | 'enabled' | 'pendingConfig' | 'configured' | 'ready' | 'error'> {
+    const states: Record<string, 'inactive' | 'enabled' | 'pendingConfig' | 'configured' | 'ready' | 'error'> = {
+      ...(organization.moduleStates ?? {}),
+    };
+    MODULE_CATALOG.forEach((entry) => {
+      if (!states[entry.key]) {
+        states[entry.key] = 'inactive';
+      }
+    });
+    return states;
+  }
+
+  private getDependencyMap(): Map<string, string[]> {
+    const dependencyMap = new Map<string, string[]>();
+    MODULE_CATALOG.forEach((entry) => {
+      dependencyMap.set(entry.key, Array.isArray(entry.dependencies) ? entry.dependencies : []);
+    });
+    return dependencyMap;
+  }
+
+  private expandDependencies(keys: Set<string>, dependencyMap: Map<string, string[]>): Set<string> {
+    const expanded = new Set<string>();
+    const visiting = new Set<string>();
+
+    const visit = (key: string) => {
+      if (visiting.has(key)) {
+        return;
+      }
+      visiting.add(key);
+      const deps = dependencyMap.get(key) ?? [];
+      deps.forEach((dep) => visit(dep));
+      visiting.delete(key);
+      expanded.add(key);
+    };
+
+    keys.forEach((key) => visit(key));
+    return expanded;
+  }
+
+  private assertGlobalModulesEnabled(moduleKeys: string[]): void {
+    if (moduleKeys.length === 0) {
+      return;
+    }
+
+    const descriptors = new Map(
+      this.moduleLoader.listModules().map((descriptor) => [descriptor.config.name, descriptor]),
+    );
+    const disabled: string[] = [];
+    const missingDeps: string[] = [];
+
+    moduleKeys.forEach((key) => {
+      const descriptor = descriptors.get(key);
+      if (!descriptor || !descriptor.config.enabled) {
+        disabled.push(key);
+        return;
+      }
+      if (descriptor.missingDependencies.length > 0) {
+        missingDeps.push(`${key} (${descriptor.missingDependencies.join(', ')})`);
+      }
+    });
+
+    if (disabled.length > 0) {
+      throw new BadRequestException(`Modules not enabled globally: ${disabled.join(', ')}`);
+    }
+
+    if (missingDeps.length > 0) {
+      throw new BadRequestException(`Modules missing global dependencies: ${missingDeps.join('; ')}`);
+    }
+  }
+
+  private normalizeIds(values: string[] | undefined): string[] {
+    if (!Array.isArray(values)) {
+      return [];
+    }
+    const normalized = values
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter((value) => value.length > 0);
     return Array.from(new Set(normalized));
   }
 

@@ -4,6 +4,7 @@ import { ModuleStateService } from '../../core/database/module-state.service';
 import { UsersService } from '../users/users.service';
 import { DevicesService } from '../devices/devices.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import { OrganizationsService } from '../organizations/organizations.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -28,6 +29,7 @@ export class AuthService implements OnModuleInit {
     private readonly jwtService: JwtService,
     private readonly devicesService: DevicesService,
     private readonly workspacesService: WorkspacesService,
+    private readonly organizationsService: OrganizationsService,
     private readonly moduleState: ModuleStateService,
   ) {}
 
@@ -130,9 +132,13 @@ export class AuthService implements OnModuleInit {
 
   async getProfile(userId: string) {
     const user = this.usersService.findById(userId);
+    const isFirstTime = !this.organizationsService.hasActiveMemberships(userId);
     return {
       message: 'User profile',
-      result: user,
+      result: {
+        user,
+        isFirstTime,
+      },
     };
   }
 

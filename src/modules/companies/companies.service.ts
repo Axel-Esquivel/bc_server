@@ -31,7 +31,7 @@ interface CompaniesState {
 interface CompanyCoreSettings {
   countryId?: string;
   baseCurrencyId?: string;
-  currencies: Array<{ id: string; code?: string; name?: string; symbol?: string }>;
+  currencyIds: string[];
   companies: Array<{ id: string; name: string }>;
   branches: Array<{ id: string; companyId: string; name: string; type?: string }>;
   warehouses: Array<{ id: string; branchId: string; name: string }>;
@@ -48,6 +48,7 @@ export class CompaniesService implements OnModuleInit {
     'roles.manage',
     'modules.enable',
     'modules.configure',
+    'workspaces.configure',
   ];
 
   constructor(
@@ -325,11 +326,18 @@ export class CompaniesService implements OnModuleInit {
 
   getCoreSettings(companyId: string): CompanyCoreSettings {
     const company = this.getCompany(companyId);
-    const stored = (company.moduleSettings?.core ?? {}) as Partial<CompanyCoreSettings>;
+    const stored = (company.moduleSettings?.core ?? {}) as Partial<CompanyCoreSettings> & {
+      currencies?: Array<{ id?: string } | string>;
+    };
+    const storedCurrencyIds =
+      stored.currencyIds ??
+      this.mapLegacyCurrencyIds(stored.currencies) ??
+      [];
+    const currencyIds = this.normalizeCurrencyIds(storedCurrencyIds, stored.baseCurrencyId ?? company.baseCurrencyId);
     return {
       countryId: stored.countryId ?? company.baseCountryId,
       baseCurrencyId: stored.baseCurrencyId ?? company.baseCurrencyId,
-      currencies: Array.isArray(stored.currencies) ? stored.currencies : [],
+      currencyIds,
       companies: Array.isArray(stored.companies) ? stored.companies : [],
       branches: Array.isArray(stored.branches) ? stored.branches : [],
       warehouses: Array.isArray(stored.warehouses) ? stored.warehouses : [],
@@ -339,13 +347,40 @@ export class CompaniesService implements OnModuleInit {
   updateCoreSettings(companyId: string, dto: Partial<CompanyCoreSettings>): CompanyCoreSettings {
     const company = this.getCompany(companyId);
     const current = this.getCoreSettings(companyId);
+    const legacyCurrencyIds = this.mapLegacyCurrencyIds((dto as any).currencies);
+    const baseCurrencyId = dto.baseCurrencyId ?? current.baseCurrencyId;
+    const currencyIds = this.normalizeCurrencyIds(
+      dto.currencyIds ?? legacyCurrencyIds ?? current.currencyIds,
+      baseCurrencyId,
+    );
+    const companies = (dto.companies ?? current.companies)
+      .filter((item) => Boolean(item.name))
+      .map((item) => ({
+        id: item.id ?? uuid(),
+        name: item.name,
+      }));
+    const branches = (dto.branches ?? current.branches)
+      .filter((item) => Boolean(item.companyId))
+      .map((item) => ({
+        id: item.id ?? uuid(),
+        companyId: item.companyId,
+        name: item.name,
+        type: item.type,
+      }));
+    const warehouses = (dto.warehouses ?? current.warehouses)
+      .filter((item) => Boolean(item.branchId))
+      .map((item) => ({
+        id: item.id ?? uuid(),
+        branchId: item.branchId,
+        name: item.name,
+      }));
     const next: CompanyCoreSettings = {
       countryId: dto.countryId ?? current.countryId,
-      baseCurrencyId: dto.baseCurrencyId ?? current.baseCurrencyId,
-      currencies: dto.currencies ?? current.currencies,
-      companies: dto.companies ?? current.companies,
-      branches: dto.branches ?? current.branches,
-      warehouses: dto.warehouses ?? current.warehouses,
+      baseCurrencyId,
+      currencyIds,
+      companies,
+      branches,
+      warehouses,
     };
 
     this.validateCoreSettings(next);
@@ -651,6 +686,30 @@ export class CompaniesService implements OnModuleInit {
         throw new BadRequestException('Warehouse branch not found');
       }
     });
+  }
+
+  private mapLegacyCurrencyIds(
+    payload: Array<{ id?: string } | string> | undefined,
+  ): string[] | null {
+    if (!Array.isArray(payload)) {
+      return null;
+    }
+    const ids = payload
+      .map((item) => (typeof item === 'string' ? item : item?.id))
+      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      .map((item) => item.trim());
+    return ids.length > 0 ? ids : null;
+  }
+
+  private normalizeCurrencyIds(currencyIds: string[] | undefined, baseCurrencyId?: string): string[] {
+    const list = Array.isArray(currencyIds) ? currencyIds : [];
+    const normalized = list
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter((item) => item.length > 0);
+    if (baseCurrencyId && !normalized.includes(baseCurrencyId)) {
+      normalized.push(baseCurrencyId);
+    }
+    return Array.from(new Set(normalized));
   }
 
   private normalizeCurrencies(currencies: string[] | undefined, baseCurrencyId: string): string[] {

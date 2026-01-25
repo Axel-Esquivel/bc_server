@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
+import { SettingsAdminGuard } from '../../core/guards/settings-admin.guard';
+import { OrganizationsModule } from '../organizations/organizations.module';
 import { CountriesController } from './countries.controller';
 import { CountriesService } from './countries.service';
-import { CountriesAdminGuard } from './guards/countries-admin.guard';
 
 @Module({
+  imports: [OrganizationsModule],
   controllers: [CountriesController],
-  providers: [CountriesService, CountriesAdminGuard],
+  providers: [CountriesService, SettingsAdminGuard],
   exports: [CountriesService],
 })
 export class CountriesModule {}

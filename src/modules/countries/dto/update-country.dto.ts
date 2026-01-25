@@ -11,5 +11,9 @@ export class UpdateCountryDto {
 
   @IsString()
   @IsOptional()
+  name?: string;
+
+  @IsString()
+  @IsOptional()
   phoneCode?: string;
 }

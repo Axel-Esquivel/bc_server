@@ -49,6 +49,14 @@ export const MODULE_CATALOG: ModuleCatalogEntry[] = [
     requiresConfig: false,
   },
   {
+    key: 'settings',
+    name: 'Settings',
+    description: 'Global catalogs and configuration',
+    version: '1.0.0',
+    dependencies: [],
+    requiresConfig: false,
+  },
+  {
     key: 'organizations',
     name: 'Organizations',
     description: 'Organization management and membership',

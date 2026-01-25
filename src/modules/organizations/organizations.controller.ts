@@ -1,10 +1,13 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { IsArray, IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { BootstrapOrganizationDto } from './dto/bootstrap-organization.dto';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { AddOrganizationMemberDto } from './dto/add-organization-member.dto';
 import { InviteOrganizationMemberDto } from './dto/invite-organization-member.dto';
 import { JoinOrganizationDto } from './dto/join-organization.dto';
+import { JoinOrganizationRequestDto } from './dto/join-organization-request.dto';
+import { UpdateOrganizationModulesDto } from './dto/update-organization-modules.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { OrganizationPermission } from './decorators/organization-permission.decorator';
 import { OrganizationAdminGuard } from './guards/organization-admin.guard';
@@ -59,12 +62,62 @@ export class OrganizationsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('bootstrap')
+  bootstrap(@Req() req: any, @Body() dto: BootstrapOrganizationDto) {
+    const userId = req.user?.sub ?? req.user?.id ?? req.userId;
+    if (!userId) {
+      throw new UnauthorizedException();
+    }
+    const result = this.organizationsService.createOrganizationBootstrap(dto, userId);
+    return {
+      message: 'Organization bootstrap created',
+      result,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get()
   list(@Req() req: any) {
     const organizations = this.organizationsService.listByUser(req.user.sub);
     return {
       message: 'Organizations loaded',
       result: organizations,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('memberships')
+  listMemberships(@Req() req: any) {
+    const memberships = this.organizationsService.listMembershipsByUser(req.user.sub);
+    return {
+      message: 'Organization memberships loaded',
+      result: memberships,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  getMe(@Req() req: any) {
+    const memberships = this.organizationsService.listMembershipsByUser(req.user.sub);
+    const hasActive = memberships.some((member) => member.status === 'active');
+    const hasPending = memberships.some((member) => member.status === 'pending');
+    return {
+      message: 'Organization membership status loaded',
+      result: {
+        memberships,
+        hasActive,
+        hasPending,
+      },
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('join')
+  requestJoinBySelector(@Req() req: any, @Body() dto: JoinOrganizationRequestDto) {
+    const organization = this.organizationsService.requestJoinBySelector(dto, req.user.sub);
+    return {
+      message: 'Organization join requested',
+      result: organization,
     };
   }
 
@@ -95,6 +148,28 @@ export class OrganizationsController {
     return {
       message: 'Organization permissions loaded',
       result: permissions,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('modules.configure')
+  @Get(':id/modules')
+  getModules(@Req() req: any, @Param('id') id: string) {
+    const result = this.organizationsService.getModules(id, req.user.sub);
+    return {
+      message: 'Organization modules loaded',
+      result,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('modules.configure')
+  @Patch(':id/modules')
+  updateModules(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateOrganizationModulesDto) {
+    const result = this.organizationsService.setModules(id, req.user.sub, dto.enabledModules ?? []);
+    return {
+      message: 'Organization modules updated',
+      result,
     };
   }
 
@@ -171,7 +246,7 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard)
   @Post(':id/join')
-  requestJoin(@Req() req: any, @Param('id') id: string, @Body() dto: JoinOrganizationDto) {
+  requestJoinById(@Req() req: any, @Param('id') id: string, @Body() dto: JoinOrganizationDto) {
     const organization = this.organizationsService.requestJoin(id, req.user.sub, dto.roleKey);
     return {
       message: 'Organization join requested',
