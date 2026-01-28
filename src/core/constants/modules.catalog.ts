@@ -129,6 +129,14 @@ export const MODULE_CATALOG: ModuleCatalogEntry[] = [
     requiresConfig: false,
   },
   {
+    key: 'locations',
+    name: 'Locations',
+    description: 'Branches and warehouses setup',
+    version: '1.0.0',
+    dependencies: ['companies'],
+    requiresConfig: true,
+  },
+  {
     key: 'inventory',
     name: 'Inventory',
     description: 'Stock ledger and projections',

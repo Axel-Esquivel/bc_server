@@ -22,6 +22,7 @@ import { CurrenciesModule } from './modules/currencies/currencies.module';
 import { BranchesModule } from './modules/branches/branches.module';
 import { CatalogsModule } from './modules/catalogs/catalogs.module';
 import { WarehousesModule } from './modules/warehouses/warehouses.module';
+import { LocationsModule } from './modules/locations/locations.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { InventoryCountsModule } from './modules/inventory-counts/inventory-counts.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
@@ -112,6 +113,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     AuthModule,
     CatalogsModule,
     WarehousesModule,
+    LocationsModule,
     InventoryModule,
     InventoryCountsModule,
     PurchasesModule,

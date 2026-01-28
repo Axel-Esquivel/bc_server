@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit, UnauthorizedException, forwardRef } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ModuleStateService } from '../../core/database/module-state.service';
 import { UsersService } from '../users/users.service';
@@ -29,6 +29,7 @@ export class AuthService implements OnModuleInit {
     private readonly jwtService: JwtService,
     private readonly devicesService: DevicesService,
     private readonly workspacesService: WorkspacesService,
+    @Inject(forwardRef(() => OrganizationsService))
     private readonly organizationsService: OrganizationsService,
     private readonly moduleState: ModuleStateService,
   ) {}

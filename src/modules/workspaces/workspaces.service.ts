@@ -34,6 +34,14 @@ import { ModuleLoaderService } from '../module-loader/module-loader.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { CompaniesService } from '../companies/companies.service';
 import {
+  OrganizationCoreSettings,
+  OrganizationCoreSettingsUpdate,
+} from '../../core/types/organization-core-settings.types';
+import {
+  OrganizationStructureSettings,
+  OrganizationStructureSettingsUpdate,
+} from '../../core/types/organization-structure-settings.types';
+import {
   AccountingTax,
   CreateAccountingTaxDto,
   UpdateAccountingTaxDto,
@@ -43,6 +51,7 @@ import {
   CreateAccountingCategoryMappingDto,
   UpdateAccountingCategoryMappingDto,
 } from './dto/accounting-category-mapping.dto';
+import type { CompanyEntity, CompanyModuleStatus } from '../companies/entities/company.entity';
 
 export type WorkspaceRoleKey = string;
 export type WorkspaceMemberStatus = 'active' | 'invited' | 'disabled';
@@ -86,19 +95,14 @@ export interface WorkspaceEntity {
   roles: WorkspaceRoleDefinition[];
   members: WorkspaceMember[];
   enabledModules: WorkspaceModuleState[];
-  moduleSettings: Record<string, any>;
+  moduleSettings: Record<string, unknown>;
   setupCompleted: boolean;
   createdAt: Date;
 }
 
-export interface WorkspaceCoreSettings {
-  countryId?: string;
-  baseCurrencyId?: string;
-  currencyIds: string[];
-  companies: WorkspaceCompanyDto[];
-  branches: WorkspaceBranchDto[];
-  warehouses: WorkspaceWarehouseDto[];
-}
+export interface WorkspaceCoreSettings
+  extends OrganizationCoreSettings,
+    OrganizationStructureSettings {}
 
 interface WorkspacesState {
   workspaces: WorkspaceEntity[];
@@ -354,7 +358,7 @@ export class WorkspacesService implements OnModuleInit {
   ): WorkspaceMember {
     if (this.compatMode) {
       this.warnCompat('updateMemberRole');
-      return this.companiesService.updateMemberRole(workspaceId, userId, targetUserId, roleKey) as any;
+      return this.companiesService.updateMemberRole(workspaceId, userId, targetUserId, roleKey) as WorkspaceMember;
     }
 
     const workspace = this.getWorkspace(workspaceId);
@@ -488,7 +492,10 @@ export class WorkspacesService implements OnModuleInit {
         }
       });
 
-      const states = this.companiesService.setModuleStates(workspaceId, nextStates as any);
+      const states = this.companiesService.setModuleStates(
+        workspaceId,
+        nextStates as Record<string, CompanyModuleStatus>,
+      );
       return Object.keys(states).map((key) => ({
         key,
         enabled: states[key] !== 'inactive',
@@ -629,7 +636,10 @@ export class WorkspacesService implements OnModuleInit {
         }
       });
 
-      const states = this.companiesService.setModuleStates(workspaceId, nextStates as any);
+      const states = this.companiesService.setModuleStates(
+        workspaceId,
+        nextStates as Record<string, CompanyModuleStatus>,
+      );
       return Object.keys(states).map((key) => ({
         key,
         enabled: states[key] !== 'inactive',
@@ -720,7 +730,7 @@ export class WorkspacesService implements OnModuleInit {
     return workspace.enabledModules.filter((module) => module.enabled).map((module) => module.key);
   }
 
-  getModuleSettings(workspaceId: string, moduleId: string): Record<string, any> {
+  getModuleSettings(workspaceId: string, moduleId: string): Record<string, unknown> {
     if (this.compatMode) {
       this.warnCompat('getModuleSettings');
       return this.companiesService.getModuleSettings(workspaceId, moduleId);
@@ -737,21 +747,29 @@ export class WorkspacesService implements OnModuleInit {
     }
 
     const workspace = this.getWorkspace(workspaceId);
-    const stored = (workspace.moduleSettings?.core ?? {}) as Partial<WorkspaceCoreSettings>;
-    const storedCurrencies = (stored as any).currencies as WorkspaceCurrencyDto[] | undefined;
+    const legacy = this.getLegacyCoreSettings(workspace);
+    const organizationCore = this.organizationsService.getLegacyCoreSettings(workspace.organizationId);
+    const organizationStructure = this.organizationsService.getStructureSettings(workspace.organizationId);
+
+    const baseCurrencyId =
+      organizationCore.baseCurrencyId ?? legacy.baseCurrencyId ?? workspace.baseCurrencyId;
     const currencyIds =
-      stored.currencyIds ??
-      (Array.isArray(storedCurrencies)
-        ? storedCurrencies.map((currency) => currency.id).filter(Boolean) as string[]
-        : []);
-    const baseCurrencyId = stored.baseCurrencyId ?? workspace.baseCurrencyId;
+      organizationCore.currencyIds.length > 0
+        ? organizationCore.currencyIds
+        : this.normalizeCurrencyIds(legacy.currencyIds, baseCurrencyId);
+
     return {
-      countryId: stored.countryId ?? workspace.countryId,
+      countryId: organizationCore.countryId ?? legacy.countryId ?? workspace.countryId,
       baseCurrencyId,
-      currencyIds: this.normalizeCurrencyIds(currencyIds, baseCurrencyId),
-      companies: Array.isArray(stored.companies) ? stored.companies : [],
-      branches: Array.isArray(stored.branches) ? stored.branches : [],
-      warehouses: Array.isArray(stored.warehouses) ? stored.warehouses : [],
+      currencyIds,
+      companies:
+        organizationStructure.companies.length > 0 ? organizationStructure.companies : legacy.companies,
+      branches:
+        organizationStructure.branches.length > 0 ? organizationStructure.branches : legacy.branches,
+      warehouses:
+        organizationStructure.warehouses.length > 0
+          ? organizationStructure.warehouses
+          : legacy.warehouses,
     };
   }
 
@@ -795,42 +813,51 @@ export class WorkspacesService implements OnModuleInit {
 
     const workspace = this.getWorkspace(workspaceId);
     const current = this.getCoreSettings(workspaceId);
-    const baseCurrencyId = dto.baseCurrencyId ?? current.baseCurrencyId;
-    const rawCurrencyIds =
-      dto.currencyIds ??
-      (dto.currencies ?? []).map((currency) => currency.id).filter(Boolean) ??
-      current.currencyIds;
-    const currencyIds = this.normalizeCurrencyIds(rawCurrencyIds, baseCurrencyId);
-    const companies = (dto.companies ?? current.companies)
+    const legacyCurrencyIds = (dto.currencies ?? [])
+      .map((currency) => currency.id)
+      .filter((id): id is string => Boolean(id));
+    const coreUpdate: OrganizationCoreSettingsUpdate = {
+      countryId: dto.countryId,
+      baseCurrencyId: dto.baseCurrencyId,
+      currencyIds: dto.currencyIds ?? (legacyCurrencyIds.length > 0 ? legacyCurrencyIds : undefined),
+    };
+    const nextCore = this.organizationsService.updateLegacyCoreSettings(workspace.organizationId, coreUpdate);
+
+    const currentStructure = this.organizationsService.getStructureSettings(workspace.organizationId);
+    const companies = (dto.companies ?? currentStructure.companies)
       .filter((company) => Boolean(company.name))
       .map((company) => ({
         id: company.id ?? uuid(),
-        name: company.name!,
+        name: company.name,
       }));
-    const branches = (dto.branches ?? current.branches)
-      .filter((branch) => Boolean(branch.companyId))
+    const branches = (dto.branches ?? currentStructure.branches)
+      .filter((branch) => Boolean(branch.companyId) && Boolean(branch.name))
       .map((branch) => ({
         id: branch.id ?? uuid(),
         companyId: branch.companyId,
         name: branch.name!,
       }));
-    const warehouses = (dto.warehouses ?? current.warehouses)
-      .filter((warehouse) => Boolean(warehouse.branchId))
+    const warehouses = (dto.warehouses ?? currentStructure.warehouses)
+      .filter((warehouse) => Boolean(warehouse.branchId) && Boolean(warehouse.name))
       .map((warehouse) => ({
         id: warehouse.id ?? uuid(),
         branchId: warehouse.branchId,
         name: warehouse.name!,
       }));
+    const nextStructure = this.organizationsService.updateStructureSettings(
+      workspace.organizationId,
+      {
+        companies,
+        branches,
+        warehouses,
+      },
+    );
+
     const next: WorkspaceCoreSettings = {
-      countryId: dto.countryId ?? current.countryId,
-      baseCurrencyId,
-      currencyIds,
-      companies,
-      branches,
-      warehouses,
+      ...nextCore,
+      ...nextStructure,
     };
 
-    this.validateCoreSettings(next);
     workspace.countryId = next.countryId ?? workspace.countryId;
     workspace.baseCurrencyId = next.baseCurrencyId ?? workspace.baseCurrencyId;
     workspace.moduleSettings = {
@@ -841,7 +868,7 @@ export class WorkspacesService implements OnModuleInit {
     return next;
   }
 
-  updateModuleSettings(workspaceId: string, moduleId: string, updates: Record<string, any>) {
+  updateModuleSettings(workspaceId: string, moduleId: string, updates: Record<string, unknown>) {
     if (this.compatMode) {
       this.warnCompat('updateModuleSettings');
       return this.companiesService.updateModuleSettings(workspaceId, moduleId, updates ?? {});
@@ -958,7 +985,7 @@ export class WorkspacesService implements OnModuleInit {
       stockLevel: dto.stockLevel ?? current.stockLevel,
       allowNegative: dto.allowNegative ?? current.allowNegative,
     };
-    this.moduleSettings.patchSettings(workspace, 'inventory', next);
+    this.moduleSettings.patchSettings(workspace, 'inventory', this.toSettingsRecord(next));
     this.persistState();
     return next;
   }
@@ -967,12 +994,12 @@ export class WorkspacesService implements OnModuleInit {
     if (this.compatMode) {
       this.warnCompat('getAccountingDefaults');
       const settings = this.companiesService.getModuleSettings(workspaceId, 'accounting');
-      return this.normalizeAccountingDefaults(settings?.defaults ?? {});
+      return this.normalizeAccountingDefaults(this.toSettingsRecord(settings?.defaults ?? {}));
     }
 
     const workspace = this.getWorkspace(workspaceId);
     const settings = this.moduleSettings.getSettings(workspace, 'accounting');
-    return this.normalizeAccountingDefaults(settings?.defaults ?? {});
+    return this.normalizeAccountingDefaults(this.toSettingsRecord(settings?.defaults ?? {}));
   }
 
   updateAccountingDefaults(workspaceId: string, dto: UpdateAccountingDefaultsDto): AccountingDefaults {
@@ -1025,7 +1052,11 @@ export class WorkspacesService implements OnModuleInit {
       next.taxReceivableAccountId,
     ]);
 
-    this.moduleSettings.patchSettings(workspace, 'accounting', { defaults: next });
+    this.moduleSettings.patchSettings(
+      workspace,
+      'accounting',
+      this.toSettingsRecord({ defaults: next })
+    );
     this.persistState();
     return next;
   }
@@ -1082,9 +1113,11 @@ export class WorkspacesService implements OnModuleInit {
       isActive: dto.isActive ?? true,
     };
 
-    this.moduleSettings.patchSettings(workspace, 'accounting', {
-      taxes: [...taxes, tax],
-    });
+    this.moduleSettings.patchSettings(
+      workspace,
+      'accounting',
+      this.toSettingsRecord({ taxes: [...taxes, tax] })
+    );
     this.persistState();
     return tax;
   }
@@ -1133,7 +1166,11 @@ export class WorkspacesService implements OnModuleInit {
       isActive: dto.isActive ?? tax.isActive,
     });
 
-    this.moduleSettings.patchSettings(workspace, 'accounting', { taxes });
+    this.moduleSettings.patchSettings(
+      workspace,
+      'accounting',
+      this.toSettingsRecord({ taxes })
+    );
     this.persistState();
     return tax;
   }
@@ -1158,7 +1195,11 @@ export class WorkspacesService implements OnModuleInit {
       throw new NotFoundException('Accounting tax not found');
     }
     taxes.splice(index, 1);
-    this.moduleSettings.patchSettings(workspace, 'accounting', { taxes });
+    this.moduleSettings.patchSettings(
+      workspace,
+      'accounting',
+      this.toSettingsRecord({ taxes })
+    );
     this.persistState();
     return { id: taxId };
   }
@@ -1220,9 +1261,11 @@ export class WorkspacesService implements OnModuleInit {
       inventoryAccountId: dto.inventoryAccountId,
     };
 
-    this.moduleSettings.patchSettings(workspace, 'accounting', {
-      categoryMappings: [...mappings, mapping],
-    });
+    this.moduleSettings.patchSettings(
+      workspace,
+      'accounting',
+      this.toSettingsRecord({ categoryMappings: [...mappings, mapping] })
+    );
     this.persistState();
     return mapping;
   }
@@ -1277,7 +1320,11 @@ export class WorkspacesService implements OnModuleInit {
       inventoryAccountId: dto.inventoryAccountId ?? mapping.inventoryAccountId,
     });
 
-    this.moduleSettings.patchSettings(workspace, 'accounting', { categoryMappings: mappings });
+    this.moduleSettings.patchSettings(
+      workspace,
+      'accounting',
+      this.toSettingsRecord({ categoryMappings: mappings })
+    );
     this.persistState();
     return mapping;
   }
@@ -1302,7 +1349,11 @@ export class WorkspacesService implements OnModuleInit {
       throw new NotFoundException('Accounting category mapping not found');
     }
     mappings.splice(index, 1);
-    this.moduleSettings.patchSettings(workspace, 'accounting', { categoryMappings: mappings });
+    this.moduleSettings.patchSettings(
+      workspace,
+      'accounting',
+      this.toSettingsRecord({ categoryMappings: mappings })
+    );
     this.persistState();
     return { id: mappingId };
   }
@@ -1370,7 +1421,7 @@ export class WorkspacesService implements OnModuleInit {
       terminals: [...settings.terminals, terminal],
     };
 
-    this.moduleSettings.patchSettings(workspace, 'pos', next);
+    this.moduleSettings.patchSettings(workspace, 'pos', this.toSettingsRecord(next));
     this.persistState();
     return terminal;
   }
@@ -1443,7 +1494,7 @@ export class WorkspacesService implements OnModuleInit {
       isActive: dto.isActive ?? terminal.isActive,
     });
 
-    this.moduleSettings.patchSettings(workspace, 'pos', settings);
+    this.moduleSettings.patchSettings(workspace, 'pos', this.toSettingsRecord(settings));
     this.persistState();
     return terminal;
   }
@@ -1480,7 +1531,7 @@ export class WorkspacesService implements OnModuleInit {
       settings.defaults = { ...settings.defaults, terminalId: undefined };
     }
 
-    this.moduleSettings.patchSettings(workspace, 'pos', settings);
+    this.moduleSettings.patchSettings(workspace, 'pos', this.toSettingsRecord(settings));
     this.persistState();
     return { id: terminalId };
   }
@@ -1579,11 +1630,11 @@ export class WorkspacesService implements OnModuleInit {
       .toUpperCase()}`;
   }
 
-  private normalizeWorkspace(raw: any, existing: WorkspaceEntity[]): WorkspaceEntity {
+  private normalizeWorkspace(raw: Partial<WorkspaceEntity>, existing: WorkspaceEntity[]): WorkspaceEntity {
     const roles = Array.isArray(raw.roles)
       ? raw.roles
-          .filter((role: any) => typeof role?.key === 'string')
-          .map((role: any) => ({
+          .filter((role): role is WorkspaceRoleDefinition => Boolean(role?.key))
+          .map((role) => ({
             key: role.key,
             name: typeof role.name === 'string' && role.name.trim() ? role.name.trim() : role.key,
             permissions: this.normalizePermissions(Array.isArray(role.permissions) ? role.permissions : []),
@@ -1609,22 +1660,30 @@ export class WorkspacesService implements OnModuleInit {
     };
 
     const normalizedRoles = ensureBaseRoles(roles);
-
+    type LegacyWorkspaceMember = WorkspaceMember & {
+      role?: 'admin' | 'member';
+      roles?: string[];
+    };
     const members = Array.isArray(raw.members)
-      ? raw.members.map((member: any) => {
+      ? raw.members.map((member) => {
+          const legacyMember = member as LegacyWorkspaceMember;
           const legacyRole =
-            member?.role === 'admin' || member?.role === 'member' ? member.role : undefined;
+            legacyMember.role === 'admin' || legacyMember.role === 'member'
+              ? legacyMember.role
+              : undefined;
           const roleKey =
-            typeof member?.roleKey === 'string'
-              ? member.roleKey
-              : Array.isArray(member?.roles)
-                ? member.roles.includes('admin') || member.roles.includes('owner')
+            typeof legacyMember.roleKey === 'string'
+              ? legacyMember.roleKey
+              : Array.isArray(legacyMember.roles)
+                ? legacyMember.roles.includes('admin') || legacyMember.roles.includes('owner')
                   ? 'admin'
                   : 'member'
                 : legacyRole ?? 'member';
           const status: WorkspaceMemberStatus =
-            member?.status === 'invited' || member?.status === 'disabled' ? member.status : 'active';
-          return { userId: member.userId, roleKey, status };
+            legacyMember.status === 'invited' || legacyMember.status === 'disabled'
+              ? legacyMember.status
+              : 'active';
+          return { userId: legacyMember.userId, roleKey, status };
         })
       : [];
 
@@ -1634,46 +1693,54 @@ export class WorkspacesService implements OnModuleInit {
       roleKey: roleKeys.has(member.roleKey) ? member.roleKey : 'member',
     }));
 
-    const rawModules = Array.isArray(raw.enabledModules)
+    type RawModuleEntry = WorkspaceModuleState | string;
+    type LegacyWorkspaceState = { isInitialized?: boolean; modules?: RawModuleEntry[] };
+    const legacyState = raw as LegacyWorkspaceState;
+    const rawModules: RawModuleEntry[] = Array.isArray(raw.enabledModules)
       ? raw.enabledModules
-      : Array.isArray(raw.modules)
-        ? raw.modules
+      : Array.isArray(legacyState.modules)
+        ? legacyState.modules
         : [];
+    const moduleSettings =
+      typeof raw.moduleSettings === 'object' && raw.moduleSettings !== null
+        ? raw.moduleSettings
+        : {};
+    const isStringModules = rawModules.every((module) => typeof module === 'string');
 
-    const enabledModules =
-      typeof rawModules[0] === 'string'
-        ? rawModules.map((key: string) => {
-            const requiresConfig = this.requiresConfig(key);
-            const configured = requiresConfig ? false : true;
+    const enabledModules = isStringModules
+      ? (rawModules as string[]).map((key) => {
+          const requiresConfig = this.requiresConfig(key);
+          const configured = requiresConfig ? false : true;
+          return {
+            key,
+            enabled: true,
+            configured,
+            status: this.deriveModuleStatus(key, true, configured),
+            enabledAt: undefined,
+            enabledBy: undefined,
+          };
+        })
+      : rawModules
+          .filter((module): module is WorkspaceModuleState => typeof module !== 'string' && Boolean(module?.key))
+          .map((module) => {
+            const requiresConfig = this.requiresConfig(module.key);
+            const storedSettings = moduleSettings[module.key];
+            const configured =
+              typeof module.configured === 'boolean'
+                ? module.configured
+                : requiresConfig
+                  ? Boolean(storedSettings)
+                  : true;
+            const enabled = Boolean(module.enabled);
             return {
-              key,
-              enabled: true,
-              configured,
-              status: this.deriveModuleStatus(key, true, configured),
-              enabledAt: undefined,
-              enabledBy: undefined,
+              key: module.key,
+              enabled,
+              configured: enabled ? configured : false,
+              status: this.deriveModuleStatus(module.key, enabled, enabled ? configured : false),
+              enabledAt: module.enabledAt ? new Date(module.enabledAt) : undefined,
+              enabledBy: module.enabledBy,
             };
-          })
-        : rawModules
-            .filter((module: any) => typeof module?.key === 'string')
-            .map((module: any) => {
-              const requiresConfig = this.requiresConfig(module.key);
-              const configured =
-                typeof module.configured === 'boolean'
-                  ? module.configured
-                  : requiresConfig
-                    ? Boolean(raw.moduleSettings?.[module.key])
-                    : true;
-              const enabled = Boolean(module.enabled);
-              return {
-                key: module.key,
-                enabled,
-                configured: enabled ? configured : false,
-                status: this.deriveModuleStatus(module.key, enabled, enabled ? configured : false),
-                enabledAt: module.enabledAt ? new Date(module.enabledAt) : undefined,
-                enabledBy: module.enabledBy,
-              };
-            });
+          });
     const ownerUserId =
       raw.ownerUserId ||
       normalizedMembers.find((member) => member.roleKey === 'admin')?.userId ||
@@ -1692,7 +1759,7 @@ export class WorkspacesService implements OnModuleInit {
       members: normalizedMembers,
       enabledModules,
       moduleSettings: raw.moduleSettings ?? {},
-      setupCompleted: raw.setupCompleted ?? raw.isInitialized ?? false,
+      setupCompleted: raw.setupCompleted ?? legacyState.isInitialized ?? false,
       createdAt: raw.createdAt ? new Date(raw.createdAt) : new Date(),
     };
   }
@@ -1714,14 +1781,14 @@ export class WorkspacesService implements OnModuleInit {
     this.logger.warn(`Workspaces compat mode active for ${action}. Use /companies instead.`);
   }
 
-  private mapCompanyToWorkspace(company: any): WorkspaceEntity {
+  private mapCompanyToWorkspace(company: CompanyEntity): WorkspaceEntity {
     const ownerUserId =
-      company.members?.find((member: any) => member.roleKey === 'owner')?.userId ??
+      company.members?.find((member) => member.roleKey === 'owner')?.userId ??
       company.members?.[0]?.userId ??
       'unknown';
 
     const roles = Array.isArray(company.roles)
-      ? company.roles.map((role: any) => ({
+      ? company.roles.map((role) => ({
           key: role.key,
           name: role.name,
           permissions: Array.isArray(role.permissions) ? [...role.permissions] : [],
@@ -1729,7 +1796,7 @@ export class WorkspacesService implements OnModuleInit {
       : this.buildDefaultRoles();
 
     const members = Array.isArray(company.members)
-      ? company.members.map((member: any) => ({
+      ? company.members.map((member) => ({
           userId: member.userId,
           roleKey: member.roleKey ?? 'member',
           status: member.status ?? 'active',
@@ -1752,7 +1819,7 @@ export class WorkspacesService implements OnModuleInit {
     return {
       id: company.id,
       name: company.name ?? 'Company',
-      code: company.code ?? company.id,
+      code: company.id,
       organizationId: company.organizationId ?? 'unknown',
       countryId: company.baseCountryId ?? 'unknown',
       baseCurrencyId: company.baseCurrencyId,
@@ -1773,27 +1840,32 @@ export class WorkspacesService implements OnModuleInit {
     return { terminals, defaults };
   }
 
-  private normalizeInventorySettings(payload: Record<string, any>): InventorySettings {
+  private normalizeInventorySettings(payload: Record<string, unknown>): InventorySettings {
+    const costMethod = payload.costMethod;
+    const stockLevel = payload.stockLevel;
     return {
-      costMethod:
-        payload?.costMethod === 'fifo' || payload?.costMethod === 'standard'
-          ? payload.costMethod
-          : 'weighted_avg',
-      stockLevel: payload?.stockLevel === 'location' ? 'location' : 'warehouse',
-      allowNegative: payload?.allowNegative === true,
+      costMethod: costMethod === 'fifo' || costMethod === 'standard' ? costMethod : 'weighted_avg',
+      stockLevel: stockLevel === 'location' ? 'location' : 'warehouse',
+      allowNegative: payload.allowNegative === true,
     };
   }
 
-  private normalizeAccountingDefaults(payload: Record<string, any>): AccountingDefaults {
+  private normalizeAccountingDefaults(payload: Record<string, unknown>): AccountingDefaults {
     return {
-      salesIncomeAccountId: payload?.salesIncomeAccountId,
-      salesDiscountAccountId: payload?.salesDiscountAccountId,
-      inventoryAccountId: payload?.inventoryAccountId,
-      cogsAccountId: payload?.cogsAccountId,
-      purchasesAccountId: payload?.purchasesAccountId,
-      taxPayableAccountId: payload?.taxPayableAccountId,
-      taxReceivableAccountId: payload?.taxReceivableAccountId,
+      salesIncomeAccountId: typeof payload.salesIncomeAccountId === 'string' ? payload.salesIncomeAccountId : undefined,
+      salesDiscountAccountId:
+        typeof payload.salesDiscountAccountId === 'string' ? payload.salesDiscountAccountId : undefined,
+      inventoryAccountId: typeof payload.inventoryAccountId === 'string' ? payload.inventoryAccountId : undefined,
+      cogsAccountId: typeof payload.cogsAccountId === 'string' ? payload.cogsAccountId : undefined,
+      purchasesAccountId: typeof payload.purchasesAccountId === 'string' ? payload.purchasesAccountId : undefined,
+      taxPayableAccountId: typeof payload.taxPayableAccountId === 'string' ? payload.taxPayableAccountId : undefined,
+      taxReceivableAccountId:
+        typeof payload.taxReceivableAccountId === 'string' ? payload.taxReceivableAccountId : undefined,
     };
+  }
+
+  private toSettingsRecord(value: object): Record<string, unknown> {
+    return value as Record<string, unknown>;
   }
 
   private validateAccountIds(workspaceId: string, accountIds: Array<string | undefined>): void {
@@ -1827,23 +1899,6 @@ export class WorkspacesService implements OnModuleInit {
     }
   }
 
-  private validateCoreSettings(settings: WorkspaceCoreSettings): void {
-    const companies = new Set(settings.companies.map((company) => company.id));
-    const branches = new Set(settings.branches.map((branch) => branch.id));
-
-    settings.branches.forEach((branch) => {
-      if (!companies.has(branch.companyId)) {
-        throw new BadRequestException('Branch company not found');
-      }
-    });
-
-    settings.warehouses.forEach((warehouse) => {
-      if (!branches.has(warehouse.branchId)) {
-        throw new BadRequestException('Warehouse branch not found');
-      }
-    });
-  }
-
   private normalizeCurrencyIds(
     rawCurrencyIds: Array<string | undefined> | undefined,
     baseCurrencyId?: string,
@@ -1856,6 +1911,57 @@ export class WorkspacesService implements OnModuleInit {
       normalized.push(baseCurrencyId);
     }
     return Array.from(new Set(normalized));
+  }
+
+  private getLegacyCoreSettings(workspace: WorkspaceEntity): WorkspaceCoreSettings {
+    const rawCore = workspace.moduleSettings?.core;
+    const stored =
+      typeof rawCore === 'object' && rawCore !== null
+        ? (rawCore as Partial<WorkspaceCoreSettings> & {
+            currencies?: WorkspaceCurrencyDto[];
+          })
+        : {};
+    const legacyCurrencies = Array.isArray(stored.currencies) ? stored.currencies : [];
+    const currencyIds =
+      stored.currencyIds ??
+      legacyCurrencies
+        .map((currency) => currency.id)
+        .filter((id): id is string => Boolean(id));
+    const baseCurrencyId = stored.baseCurrencyId ?? workspace.baseCurrencyId;
+    const companies = Array.isArray(stored.companies)
+      ? stored.companies
+          .filter((company) => Boolean(company.name))
+          .map((company) => ({
+            id: company.id ?? uuid(),
+            name: company.name!,
+          }))
+      : [];
+    const branches = Array.isArray(stored.branches)
+      ? stored.branches
+          .filter((branch) => Boolean(branch.companyId))
+          .map((branch) => ({
+            id: branch.id ?? uuid(),
+            companyId: branch.companyId,
+            name: branch.name!,
+          }))
+      : [];
+    const warehouses = Array.isArray(stored.warehouses)
+      ? stored.warehouses
+          .filter((warehouse) => Boolean(warehouse.branchId) && Boolean(warehouse.name))
+          .map((warehouse) => ({
+            id: warehouse.id ?? uuid(),
+            branchId: warehouse.branchId,
+            name: warehouse.name!,
+          }))
+      : [];
+    return {
+      countryId: stored.countryId ?? workspace.countryId,
+      baseCurrencyId,
+      currencyIds: this.normalizeCurrencyIds(currencyIds, baseCurrencyId),
+      companies,
+      branches,
+      warehouses,
+    };
   }
 
   private buildDefaultRoles(): WorkspaceRoleDefinition[] {

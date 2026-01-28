@@ -1,8 +1,10 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CompaniesService } from '../companies/companies.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { MODULE_CATALOG } from '../../core/constants/modules.catalog';
+import { OrganizationModuleStatus } from '../organizations/types/module-state.types';
+import type { AuthenticatedRequest } from '../../core/types/authenticated-request.types';
 
 @Controller('dashboard')
 export class DashboardController {
@@ -14,11 +16,11 @@ export class DashboardController {
   @UseGuards(JwtAuthGuard)
   @Get('overview')
   getOverview(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Query('orgId') orgId?: string,
     @Query('companyId') companyId?: string,
   ) {
-    const userId = req.user?.sub ?? req.user?.id ?? req.userId;
+    const userId = this.getUserId(req);
 
     let organizationId = orgId?.trim();
     if (!organizationId && companyId) {
@@ -64,12 +66,10 @@ export class DashboardController {
 
     const modulesPendingConfig: string[] = [];
     if (canConfigureModules) {
-      const moduleStates = organization.moduleStates ?? {};
-      const moduleSettings = organization.moduleSettings ?? {};
+      const moduleStates = organization.moduleStates;
       MODULE_CATALOG.forEach((entry) => {
-        const status = moduleStates[entry.key] ?? 'inactive';
-        const configuredFlag = moduleSettings[entry.key]?.configured;
-        if (status === 'pendingConfig' || configuredFlag === false) {
+        const status = moduleStates[entry.key]?.status ?? OrganizationModuleStatus.Disabled;
+        if (status === OrganizationModuleStatus.EnabledUnconfigured) {
           modulesPendingConfig.push(entry.key);
         }
       });
@@ -84,5 +84,13 @@ export class DashboardController {
         modulesPendingConfig,
       },
     };
+  }
+
+  private getUserId(req: AuthenticatedRequest): string {
+    const userId = req.user?.sub ?? req.user?.id ?? req.userId;
+    if (!userId) {
+      throw new UnauthorizedException();
+    }
+    return userId;
   }
 }

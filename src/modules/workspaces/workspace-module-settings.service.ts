@@ -12,24 +12,32 @@ export class WorkspaceModuleSettingsService {
     }
   }
 
-  getSettings(workspace: WorkspaceEntity, moduleId: string): Record<string, any> {
+  getSettings(workspace: WorkspaceEntity, moduleId: string): Record<string, unknown> {
     this.validateModuleEnabled(workspace, moduleId);
-    return workspace.moduleSettings?.[moduleId] ?? {};
+    const settings = workspace.moduleSettings?.[moduleId];
+    if (typeof settings === 'object' && settings !== null) {
+      return settings as Record<string, unknown>;
+    }
+    return {};
   }
 
   patchSettings(
     workspace: WorkspaceEntity,
     moduleId: string,
-    partial: Record<string, any>
-  ): Record<string, any> {
+    partial: Record<string, unknown>
+  ): Record<string, unknown> {
     this.validateModuleEnabled(workspace, moduleId);
+    const current =
+      typeof workspace.moduleSettings?.[moduleId] === 'object' && workspace.moduleSettings?.[moduleId] !== null
+        ? (workspace.moduleSettings[moduleId] as Record<string, unknown>)
+        : {};
     workspace.moduleSettings = {
       ...(workspace.moduleSettings ?? {}),
       [moduleId]: {
-        ...(workspace.moduleSettings?.[moduleId] ?? {}),
+        ...current,
         ...(partial ?? {}),
       },
     };
-    return workspace.moduleSettings[moduleId];
+    return workspace.moduleSettings[moduleId] as Record<string, unknown>;
   }
 }

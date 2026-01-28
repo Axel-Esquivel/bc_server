@@ -1,10 +1,12 @@
 import { ModuleConfig } from '../module-loader/module.config';
 
 const moduleConfig: ModuleConfig = {
-  name: 'inventory',
+  name: 'locations',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['warehouses'],
+  dependencies: ['companies'],
+  isSystem: false,
+  isInstallable: true,
 };
 
 export default moduleConfig;

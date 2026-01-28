@@ -23,33 +23,51 @@ import { BootstrapOrganizationDto } from './dto/bootstrap-organization.dto';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import {
+  OrganizationCoreSettings as LegacyOrganizationCoreSettings,
+  OrganizationCoreSettingsUpdate as LegacyOrganizationCoreSettingsUpdate,
+} from '../../core/types/organization-core-settings.types';
+import {
+  OrganizationStructureSettings,
+  OrganizationStructureSettingsUpdate,
+} from '../../core/types/organization-structure-settings.types';
+import {
   OrganizationEntity,
   OrganizationMember,
-  OrganizationRole,
+  OrganizationMemberStatus,
   OrganizationRoleDefinition,
 } from './entities/organization.entity';
+import { OrganizationRoleKey, OWNER_ROLE_KEY } from './types/organization-role.types';
+import {
+  CoreCompany,
+  CoreCompanyInput,
+  CoreCountry,
+  CoreCountryInput,
+  CoreCurrency,
+  CoreCurrencyInput,
+  OrganizationCoreSettings,
+  OrganizationCoreSettingsUpdate,
+} from './types/core-settings.types';
+import { OrganizationWorkspaceSnapshot } from './types/organization-workspace-snapshot.types';
+import {
+  OrganizationModuleKey,
+  OrganizationModuleState,
+  OrganizationModuleStates,
+  OrganizationModuleStatus,
+} from './types/module-state.types';
+import { OrganizationModuleSettingsMap } from './types/module-settings.types';
+import {
+  OrganizationModuleDefinition,
+  OrganizationModuleOverviewItem,
+  OrganizationModulesOverviewResponse,
+} from './types/organization-modules-overview.types';
+import type { ModuleDescriptor } from '../module-loader/module-loader.service';
 
 interface OrganizationsState {
   organizations: OrganizationEntity[];
 }
 
-interface WorkspaceModuleSnapshot {
-  key: string;
-  enabled?: boolean;
-  configured?: boolean;
-  status?: string;
-}
-
-interface WorkspaceSnapshot {
-  id: string;
-  name?: string;
-  organizationId?: string;
-  enabledModules?: WorkspaceModuleSnapshot[];
-  moduleSettings?: Record<string, any>;
-}
-
 interface WorkspacesState {
-  workspaces: WorkspaceSnapshot[];
+  workspaces: OrganizationWorkspaceSnapshot[];
 }
 
 @Injectable()
@@ -96,18 +114,20 @@ export class OrganizationsService implements OnModuleInit {
       code: this.generateUniqueCode(),
       ownerUserId,
       createdBy: ownerUserId,
-      moduleStates: {},
-      moduleSettings: {},
+      moduleStates: this.createModuleStatesMap(),
+      moduleSettings: this.createModuleSettingsMap(),
       members: [
         {
           userId: ownerUserId,
-          roleKey: 'owner',
-          status: 'active',
+          roleKey: OWNER_ROLE_KEY,
+          status: OrganizationMemberStatus.Active,
           invitedAt: now,
           activatedAt: now,
+          createdAt: now,
         },
       ],
-      roles: [{ key: 'owner', name: 'Owner', permissions: ['*'], system: true }],
+      roles: [{ key: OWNER_ROLE_KEY, name: 'Owner', permissions: ['*'], isSystem: true }],
+      coreSettings: this.createDefaultCoreSettings(),
       createdAt: new Date(),
     };
 
@@ -138,6 +158,7 @@ export class OrganizationsService implements OnModuleInit {
     }
 
     const createdCompanies: Array<{ id: string; name: string }> = [];
+    const coreCompanies: CoreCompany[] = [];
     const createdBranches: Array<{ id: string; name: string; companyId: string }> = [];
     const createdWarehouses: Array<{ id: string; name: string; companyId: string; branchId: string }> = [];
 
@@ -164,6 +185,7 @@ export class OrganizationsService implements OnModuleInit {
         currencies: companyCurrencyIds,
       });
       createdCompanies.push({ id: company.id, name: company.name });
+      coreCompanies.push({ id: company.id, name: company.name, countryId: companyPayload.countryId });
 
       const branchMap = new Map<string, string>();
       (companyPayload.branches ?? []).forEach((branchPayload) => {
@@ -208,12 +230,130 @@ export class OrganizationsService implements OnModuleInit {
       });
     });
 
+    organization.coreSettings = this.buildCoreSettingsFromBootstrap(countryIds, currencyIds, coreCompanies);
+    organization.structureSettings = {
+      companies: createdCompanies,
+      branches: createdBranches,
+      warehouses: createdWarehouses,
+    };
+    this.persistState();
+
     return {
       organization,
       companies: createdCompanies,
       branches: createdBranches,
       warehouses: createdWarehouses,
     };
+  }
+
+  getCoreSettings(organizationId: string): OrganizationCoreSettings {
+    const organization = this.getOrganization(organizationId);
+    const normalized = this.normalizeCoreSettings(organization.coreSettings);
+    organization.coreSettings = normalized;
+    return this.cloneCoreSettings(normalized);
+  }
+
+  updateCoreSettings(
+    organizationId: string,
+    update: OrganizationCoreSettingsUpdate,
+  ): OrganizationCoreSettings {
+    const organization = this.getOrganization(organizationId);
+    const current = this.normalizeCoreSettings(organization.coreSettings);
+    const next = this.mergeCoreSettings(current, update);
+    organization.coreSettings = next;
+    this.persistState();
+    return this.cloneCoreSettings(next);
+  }
+
+  addCountry(organizationId: string, payload: CoreCountryInput): CoreCountry {
+    const organization = this.getOrganization(organizationId);
+    const current = this.normalizeCoreSettings(organization.coreSettings);
+    const country = this.buildCoreCountry(payload);
+    this.assertUniqueCountryCode(current.countries, country.code);
+    const next: OrganizationCoreSettings = {
+      ...current,
+      countries: [...current.countries, country],
+    };
+    this.validateCoreSettings(next);
+    organization.coreSettings = next;
+    this.persistState();
+    return country;
+  }
+
+  addCurrency(organizationId: string, payload: CoreCurrencyInput): CoreCurrency {
+    const organization = this.getOrganization(organizationId);
+    const current = this.normalizeCoreSettings(organization.coreSettings);
+    const currency = this.buildCoreCurrency(payload);
+    this.assertUniqueCurrencyCode(current.currencies, currency.code);
+    const next: OrganizationCoreSettings = {
+      ...current,
+      currencies: [...current.currencies, currency],
+    };
+    this.validateCoreSettings(next);
+    organization.coreSettings = next;
+    this.persistState();
+    return currency;
+  }
+
+  addCompany(organizationId: string, payload: CoreCompanyInput): CoreCompany {
+    const organization = this.getOrganization(organizationId);
+    const current = this.normalizeCoreSettings(organization.coreSettings);
+    const company = this.buildCoreCompany(payload);
+    this.assertCountryExists(current.countries, company.countryId);
+    this.assertUniqueCompanyName(current.companies, company.name);
+    const next: OrganizationCoreSettings = {
+      ...current,
+      companies: [...current.companies, company],
+    };
+    this.validateCoreSettings(next);
+    organization.coreSettings = next;
+    this.persistState();
+    return company;
+  }
+
+  getLegacyCoreSettings(organizationId: string): LegacyOrganizationCoreSettings {
+    const coreSettings = this.getCoreSettings(organizationId);
+    return this.toLegacyCoreSettings(coreSettings);
+  }
+
+  updateLegacyCoreSettings(
+    organizationId: string,
+    update: LegacyOrganizationCoreSettingsUpdate,
+  ): LegacyOrganizationCoreSettings {
+    const organization = this.getOrganization(organizationId);
+    const current = this.normalizeCoreSettings(organization.coreSettings);
+    const next = this.applyLegacyCoreSettingsUpdate(current, update);
+    organization.coreSettings = next;
+    this.persistState();
+    return this.toLegacyCoreSettings(next);
+  }
+
+  getStructureSettings(organizationId: string): OrganizationStructureSettings {
+    const organization = this.getOrganization(organizationId);
+    const stored = organization.structureSettings;
+    return {
+      companies: Array.isArray(stored?.companies) ? stored.companies : [],
+      branches: Array.isArray(stored?.branches) ? stored.branches : [],
+      warehouses: Array.isArray(stored?.warehouses) ? stored.warehouses : [],
+    };
+  }
+
+  updateStructureSettings(
+    organizationId: string,
+    update: OrganizationStructureSettingsUpdate,
+  ): OrganizationStructureSettings {
+    const organization = this.getOrganization(organizationId);
+    const current = this.getStructureSettings(organizationId);
+    const next: OrganizationStructureSettings = {
+      companies: update.companies ?? current.companies,
+      branches: update.branches ?? current.branches,
+      warehouses: update.warehouses ?? current.warehouses,
+    };
+
+    this.validateStructureSettings(next);
+    organization.structureSettings = next;
+    this.persistState();
+    return next;
   }
 
   listByUser(userId: string): OrganizationEntity[] {
@@ -224,7 +364,7 @@ export class OrganizationsService implements OnModuleInit {
 
   listMembershipsByUser(
     userId: string,
-  ): Array<{ organizationId: string; name: string; code: string; roleKey: string; status: 'pending' | 'active' }> {
+  ): Array<{ organizationId: string; name: string; code: string; roleKey: string; status: OrganizationMemberStatus }> {
     return this.organizations
       .map((organization) => {
         const member = organization.members.find((item) => item.userId === userId);
@@ -239,12 +379,12 @@ export class OrganizationsService implements OnModuleInit {
           status: member.status,
         };
       })
-      .filter((item): item is { organizationId: string; name: string; code: string; roleKey: string; status: 'pending' | 'active' } => Boolean(item));
+      .filter((item): item is { organizationId: string; name: string; code: string; roleKey: string; status: OrganizationMemberStatus } => Boolean(item));
   }
 
   hasActiveMemberships(userId: string): boolean {
     return this.organizations.some((organization) =>
-      organization.members.some((member) => member.userId === userId && member.status === 'active'),
+      organization.members.some((member) => member.userId === userId && member.status === OrganizationMemberStatus.Active),
     );
   }
 
@@ -254,7 +394,7 @@ export class OrganizationsService implements OnModuleInit {
       key: role.key,
       name: role.name,
       permissions: [...role.permissions],
-      system: role.system,
+      isSystem: role.isSystem,
     }));
   }
 
@@ -287,7 +427,7 @@ export class OrganizationsService implements OnModuleInit {
     return this.organizations.find((item) => item.code === normalized) ?? null;
   }
 
-  async listWorkspaces(organizationId: string): Promise<WorkspaceSnapshot[]> {
+  async listWorkspaces(organizationId: string): Promise<OrganizationWorkspaceSnapshot[]> {
     this.getOrganization(organizationId);
     const state = await this.moduleState.loadState<WorkspacesState>('module:workspaces', {
       workspaces: [],
@@ -307,20 +447,12 @@ export class OrganizationsService implements OnModuleInit {
     }>;
   }> {
     const workspaces = await this.listWorkspaces(organizationId);
-    let totalCompanies = 0;
-    let totalBranches = 0;
-    let totalWarehouses = 0;
+    const structure = this.getStructureSettings(organizationId);
+    const totalCompanies = structure.companies.length;
+    const totalBranches = structure.branches.length;
+    const totalWarehouses = structure.warehouses.length;
 
     const workspaceSummaries = workspaces.map((workspace) => {
-      const core = workspace.moduleSettings?.core ?? {};
-      const companies = Array.isArray(core.companies) ? core.companies.length : 0;
-      const branches = Array.isArray(core.branches) ? core.branches.length : 0;
-      const warehouses = Array.isArray(core.warehouses) ? core.warehouses.length : 0;
-
-      totalCompanies += companies;
-      totalBranches += branches;
-      totalWarehouses += warehouses;
-
       const activeModules = (workspace.enabledModules ?? [])
         .filter((module) => module.enabled)
         .map((module) => ({
@@ -360,61 +492,84 @@ export class OrganizationsService implements OnModuleInit {
     return organization;
   }
 
-  getModules(organizationId: string, userId: string): {
-    enabledModules: string[];
-    moduleStates: Record<string, 'inactive' | 'enabled' | 'pendingConfig' | 'configured' | 'ready' | 'error'>;
-  } {
+  async getModulesOverview(organizationId: string): Promise<OrganizationModulesOverviewResponse> {
     const organization = this.getOrganization(organizationId);
-    this.assertPermission(organization, userId, 'modules.configure');
-    const states = this.buildModuleStates(organization);
-    const enabledModules = Object.entries(states)
-      .filter(([, status]) => status !== 'inactive')
-      .map(([key]) => key);
-    return { enabledModules, moduleStates: states };
+    const descriptors = this.moduleLoader.listModules();
+    const states = this.cloneModuleStates(organization.moduleStates);
+    const modules = this.buildModuleOverviewItems(states, descriptors);
+    return this.buildModulesOverviewResponse(modules);
   }
 
-  setModules(
+  async enableModules(
     organizationId: string,
+    moduleKeys: string[],
     userId: string,
-    enabledModules: string[],
-  ): {
-    enabledModules: string[];
-    moduleStates: Record<string, 'inactive' | 'enabled' | 'pendingConfig' | 'configured' | 'ready' | 'error'>;
-  } {
+  ): Promise<OrganizationModulesOverviewResponse> {
     const organization = this.getOrganization(organizationId);
     this.assertPermission(organization, userId, 'modules.configure');
 
-    const dependencyMap = this.getDependencyMap();
-    const toEnable = this.expandDependencies(new Set(this.normalizeIds(enabledModules)), dependencyMap);
-    this.assertGlobalModulesEnabled(Array.from(toEnable));
+    const normalizedKeys = this.normalizeIds(moduleKeys);
+    const descriptors = this.moduleLoader.listModules();
+    const descriptorMap = this.getModuleDescriptorMap(descriptors);
+    this.assertModuleKeysExist(descriptorMap, normalizedKeys);
 
-    const nextStates = this.buildModuleStates(organization);
-    MODULE_CATALOG.forEach((entry) => {
-      const isEnabled = toEnable.has(entry.key);
-      if (!isEnabled) {
-        nextStates[entry.key] = 'inactive';
+    const dependencyMap = this.getModuleDependencyMap(descriptors);
+    const expandedKeys = this.expandDependencies(new Set(normalizedKeys), dependencyMap);
+    this.assertGlobalModulesEnabled(descriptorMap, Array.from(expandedKeys));
+
+    const nextStates: OrganizationModuleStates = this.createModuleStatesMap();
+    descriptors.forEach((descriptor) => {
+      const key = descriptor.config.name;
+      const existing = this.ensureModuleState(organization.moduleStates, key);
+      if (!expandedKeys.has(key)) {
+        nextStates[key] = this.createModuleState(OrganizationModuleStatus.Disabled);
         return;
       }
-      nextStates[entry.key] = entry.requiresConfig ? 'pendingConfig' : 'enabled';
+      const status =
+        existing.status === OrganizationModuleStatus.Configured
+          ? OrganizationModuleStatus.Configured
+          : OrganizationModuleStatus.EnabledUnconfigured;
+      nextStates[key] = this.createModuleState(status, existing.configuredAt, existing.configuredBy);
     });
 
     organization.moduleStates = nextStates;
-    const moduleSettings = organization.moduleSettings ?? {};
-    toEnable.forEach((moduleKey) => {
-      if (!moduleSettings[moduleKey]) {
-        moduleSettings[moduleKey] = { configured: false };
-      }
-    });
-    organization.moduleSettings = moduleSettings;
-
+    if (!organization.moduleSettings) {
+      organization.moduleSettings = this.createModuleSettingsMap();
+    }
     this.persistState();
-    return { enabledModules: Array.from(toEnable), moduleStates: nextStates };
+
+    const modules = this.buildModuleOverviewItems(organization.moduleStates, descriptors);
+    return this.buildModulesOverviewResponse(modules);
+  }
+
+  async markModuleConfigured(
+    organizationId: string,
+    moduleKey: string,
+    userId: string,
+  ): Promise<OrganizationModuleState> {
+    const organization = this.getOrganization(organizationId);
+    this.assertPermission(organization, userId, 'modules.configure');
+
+    const descriptors = this.moduleLoader.listModules();
+    const descriptorMap = this.getModuleDescriptorMap(descriptors);
+    this.assertModuleKeysExist(descriptorMap, [moduleKey]);
+
+    const existing = this.ensureModuleState(organization.moduleStates, moduleKey);
+    if (existing.status === OrganizationModuleStatus.Disabled) {
+      throw new BadRequestException('Module is disabled');
+    }
+
+    const configuredAt = new Date().toISOString();
+    const nextState = this.createModuleState(OrganizationModuleStatus.Configured, configuredAt, userId);
+    organization.moduleStates[moduleKey] = nextState;
+    this.persistState();
+    return nextState;
   }
 
   addMember(
     organizationId: string,
     requesterId: string,
-    member: { userId: string; role: OrganizationRole },
+    member: { userId: string; role: OrganizationRoleKey },
   ): OrganizationEntity {
     const organization = this.getOrganization(organizationId);
     this.assertRoleForMemberChange(organization, requesterId, member.role, null);
@@ -423,29 +578,35 @@ export class OrganizationsService implements OnModuleInit {
 
     const existing = organization.members.find((item) => item.userId === member.userId);
     if (existing) {
-      if (existing.status === 'active') {
+      if (existing.status === OrganizationMemberStatus.Active) {
         throw new ConflictException('Organization member already exists');
       }
-      if (existing.roleKey === 'owner') {
-        throw new ForbiddenException('Owner role cannot be changed');
-      }
-      existing.status = 'active';
+        if (existing.roleKey === OWNER_ROLE_KEY) {
+          throw new ForbiddenException('Owner role cannot be changed');
+        }
+      const invitedAt = new Date();
+      existing.status = OrganizationMemberStatus.Active;
       existing.invitedBy = requesterId;
-      existing.invitedAt = new Date();
-      existing.activatedAt = new Date();
+      existing.invitedAt = invitedAt;
+      existing.activatedAt = invitedAt;
+      existing.createdAt = existing.createdAt ?? invitedAt;
       existing.requestedBy = existing.requestedBy ?? member.userId;
       existing.requestedAt = existing.requestedAt ?? existing.invitedAt;
       this.persistState();
       return organization;
     }
 
+    const invitedAt = new Date();
+    const user = this.usersService.findById(member.userId);
     organization.members.push({
       userId: member.userId,
+      email: user?.email?.toLowerCase(),
       roleKey: member.role,
-      status: 'active',
+      status: OrganizationMemberStatus.Active,
       invitedBy: requesterId,
-      invitedAt: new Date(),
-      activatedAt: new Date(),
+      invitedAt,
+      activatedAt: invitedAt,
+      createdAt: invitedAt,
     });
     this.persistState();
     return organization;
@@ -455,7 +616,7 @@ export class OrganizationsService implements OnModuleInit {
     organizationId: string,
     requesterId: string,
     email: string,
-    role: OrganizationRole,
+    role: OrganizationRoleKey,
   ): OrganizationEntity {
     const organization = this.getOrganization(organizationId);
     this.assertRoleForMemberChange(organization, requesterId, role, null);
@@ -469,27 +630,33 @@ export class OrganizationsService implements OnModuleInit {
 
     const existing = organization.members.find((item) => item.userId === user.id);
     if (existing) {
-      if (existing.status === 'active') {
+      if (existing.status === OrganizationMemberStatus.Active) {
         throw new ConflictException('User already member');
       }
-      if (existing.roleKey === 'owner') {
-        throw new ForbiddenException('Owner role cannot be changed');
-      }
-      existing.status = 'active';
+        if (existing.roleKey === OWNER_ROLE_KEY) {
+          throw new ForbiddenException('Owner role cannot be changed');
+        }
+      const invitedAt = new Date();
+      existing.status = OrganizationMemberStatus.Active;
       existing.invitedBy = requesterId;
-      existing.invitedAt = new Date();
-      existing.activatedAt = new Date();
+      existing.invitedAt = invitedAt;
+      existing.activatedAt = invitedAt;
+      existing.email = existing.email ?? user.email?.toLowerCase();
+      existing.createdAt = existing.createdAt ?? invitedAt;
       this.persistState();
       return organization;
     }
 
+    const invitedAt = new Date();
     organization.members.push({
       userId: user.id,
+      email: user.email?.toLowerCase(),
       roleKey: role,
-      status: 'active',
+      status: OrganizationMemberStatus.Active,
       invitedBy: requesterId,
-      invitedAt: new Date(),
-      activatedAt: new Date(),
+      invitedAt,
+      activatedAt: invitedAt,
+      createdAt: invitedAt,
     });
     this.persistState();
     return organization;
@@ -498,7 +665,7 @@ export class OrganizationsService implements OnModuleInit {
   requestJoin(
     organizationId: string,
     requesterId: string,
-    roleKey?: OrganizationRole,
+    roleKey?: OrganizationRoleKey,
   ): OrganizationEntity {
     const organization = this.getOrganization(organizationId);
     const fallbackRole = organization.roles[0]?.key;
@@ -513,7 +680,14 @@ export class OrganizationsService implements OnModuleInit {
 
     const existing = organization.members.find((item) => item.userId === requesterId);
     if (existing) {
-      if (existing.status === 'active') {
+      if (!existing.email) {
+        const requester = this.usersService.findById(requesterId);
+        existing.email = requester?.email?.toLowerCase();
+      }
+      if (!existing.createdAt) {
+        existing.createdAt = new Date();
+      }
+      if (existing.status === OrganizationMemberStatus.Active) {
         return organization;
       }
       if (existing.requestedBy) {
@@ -525,12 +699,16 @@ export class OrganizationsService implements OnModuleInit {
       return organization;
     }
 
+    const requestedAt = new Date();
+    const requester = this.usersService.findById(requesterId);
     organization.members.push({
       userId: requesterId,
+      email: requester?.email?.toLowerCase(),
       roleKey: targetRole,
-      status: 'pending',
+      status: OrganizationMemberStatus.Pending,
       requestedBy: requesterId,
-      requestedAt: new Date(),
+      requestedAt,
+      createdAt: requestedAt,
     });
     this.persistState();
     return organization;
@@ -539,7 +717,7 @@ export class OrganizationsService implements OnModuleInit {
   requestJoinByCode(
     code: string,
     requesterId: string,
-    roleKey?: OrganizationRole,
+    roleKey?: OrganizationRoleKey,
   ): OrganizationEntity {
     const organization = this.findByCode(code);
     if (!organization) {
@@ -549,7 +727,7 @@ export class OrganizationsService implements OnModuleInit {
   }
 
   requestJoinBySelector(
-    payload: { code?: string; organizationId?: string; email?: string; roleKey?: OrganizationRole },
+    payload: { code?: string; organizationId?: string; email?: string; roleKey?: OrganizationRoleKey },
     requesterId: string,
   ): OrganizationEntity {
     const trimmedCode = payload.code?.trim();
@@ -586,6 +764,29 @@ export class OrganizationsService implements OnModuleInit {
     throw new BadRequestException('Join selector is required');
   }
 
+  requestJoinByEmail(
+    payload: { email: string; orgCode?: string },
+    requesterId: string,
+  ): OrganizationEntity {
+    const normalizedEmail = payload.email.trim().toLowerCase();
+    const orgCode = payload.orgCode?.trim();
+    if (!orgCode) {
+      throw new BadRequestException('Organization code is required');
+    }
+
+    const requester = this.usersService.findById(requesterId);
+    if (requester.email.toLowerCase() !== normalizedEmail) {
+      throw new BadRequestException('Email does not match requester');
+    }
+
+    const organization = this.findByCode(orgCode);
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+
+    return this.requestJoin(organization.id, requesterId);
+  }
+
   acceptMember(
     organizationId: string,
     requesterId: string,
@@ -603,12 +804,13 @@ export class OrganizationsService implements OnModuleInit {
       throw new BadRequestException('Member was not requested');
     }
 
-    if (member.status !== 'pending') {
+    if (member.status !== OrganizationMemberStatus.Pending) {
       throw new BadRequestException('Member is not pending');
     }
 
-    member.status = 'active';
+    member.status = OrganizationMemberStatus.Active;
     member.activatedAt = new Date();
+    member.createdAt = member.createdAt ?? member.activatedAt ?? new Date();
     this.persistState();
     return organization;
   }
@@ -630,11 +832,11 @@ export class OrganizationsService implements OnModuleInit {
     if (!member.requestedBy) {
       throw new BadRequestException('Member was not requested');
     }
-    if (member.status !== 'pending') {
+    if (member.status !== OrganizationMemberStatus.Pending) {
       throw new BadRequestException('Member is not pending');
     }
-    if (member.roleKey === 'owner') {
-      const ownerCount = organization.members.filter((item) => item.roleKey === 'owner').length;
+    if (member.roleKey === OWNER_ROLE_KEY) {
+      const ownerCount = organization.members.filter((item) => item.roleKey === OWNER_ROLE_KEY).length;
       if (ownerCount <= 1) {
         throw new BadRequestException('At least one owner is required');
       }
@@ -649,14 +851,14 @@ export class OrganizationsService implements OnModuleInit {
     organizationId: string,
     requesterId: string,
     targetUserId: string,
-    nextRole: OrganizationRole,
+    nextRole: OrganizationRoleKey,
   ): OrganizationEntity {
     const organization = this.getOrganization(organizationId);
     const member = organization.members.find((item) => item.userId === targetUserId);
     if (!member) {
       throw new NotFoundException('Organization member not found');
     }
-    if (member.roleKey === 'owner' && nextRole !== 'owner') {
+    if (member.roleKey === OWNER_ROLE_KEY && nextRole !== OWNER_ROLE_KEY) {
       throw new ForbiddenException('Owner role cannot be changed');
     }
 
@@ -682,7 +884,7 @@ export class OrganizationsService implements OnModuleInit {
     }
 
     const member = organization.members[index];
-    if (member.roleKey === 'owner') {
+    if (member.roleKey === OWNER_ROLE_KEY) {
       throw new ForbiddenException('Owner role cannot be removed');
     }
 
@@ -703,7 +905,7 @@ export class OrganizationsService implements OnModuleInit {
     if (!key) {
       throw new BadRequestException('Role key is required');
     }
-    if (key === 'owner') {
+    if (key === OWNER_ROLE_KEY) {
       throw new BadRequestException('Owner role is reserved');
     }
     if (organization.roles.some((role) => role.key === key)) {
@@ -717,7 +919,7 @@ export class OrganizationsService implements OnModuleInit {
       key,
       name: payload.name.trim(),
       permissions,
-      system: false,
+      isSystem: false,
     });
     this.persistState();
     return this.listRoles(organizationId);
@@ -736,7 +938,7 @@ export class OrganizationsService implements OnModuleInit {
     if (!role) {
       throw new NotFoundException('Role not found');
     }
-    if (role.key === 'owner') {
+    if (role.key === OWNER_ROLE_KEY) {
       throw new BadRequestException('Owner role is fixed');
     }
 
@@ -757,7 +959,7 @@ export class OrganizationsService implements OnModuleInit {
     const organization = this.getOrganization(organizationId);
     this.assertOwner(organization, requesterId);
 
-    if (roleKey === 'owner') {
+    if (roleKey === OWNER_ROLE_KEY) {
       throw new BadRequestException('Owner role cannot be removed');
     }
     const assigned = organization.members.some((member) => member.roleKey === roleKey);
@@ -783,25 +985,31 @@ export class OrganizationsService implements OnModuleInit {
     return organization.members.find((item) => item.userId === userId) ?? null;
   }
 
-  getMemberRole(organizationId: string, userId?: string): OrganizationRole | null {
+  getMemberRole(organizationId: string, userId?: string): OrganizationRoleKey | null {
     const member = this.getMember(organizationId, userId);
-    if (!member || member.status !== 'active') {
+    if (!member || member.status !== OrganizationMemberStatus.Active) {
       return null;
     }
     return member.roleKey ?? null;
   }
 
+  getModuleState(organizationId: string, moduleKey: OrganizationModuleKey): OrganizationModuleState {
+    const organization = this.getOrganization(organizationId);
+    const state = this.ensureModuleState(organization.moduleStates, moduleKey);
+    return { ...state };
+  }
+
   private assertRoleForMemberChange(
     organization: OrganizationEntity,
     requesterId: string,
-    desiredRole: OrganizationRole | null,
-    currentRole: OrganizationRole | null,
+    desiredRole: OrganizationRoleKey | null,
+    currentRole: OrganizationRoleKey | null,
     targetUserId?: string,
   ): void {
     this.assertPermission(organization, requesterId, 'users.write');
 
-    if (currentRole === 'owner' && desiredRole !== 'owner') {
-      const ownerCount = organization.members.filter((member) => member.roleKey === 'owner').length;
+    if (currentRole === OWNER_ROLE_KEY && desiredRole !== OWNER_ROLE_KEY) {
+      const ownerCount = organization.members.filter((member) => member.roleKey === OWNER_ROLE_KEY).length;
       if (ownerCount <= 1 && targetUserId) {
         throw new BadRequestException('At least one owner is required');
       }
@@ -828,43 +1036,61 @@ export class OrganizationsService implements OnModuleInit {
     return `${uuid().slice(0, 4).toUpperCase()}-${uuid().slice(9, 13).toUpperCase()}`;
   }
 
-  private normalizeOrganization(raw: any, existing: OrganizationEntity[]): OrganizationEntity {
-    const baseDate = raw?.createdAt ? new Date(raw.createdAt) : new Date();
-    const members = Array.isArray(raw.members)
-      ? raw.members.map((member: any) => {
-          const role: OrganizationRole =
-            typeof member?.roleKey === 'string' && member.roleKey.trim()
-              ? member.roleKey.trim()
-              : typeof member?.role === 'string' && member.role.trim()
-                ? member.role.trim()
-                : 'member';
-          const status = member?.status === 'pending' ? 'pending' : 'active';
-          const invitedAt = member?.invitedAt ? new Date(member.invitedAt) : undefined;
-          const requestedAt = member?.requestedAt ? new Date(member.requestedAt) : undefined;
-          const activatedAt =
-            member?.activatedAt
-              ? new Date(member.activatedAt)
-              : member?.acceptedAt
-                ? new Date(member.acceptedAt)
-                : status === 'active'
-                  ? invitedAt ?? requestedAt ?? baseDate
-                  : undefined;
-          return {
-            userId: member.userId,
-            roleKey: role,
-            status,
-            invitedBy: typeof member?.invitedBy === 'string' ? member.invitedBy : undefined,
-            requestedBy: typeof member?.requestedBy === 'string' ? member.requestedBy : undefined,
-            invitedAt,
-            requestedAt,
-            activatedAt,
-          };
-        })
-      : [];
+  private normalizeOrganization(
+    raw: Partial<OrganizationEntity>,
+    existing: OrganizationEntity[],
+  ): OrganizationEntity {
+    const baseDate = raw.createdAt ? new Date(raw.createdAt) : new Date();
+    const members: OrganizationMember[] = (raw.members ?? []).map((member) => {
+      const legacyMember = member as OrganizationMember & {
+        role?: string;
+        acceptedAt?: Date | string;
+        invitedAt?: Date | string;
+        requestedAt?: Date | string;
+        activatedAt?: Date | string;
+      };
+      const role: OrganizationRoleKey =
+        typeof legacyMember.roleKey === 'string' && legacyMember.roleKey.trim()
+          ? legacyMember.roleKey.trim()
+          : typeof legacyMember.role === 'string' && legacyMember.role.trim()
+            ? legacyMember.role.trim()
+            : 'member';
+      const status: OrganizationMember['status'] =
+        legacyMember.status === OrganizationMemberStatus.Pending
+          ? OrganizationMemberStatus.Pending
+          : OrganizationMemberStatus.Active;
+      const invitedAt = legacyMember.invitedAt ? new Date(legacyMember.invitedAt) : undefined;
+      const requestedAt = legacyMember.requestedAt ? new Date(legacyMember.requestedAt) : undefined;
+      const activatedAt =
+        legacyMember.activatedAt
+          ? new Date(legacyMember.activatedAt)
+          : legacyMember.acceptedAt
+            ? new Date(legacyMember.acceptedAt)
+            : status === OrganizationMemberStatus.Active
+              ? invitedAt ?? requestedAt ?? baseDate
+              : undefined;
+      const createdAt =
+        legacyMember.createdAt
+          ? new Date(legacyMember.createdAt)
+          : invitedAt ?? requestedAt ?? activatedAt ?? baseDate;
+      return {
+        userId: legacyMember.userId,
+        roleKey: role,
+        status,
+        email: typeof legacyMember.email === 'string' ? legacyMember.email.toLowerCase() : undefined,
+        invitedBy: typeof legacyMember.invitedBy === 'string' ? legacyMember.invitedBy : undefined,
+        requestedBy:
+          typeof legacyMember.requestedBy === 'string' ? legacyMember.requestedBy : undefined,
+        invitedAt,
+        requestedAt,
+        activatedAt,
+        createdAt,
+      };
+    });
 
     const ownerUserId =
       raw.ownerUserId ||
-      members.find((member) => member.roleKey === 'owner')?.userId ||
+      members.find((member) => member.roleKey === OWNER_ROLE_KEY)?.userId ||
       members[0]?.userId ||
       'unknown';
     const createdBy = raw.createdBy || raw.ownerUserId || ownerUserId;
@@ -872,14 +1098,29 @@ export class OrganizationsService implements OnModuleInit {
     if (!members.some((member) => member.userId === ownerUserId)) {
       members.push({
         userId: ownerUserId,
-        roleKey: 'owner',
-        status: 'active',
+        roleKey: OWNER_ROLE_KEY,
+        status: OrganizationMemberStatus.Active,
         invitedAt: baseDate,
         activatedAt: baseDate,
+        createdAt: baseDate,
       });
     }
 
     const roles = this.normalizeRoles(raw.roles, members);
+    const coreSettings = this.normalizeCoreSettings(raw.coreSettings);
+    const structureSettings = raw.structureSettings
+      ? {
+          companies: Array.isArray(raw.structureSettings.companies)
+            ? raw.structureSettings.companies
+            : [],
+          branches: Array.isArray(raw.structureSettings.branches)
+            ? raw.structureSettings.branches
+            : [],
+          warehouses: Array.isArray(raw.structureSettings.warehouses)
+            ? raw.structureSettings.warehouses
+            : [],
+        }
+      : undefined;
 
     return {
       id: raw.id || uuid(),
@@ -889,42 +1130,50 @@ export class OrganizationsService implements OnModuleInit {
       createdBy,
       members,
       roles,
-      moduleStates: raw.moduleStates ?? {},
-      moduleSettings: raw.moduleSettings ?? {},
+      coreSettings,
+      structureSettings,
+      moduleStates: this.normalizeModuleStates(raw.moduleStates),
+      moduleSettings: this.normalizeModuleSettings(raw.moduleSettings),
       createdAt: raw.createdAt ? new Date(raw.createdAt) : new Date(),
     };
   }
 
-  private normalizeRoles(rawRoles: any, members: OrganizationMember[]): OrganizationRoleDefinition[] {
+  private normalizeRoles(
+    rawRoles: OrganizationRoleDefinition[] | undefined,
+    members: OrganizationMember[],
+  ): OrganizationRoleDefinition[] {
     const permissionSet = this.getPermissionSet();
     const mapped = Array.isArray(rawRoles)
       ? rawRoles
-          .filter((role: any) => typeof role?.key === 'string' && role.key.trim())
-          .map((role: any) => {
-            const permissions = Array.isArray(role.permissions)
-              ? role.permissions.filter((permission: string) => permission === '*' || permissionSet.has(permission))
-              : [];
-            return {
-              key: role.key.trim(),
-              name: typeof role.name === 'string' && role.name.trim() ? role.name.trim() : role.key.trim(),
-              permissions,
-              system: role.system === true || role.key === 'owner' || role.key === 'admin' || role.key === 'member',
-            };
+          .filter((role) => typeof role.key === 'string' && role.key.trim())
+          .map((role) => {
+      const permissions = Array.isArray(role.permissions)
+        ? role.permissions.filter(
+            (permission) => permission === '*' || permissionSet.has(permission),
+          )
+        : [];
+      const legacySystem = (role as { system?: boolean }).system === true;
+      return {
+        key: role.key.trim(),
+        name: typeof role.name === 'string' && role.name.trim() ? role.name.trim() : role.key.trim(),
+        permissions,
+        isSystem: role.isSystem === true || legacySystem || role.key === OWNER_ROLE_KEY || role.key === 'admin' || role.key === 'member',
+      };
           })
       : [];
 
     const roleKeys = new Set(mapped.map((role) => role.key));
-    if (!roleKeys.has('owner')) {
-      mapped.unshift({ key: 'owner', name: 'Owner', permissions: ['*'], system: true });
-      roleKeys.add('owner');
+    if (!roleKeys.has(OWNER_ROLE_KEY)) {
+      mapped.unshift({ key: OWNER_ROLE_KEY, name: 'Owner', permissions: ['*'], isSystem: true });
+      roleKeys.add(OWNER_ROLE_KEY);
     }
 
     const memberRoles = new Set(members.map((member) => member.roleKey));
     if (memberRoles.has('admin') && !roleKeys.has('admin')) {
-      mapped.push({ key: 'admin', name: 'Admin', permissions: [], system: true });
+      mapped.push({ key: 'admin', name: 'Admin', permissions: [], isSystem: true });
     }
     if (memberRoles.has('member') && !roleKeys.has('member')) {
-      mapped.push({ key: 'member', name: 'Member', permissions: [], system: true });
+      mapped.push({ key: 'member', name: 'Member', permissions: [], isSystem: true });
     }
 
     return mapped;
@@ -950,7 +1199,7 @@ export class OrganizationsService implements OnModuleInit {
     if (!member) {
       throw new ForbiddenException('User is not a member of organization');
     }
-    if (member.status !== 'active') {
+    if (member.status !== OrganizationMemberStatus.Active) {
       throw new ForbiddenException('Membership is pending approval');
     }
 
@@ -975,7 +1224,7 @@ export class OrganizationsService implements OnModuleInit {
   hasPermissionAnyOrganization(userId: string, permission: string): boolean {
     return this.organizations.some((organization) => {
       const member = organization.members.find(
-        (item) => item.userId === userId && item.status === 'active',
+        (item) => item.userId === userId && item.status === OrganizationMemberStatus.Active,
       );
       if (!member) {
         return false;
@@ -1022,24 +1271,190 @@ export class OrganizationsService implements OnModuleInit {
     });
   }
 
-  private buildModuleStates(
-    organization: OrganizationEntity,
-  ): Record<string, 'inactive' | 'enabled' | 'pendingConfig' | 'configured' | 'ready' | 'error'> {
-    const states: Record<string, 'inactive' | 'enabled' | 'pendingConfig' | 'configured' | 'ready' | 'error'> = {
-      ...(organization.moduleStates ?? {}),
-    };
-    MODULE_CATALOG.forEach((entry) => {
-      if (!states[entry.key]) {
-        states[entry.key] = 'inactive';
-      }
-    });
+  private createModuleStatesMap(): OrganizationModuleStates {
+    const states: OrganizationModuleStates = {};
     return states;
   }
 
-  private getDependencyMap(): Map<string, string[]> {
+  private cloneModuleStates(states: OrganizationModuleStates): OrganizationModuleStates {
+    const cloned: OrganizationModuleStates = { ...states };
+    return cloned;
+  }
+
+  private createModuleSettingsMap(): OrganizationModuleSettingsMap {
+    const settings: OrganizationModuleSettingsMap = {};
+    return settings;
+  }
+
+  private buildModuleOverviewItems(
+    states: OrganizationModuleStates,
+    descriptors: ModuleDescriptor[],
+  ): OrganizationModuleOverviewItem[] {
+    return descriptors.map((descriptor) => {
+      const definition = this.buildModuleDefinition(descriptor);
+      const state = this.ensureModuleState(states, definition.key);
+      return this.buildModuleOverviewItem(definition, state);
+    });
+  }
+
+  private buildModuleDefinition(descriptor: ModuleDescriptor): OrganizationModuleDefinition {
+    const dependencies = Array.isArray(descriptor.config.dependencies) ? descriptor.config.dependencies : [];
+    const definition: OrganizationModuleDefinition = {
+      key: descriptor.config.name,
+      name: descriptor.config.name,
+      dependencies: [...dependencies],
+      isSystem: descriptor.config.isSystem ?? false,
+    };
+    return definition;
+  }
+
+  private buildModuleOverviewItem(
+    definition: OrganizationModuleDefinition,
+    state: OrganizationModuleState,
+  ): OrganizationModuleOverviewItem {
+    const item: OrganizationModuleOverviewItem = {
+      ...definition,
+      state,
+    };
+    return item;
+  }
+
+  private buildModulesOverviewResponse(
+    modules: OrganizationModuleOverviewItem[],
+  ): OrganizationModulesOverviewResponse {
+    const response: OrganizationModulesOverviewResponse = { modules };
+    return response;
+  }
+
+  private ensureModuleState(
+    states: OrganizationModuleStates,
+    key: OrganizationModuleKey,
+  ): OrganizationModuleState {
+    const existing = states[key];
+    if (existing) {
+      return existing;
+    }
+    const fallback = this.createModuleState(OrganizationModuleStatus.Disabled);
+    states[key] = fallback;
+    return fallback;
+  }
+
+  private createModuleState(
+    status: OrganizationModuleStatus,
+    configuredAt?: string,
+    configuredBy?: string,
+  ): OrganizationModuleState {
+    const state: OrganizationModuleState = {
+      status,
+      configuredAt,
+      configuredBy,
+    };
+    return state;
+  }
+
+  private normalizeModuleStates(raw: unknown): OrganizationModuleStates {
+    const normalized = this.createModuleStatesMap();
+    if (!raw || typeof raw !== 'object') {
+      return normalized;
+    }
+    const record = raw as Record<string, unknown>;
+    Object.keys(record).forEach((key) => {
+      const state = this.normalizeModuleStateValue(record[key]);
+      if (state) {
+        normalized[key] = state;
+      }
+    });
+    return normalized;
+  }
+
+  private normalizeModuleSettings(raw: unknown): OrganizationModuleSettingsMap {
+    if (!raw || typeof raw !== 'object') {
+      return this.createModuleSettingsMap();
+    }
+    const settings: OrganizationModuleSettingsMap = { ...(raw as OrganizationModuleSettingsMap) };
+    return settings;
+  }
+
+  private normalizeModuleStateValue(value: unknown): OrganizationModuleState | null {
+    if (typeof value === 'string') {
+      return this.createModuleState(this.mapLegacyModuleStatus(value));
+    }
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+    const rawState = value as {
+      status?: unknown;
+      configuredAt?: unknown;
+      configuredBy?: unknown;
+    };
+    const status = this.normalizeModuleStatus(rawState.status);
+    if (!status) {
+      return null;
+    }
+    const configuredAt = typeof rawState.configuredAt === 'string' ? rawState.configuredAt : undefined;
+    const configuredBy = typeof rawState.configuredBy === 'string' ? rawState.configuredBy : undefined;
+    return this.createModuleState(status, configuredAt, configuredBy);
+  }
+
+  private normalizeModuleStatus(value: unknown): OrganizationModuleStatus | null {
+    if (value === OrganizationModuleStatus.Disabled) {
+      return OrganizationModuleStatus.Disabled;
+    }
+    if (value === OrganizationModuleStatus.EnabledUnconfigured) {
+      return OrganizationModuleStatus.EnabledUnconfigured;
+    }
+    if (value === OrganizationModuleStatus.Configured) {
+      return OrganizationModuleStatus.Configured;
+    }
+    if (typeof value === 'string') {
+      return this.mapLegacyModuleStatus(value);
+    }
+    return null;
+  }
+
+  private mapLegacyModuleStatus(value: string): OrganizationModuleStatus {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'disabled' || normalized === 'inactive') {
+      return OrganizationModuleStatus.Disabled;
+    }
+    if (
+      normalized === 'enabled_unconfigured' ||
+      normalized === 'enabled' ||
+      normalized === 'pendingconfig' ||
+      normalized === 'pending_config'
+    ) {
+      return OrganizationModuleStatus.EnabledUnconfigured;
+    }
+    if (normalized === 'configured' || normalized === 'ready') {
+      return OrganizationModuleStatus.Configured;
+    }
+    if (normalized === 'error') {
+      return OrganizationModuleStatus.EnabledUnconfigured;
+    }
+    return OrganizationModuleStatus.Disabled;
+  }
+
+  private getModuleDescriptorMap(
+    descriptors: ModuleDescriptor[],
+  ): Map<OrganizationModuleKey, ModuleDescriptor> {
+    return new Map(descriptors.map((descriptor) => [descriptor.config.name, descriptor]));
+  }
+
+  private assertModuleKeysExist(
+    descriptors: Map<OrganizationModuleKey, ModuleDescriptor>,
+    moduleKeys: string[],
+  ): void {
+    const invalid = moduleKeys.filter((key) => !descriptors.has(key));
+    if (invalid.length > 0) {
+      throw new BadRequestException(`Invalid module keys: ${invalid.join(', ')}`);
+    }
+  }
+
+  private getModuleDependencyMap(descriptors: ModuleDescriptor[]): Map<string, string[]> {
     const dependencyMap = new Map<string, string[]>();
-    MODULE_CATALOG.forEach((entry) => {
-      dependencyMap.set(entry.key, Array.isArray(entry.dependencies) ? entry.dependencies : []);
+    descriptors.forEach((descriptor) => {
+      const deps = Array.isArray(descriptor.config.dependencies) ? descriptor.config.dependencies : [];
+      dependencyMap.set(descriptor.config.name, deps);
     });
     return dependencyMap;
   }
@@ -1063,14 +1478,13 @@ export class OrganizationsService implements OnModuleInit {
     return expanded;
   }
 
-  private assertGlobalModulesEnabled(moduleKeys: string[]): void {
+  private assertGlobalModulesEnabled(
+    descriptors: Map<OrganizationModuleKey, ModuleDescriptor>,
+    moduleKeys: string[],
+  ): void {
     if (moduleKeys.length === 0) {
       return;
     }
-
-    const descriptors = new Map(
-      this.moduleLoader.listModules().map((descriptor) => [descriptor.config.name, descriptor]),
-    );
     const disabled: string[] = [];
     const missingDeps: string[] = [];
 
@@ -1102,6 +1516,388 @@ export class OrganizationsService implements OnModuleInit {
       .map((value) => (typeof value === 'string' ? value.trim() : ''))
       .filter((value) => value.length > 0);
     return Array.from(new Set(normalized));
+  }
+
+  private normalizeCurrencyIds(rawCurrencyIds: string[], baseCurrencyId?: string): string[] {
+    const normalized = this.normalizeIds(rawCurrencyIds);
+    if (baseCurrencyId && !normalized.includes(baseCurrencyId)) {
+      normalized.push(baseCurrencyId);
+    }
+    return Array.from(new Set(normalized));
+  }
+
+  private createDefaultCoreSettings(): OrganizationCoreSettings {
+    return {
+      countries: [],
+      currencies: [],
+      companies: [],
+    };
+  }
+
+  private cloneCoreSettings(settings: OrganizationCoreSettings): OrganizationCoreSettings {
+    return {
+      countries: settings.countries.map((country) => ({ ...country })),
+      currencies: settings.currencies.map((currency) => ({ ...currency })),
+      companies: settings.companies.map((company) => ({ ...company })),
+    };
+  }
+
+  private normalizeCoreSettings(raw: unknown): OrganizationCoreSettings {
+    const fallback = this.createDefaultCoreSettings();
+    if (!raw || typeof raw !== 'object') {
+      return fallback;
+    }
+
+    const candidate = raw as Partial<OrganizationCoreSettings> & LegacyOrganizationCoreSettings;
+    const hasNewShape =
+      Array.isArray(candidate.countries) ||
+      Array.isArray(candidate.currencies) ||
+      Array.isArray(candidate.companies);
+
+    if (hasNewShape) {
+      return {
+        countries: this.normalizeStoredCountries(candidate.countries),
+        currencies: this.normalizeStoredCurrencies(candidate.currencies),
+        companies: this.normalizeStoredCompanies(candidate.companies),
+      };
+    }
+
+    return this.buildCoreSettingsFromLegacy(candidate);
+  }
+
+  private buildCoreSettingsFromLegacy(
+    legacy: LegacyOrganizationCoreSettings,
+  ): OrganizationCoreSettings {
+    const countryId = typeof legacy.countryId === 'string' ? legacy.countryId.trim() : '';
+    const currencies = this.normalizeIds(legacy.currencyIds);
+    const baseCurrencyId =
+      typeof legacy.baseCurrencyId === 'string' ? legacy.baseCurrencyId.trim() : undefined;
+    const orderedCurrencyIds = this.applyBaseCurrencyOrder(currencies, baseCurrencyId);
+    return {
+      countries: countryId ? this.buildCoreCountriesFromIds([countryId]) : [],
+      currencies: this.buildCoreCurrenciesFromIds(orderedCurrencyIds),
+      companies: [],
+    };
+  }
+
+  private buildCoreSettingsFromBootstrap(
+    countryIds: string[],
+    currencyIds: string[],
+    companies: CoreCompany[],
+  ): OrganizationCoreSettings {
+    const countries = this.buildCoreCountriesFromIds(this.normalizeIds(countryIds));
+    const currencies = this.buildCoreCurrenciesFromIds(this.normalizeIds(currencyIds));
+    const normalizedCompanies = this.normalizeCoreCompanies(companies);
+    const next: OrganizationCoreSettings = {
+      countries,
+      currencies,
+      companies: normalizedCompanies,
+    };
+    this.validateCoreSettings(next);
+    return next;
+  }
+
+  private mergeCoreSettings(
+    current: OrganizationCoreSettings,
+    update: OrganizationCoreSettingsUpdate,
+  ): OrganizationCoreSettings {
+    const next: OrganizationCoreSettings = {
+      countries:
+        update.countries !== undefined
+          ? this.normalizeCoreCountries(update.countries)
+          : current.countries,
+      currencies:
+        update.currencies !== undefined
+          ? this.normalizeCoreCurrencies(update.currencies)
+          : current.currencies,
+      companies:
+        update.companies !== undefined
+          ? this.normalizeCoreCompanies(update.companies)
+          : current.companies,
+    };
+    this.validateCoreSettings(next);
+    return next;
+  }
+
+  private applyLegacyCoreSettingsUpdate(
+    current: OrganizationCoreSettings,
+    update: LegacyOrganizationCoreSettingsUpdate,
+  ): OrganizationCoreSettings {
+    const nextCountries =
+      update.countryId !== undefined
+        ? this.buildCoreCountriesFromIds(
+            update.countryId ? [update.countryId.trim()] : [],
+            current.countries,
+          )
+        : current.countries;
+
+    const requestedCurrencyIds =
+      update.currencyIds !== undefined
+        ? this.normalizeIds(update.currencyIds)
+        : current.currencies.map((currency) => currency.id);
+    const baseCurrencyId =
+      typeof update.baseCurrencyId === 'string' ? update.baseCurrencyId.trim() : undefined;
+    const normalizedCurrencyIds = this.normalizeCurrencyIds(requestedCurrencyIds, baseCurrencyId);
+    const orderedCurrencyIds = this.applyBaseCurrencyOrder(normalizedCurrencyIds, baseCurrencyId);
+    const nextCurrencies = this.buildCoreCurrenciesFromIds(orderedCurrencyIds, current.currencies);
+
+    const next: OrganizationCoreSettings = {
+      countries: nextCountries,
+      currencies: nextCurrencies,
+      companies: current.companies,
+    };
+    this.validateCoreSettings(next);
+    return next;
+  }
+
+  private buildCoreCountriesFromIds(
+    ids: string[],
+    existing: CoreCountry[] = [],
+  ): CoreCountry[] {
+    const map = new Map(existing.map((country) => [country.id, country]));
+    return ids.map((id) => map.get(id) ?? { id, name: id, code: id });
+  }
+
+  private buildCoreCurrenciesFromIds(
+    ids: string[],
+    existing: CoreCurrency[] = [],
+  ): CoreCurrency[] {
+    const map = new Map(existing.map((currency) => [currency.id, currency]));
+    return ids.map((id) => map.get(id) ?? { id, name: id, code: id });
+  }
+
+  private applyBaseCurrencyOrder(ids: string[], baseCurrencyId?: string): string[] {
+    if (!baseCurrencyId) {
+      return ids;
+    }
+    const normalized = baseCurrencyId.trim();
+    const filtered = ids.filter((id) => id !== normalized);
+    return [normalized, ...filtered];
+  }
+
+  private normalizeStoredCountries(values: CoreCountryInput[] | undefined): CoreCountry[] {
+    if (!Array.isArray(values)) {
+      return [];
+    }
+    const result: CoreCountry[] = [];
+    const usedCodes = new Set<string>();
+    values.forEach((value) => {
+      const country = this.coerceCoreCountry(value);
+      if (!country) {
+        return;
+      }
+      const codeKey = country.code.toUpperCase();
+      if (usedCodes.has(codeKey)) {
+        return;
+      }
+      usedCodes.add(codeKey);
+      result.push(country);
+    });
+    return result;
+  }
+
+  private normalizeStoredCurrencies(values: CoreCurrencyInput[] | undefined): CoreCurrency[] {
+    if (!Array.isArray(values)) {
+      return [];
+    }
+    const result: CoreCurrency[] = [];
+    const usedCodes = new Set<string>();
+    values.forEach((value) => {
+      const currency = this.coerceCoreCurrency(value);
+      if (!currency) {
+        return;
+      }
+      const codeKey = currency.code.toUpperCase();
+      if (usedCodes.has(codeKey)) {
+        return;
+      }
+      usedCodes.add(codeKey);
+      result.push(currency);
+    });
+    return result;
+  }
+
+  private normalizeStoredCompanies(values: CoreCompanyInput[] | undefined): CoreCompany[] {
+    if (!Array.isArray(values)) {
+      return [];
+    }
+    const result: CoreCompany[] = [];
+    const usedNames = new Set<string>();
+    values.forEach((value) => {
+      const company = this.coerceCoreCompany(value);
+      if (!company) {
+        return;
+      }
+      const nameKey = company.name.toLowerCase();
+      if (usedNames.has(nameKey)) {
+        return;
+      }
+      usedNames.add(nameKey);
+      result.push(company);
+    });
+    return result;
+  }
+
+  private normalizeCoreCountries(values: CoreCountryInput[]): CoreCountry[] {
+    return values.map((value) => this.buildCoreCountry(value));
+  }
+
+  private normalizeCoreCurrencies(values: CoreCurrencyInput[]): CoreCurrency[] {
+    return values.map((value) => this.buildCoreCurrency(value));
+  }
+
+  private normalizeCoreCompanies(values: CoreCompanyInput[]): CoreCompany[] {
+    return values.map((value) => this.buildCoreCompany(value));
+  }
+
+  private coerceCoreCountry(value: CoreCountryInput): CoreCountry | null {
+    const name = typeof value.name === 'string' ? value.name.trim() : '';
+    const code = typeof value.code === 'string' ? value.code.trim() : '';
+    if (!name || !code) {
+      return null;
+    }
+    const id = typeof value.id === 'string' && value.id.trim() ? value.id.trim() : uuid();
+    return { id, name, code };
+  }
+
+  private coerceCoreCurrency(value: CoreCurrencyInput): CoreCurrency | null {
+    const name = typeof value.name === 'string' ? value.name.trim() : '';
+    const code = typeof value.code === 'string' ? value.code.trim() : '';
+    if (!name || !code) {
+      return null;
+    }
+    const id = typeof value.id === 'string' && value.id.trim() ? value.id.trim() : uuid();
+    const symbol = typeof value.symbol === 'string' && value.symbol.trim() ? value.symbol.trim() : undefined;
+    return { id, name, code, symbol };
+  }
+
+  private coerceCoreCompany(value: CoreCompanyInput): CoreCompany | null {
+    const name = typeof value.name === 'string' ? value.name.trim() : '';
+    const countryId = typeof value.countryId === 'string' ? value.countryId.trim() : '';
+    if (!name || !countryId) {
+      return null;
+    }
+    const id = typeof value.id === 'string' && value.id.trim() ? value.id.trim() : uuid();
+    return { id, name, countryId };
+  }
+
+  private buildCoreCountry(value: CoreCountryInput): CoreCountry {
+    const country = this.coerceCoreCountry(value);
+    if (!country) {
+      throw new BadRequestException('Country name and code are required');
+    }
+    return country;
+  }
+
+  private buildCoreCurrency(value: CoreCurrencyInput): CoreCurrency {
+    const currency = this.coerceCoreCurrency(value);
+    if (!currency) {
+      throw new BadRequestException('Currency name and code are required');
+    }
+    return currency;
+  }
+
+  private buildCoreCompany(value: CoreCompanyInput): CoreCompany {
+    const company = this.coerceCoreCompany(value);
+    if (!company) {
+      throw new BadRequestException('Company name and country are required');
+    }
+    return company;
+  }
+
+  private assertUniqueCountryCode(countries: CoreCountry[], code: string): void {
+    const codeKey = code.trim().toUpperCase();
+    if (countries.some((country) => country.code.trim().toUpperCase() === codeKey)) {
+      throw new BadRequestException('Country code already exists');
+    }
+  }
+
+  private assertUniqueCurrencyCode(currencies: CoreCurrency[], code: string): void {
+    const codeKey = code.trim().toUpperCase();
+    if (currencies.some((currency) => currency.code.trim().toUpperCase() === codeKey)) {
+      throw new BadRequestException('Currency code already exists');
+    }
+  }
+
+  private assertUniqueCompanyName(companies: CoreCompany[], name: string): void {
+    const nameKey = name.trim().toLowerCase();
+    if (companies.some((company) => company.name.trim().toLowerCase() === nameKey)) {
+      throw new BadRequestException('Company name already exists');
+    }
+  }
+
+  private assertCountryExists(countries: CoreCountry[], countryId: string): void {
+    if (!countries.some((country) => country.id === countryId)) {
+      throw new BadRequestException('Country not found');
+    }
+  }
+
+  private validateCoreSettings(settings: OrganizationCoreSettings): void {
+    const countryCodes = new Set<string>();
+    const countryIds = new Set<string>();
+    settings.countries.forEach((country) => {
+      const codeKey = country.code.trim().toUpperCase();
+      if (countryCodes.has(codeKey)) {
+        throw new BadRequestException('Country code already exists');
+      }
+      countryCodes.add(codeKey);
+      if (countryIds.has(country.id)) {
+        throw new BadRequestException('Country id already exists');
+      }
+      countryIds.add(country.id);
+    });
+
+    const currencyCodes = new Set<string>();
+    const currencyIds = new Set<string>();
+    settings.currencies.forEach((currency) => {
+      const codeKey = currency.code.trim().toUpperCase();
+      if (currencyCodes.has(codeKey)) {
+        throw new BadRequestException('Currency code already exists');
+      }
+      currencyCodes.add(codeKey);
+      if (currencyIds.has(currency.id)) {
+        throw new BadRequestException('Currency id already exists');
+      }
+      currencyIds.add(currency.id);
+    });
+
+    const companyNames = new Set<string>();
+    settings.companies.forEach((company) => {
+      const nameKey = company.name.trim().toLowerCase();
+      if (companyNames.has(nameKey)) {
+        throw new BadRequestException('Company name already exists');
+      }
+      companyNames.add(nameKey);
+      if (!countryIds.has(company.countryId)) {
+        throw new BadRequestException('Company country not found');
+      }
+    });
+  }
+
+  private toLegacyCoreSettings(settings: OrganizationCoreSettings): LegacyOrganizationCoreSettings {
+    const currencyIds = settings.currencies.map((currency) => currency.id);
+    return {
+      countryId: settings.countries[0]?.id,
+      baseCurrencyId: currencyIds[0],
+      currencyIds,
+    };
+  }
+
+  private validateStructureSettings(settings: OrganizationStructureSettings): void {
+    const companies = new Set(settings.companies.map((company) => company.id));
+    const branches = new Set(settings.branches.map((branch) => branch.id));
+
+    settings.branches.forEach((branch) => {
+      if (!companies.has(branch.companyId)) {
+        throw new BadRequestException('Branch company not found');
+      }
+    });
+
+    settings.warehouses.forEach((warehouse) => {
+      if (!branches.has(warehouse.branchId)) {
+        throw new BadRequestException('Warehouse branch not found');
+      }
+    });
   }
 
   private persistState(): void {

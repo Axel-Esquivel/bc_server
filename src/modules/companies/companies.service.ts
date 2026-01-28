@@ -2,10 +2,12 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
   OnModuleInit,
+  forwardRef,
 } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { ModuleStateService } from '../../core/database/module-state.service';
@@ -13,6 +15,8 @@ import { MODULE_CATALOG, ModuleCatalogEntry } from '../../core/constants/modules
 import { OrganizationsService } from '../organizations/organizations.service';
 import { ModuleLoaderService } from '../module-loader/module-loader.service';
 import { UsersService } from '../users/users.service';
+import { CountriesService } from '../countries/countries.service';
+import { CurrenciesService } from '../currencies/currencies.service';
 import { AddCompanyMemberDto } from './dto/add-company-member.dto';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
@@ -54,8 +58,11 @@ export class CompaniesService implements OnModuleInit {
   constructor(
     private readonly moduleState: ModuleStateService,
     private readonly usersService: UsersService,
+    @Inject(forwardRef(() => OrganizationsService))
     private readonly organizationsService: OrganizationsService,
     private readonly moduleLoader: ModuleLoaderService,
+    private readonly countriesService: CountriesService,
+    private readonly currenciesService: CurrenciesService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -81,6 +88,9 @@ export class CompaniesService implements OnModuleInit {
     if (!name) {
       throw new BadRequestException('Company name is required');
     }
+
+    this.assertBaseCountry(organizationId, dto.baseCountryId);
+    this.assertBaseCurrency(organizationId, dto.baseCurrencyId);
 
     const currencies = this.normalizeCurrencies(dto.currencies, dto.baseCurrencyId);
 
@@ -721,6 +731,42 @@ export class CompaniesService implements OnModuleInit {
       normalized.push(baseCurrencyId);
     }
     return Array.from(new Set(normalized));
+  }
+
+  private assertBaseCountry(organizationId: string, baseCountryId: string): void {
+    const coreSettings = this.organizationsService.getCoreSettings(organizationId);
+    const hasCoreCountry = coreSettings.countries.some((country) => country.id === baseCountryId);
+    if (hasCoreCountry) {
+      return;
+    }
+    const country = this.countriesService
+      .list()
+      .find((item) => item.id === baseCountryId || item.iso2 === baseCountryId);
+    if (!country) {
+      throw new BadRequestException('Base country not found');
+    }
+  }
+
+  private assertBaseCurrency(organizationId: string, baseCurrencyId: string): void {
+    const coreSettings = this.organizationsService.getCoreSettings(organizationId);
+    const hasCoreCurrency = coreSettings.currencies.some(
+      (currency) =>
+        currency.id === baseCurrencyId ||
+        currency.code.toUpperCase() === baseCurrencyId.toUpperCase(),
+    );
+    if (hasCoreCurrency) {
+      return;
+    }
+    const currency = this.currenciesService
+      .list()
+      .find(
+        (item) =>
+          item.id === baseCurrencyId ||
+          item.code.toUpperCase() === baseCurrencyId.toUpperCase(),
+      );
+    if (!currency) {
+      throw new BadRequestException('Base currency not found');
+    }
   }
 
   private ensureRoleExists(company: CompanyEntity, roleKey: string): void {

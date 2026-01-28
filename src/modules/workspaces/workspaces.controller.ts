@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { IsArray, IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AddMemberDto } from './dto/add-member.dto';
@@ -20,6 +20,7 @@ import { WorkspacePermissionGuard } from './guards/workspace-permission.guard';
 import { WorkspacesService } from './workspaces.service';
 import { UsersService } from '../users/users.service';
 import { WorkspacePermission } from './decorators/workspace-permission.decorator';
+import type { AuthenticatedRequest } from '../../core/types/authenticated-request.types';
 
 class WorkspaceRoleDto {
   @IsString()
@@ -78,9 +79,10 @@ export class WorkspacesController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  list(@Req() req: any) {
-    const workspaces = this.workspacesService.listByUser(req.user.sub);
-    const user = this.usersService.findById(req.user.sub);
+  list(@Req() req: AuthenticatedRequest) {
+    const userId = this.getUserId(req);
+    const workspaces = this.workspacesService.listByUser(userId);
+    const user = this.usersService.findById(userId);
     return {
       message: 'Workspaces loaded',
       result: {
@@ -92,8 +94,9 @@ export class WorkspacesController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
-  createWorkspace(@Req() req: any, @Body() dto: CreateWorkspaceDto) {
-    const workspace = this.workspacesService.createWorkspace(dto, req.user.sub);
+  createWorkspace(@Req() req: AuthenticatedRequest, @Body() dto: CreateWorkspaceDto) {
+    const userId = this.getUserId(req);
+    const workspace = this.workspacesService.createWorkspace(dto, userId);
     return {
       message: 'Workspace created',
       result: this.decorateCompat(workspace),
@@ -102,8 +105,9 @@ export class WorkspacesController {
 
   @UseGuards(JwtAuthGuard)
   @Post('join')
-  join(@Req() req: any, @Body() dto: JoinWorkspaceDto) {
-    const workspace = this.workspacesService.joinByCode(req.user.sub, dto.code);
+  join(@Req() req: AuthenticatedRequest, @Body() dto: JoinWorkspaceDto) {
+    const userId = this.getUserId(req);
+    const workspace = this.workspacesService.joinByCode(userId, dto.code);
     return {
       message: 'Workspace joined',
       result: this.decorateCompat(workspace),
@@ -113,8 +117,9 @@ export class WorkspacesController {
   @UseGuards(JwtAuthGuard, WorkspacePermissionGuard)
   @WorkspacePermission('workspace.invite')
   @Post(':id/members')
-  addMember(@Req() req: any, @Param('id') id: string, @Body() dto: AddMemberDto) {
-    const workspace = this.workspacesService.addMember(id, dto, req.user.sub);
+  addMember(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: AddMemberDto) {
+    const userId = this.getUserId(req);
+    const workspace = this.workspacesService.addMember(id, dto, userId);
     return {
       message: 'Member added to workspace',
       result: workspace,
@@ -125,12 +130,13 @@ export class WorkspacesController {
   @WorkspacePermission('roles.manage')
   @Patch(':id/members/:userId/role')
   updateMemberRole(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Param('userId') userId: string,
     @Body() dto: UpdateMemberRoleDto,
   ) {
-    const member = this.workspacesService.updateMemberRole(id, req.user.sub, userId, dto.roleKey);
+    const requesterId = this.getUserId(req);
+    const member = this.workspacesService.updateMemberRole(id, requesterId, userId, dto.roleKey);
     return {
       message: 'Workspace member updated',
       result: member,
@@ -151,8 +157,9 @@ export class WorkspacesController {
   @UseGuards(JwtAuthGuard, WorkspacePermissionGuard)
   @WorkspacePermission('roles.manage')
   @Post(':id/roles')
-  createRole(@Req() req: any, @Param('id') id: string, @Body() dto: WorkspaceRoleDto) {
-    const roles = this.workspacesService.createRole(id, req.user.sub, dto);
+  createRole(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: WorkspaceRoleDto) {
+    const userId = this.getUserId(req);
+    const roles = this.workspacesService.createRole(id, userId, dto);
     return {
       message: 'Workspace role created',
       result: roles,
@@ -163,12 +170,13 @@ export class WorkspacesController {
   @WorkspacePermission('roles.manage')
   @Patch(':id/roles/:roleKey')
   updateRole(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Param('roleKey') roleKey: string,
     @Body() dto: UpdateWorkspaceRoleDto,
   ) {
-    const roles = this.workspacesService.updateRole(id, req.user.sub, roleKey, dto);
+    const userId = this.getUserId(req);
+    const roles = this.workspacesService.updateRole(id, userId, roleKey, dto);
     return {
       message: 'Workspace role updated',
       result: roles,
@@ -178,8 +186,9 @@ export class WorkspacesController {
   @UseGuards(JwtAuthGuard, WorkspacePermissionGuard)
   @WorkspacePermission('roles.manage')
   @Delete(':id/roles/:roleKey')
-  deleteRole(@Req() req: any, @Param('id') id: string, @Param('roleKey') roleKey: string) {
-    const roles = this.workspacesService.deleteRole(id, req.user.sub, roleKey);
+  deleteRole(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('roleKey') roleKey: string) {
+    const userId = this.getUserId(req);
+    const roles = this.workspacesService.deleteRole(id, userId, roleKey);
     return {
       message: 'Workspace role removed',
       result: roles,
@@ -188,8 +197,9 @@ export class WorkspacesController {
 
   @UseGuards(JwtAuthGuard, WorkspaceMemberGuard)
   @Get(':id/modules')
-  getModules(@Req() req: any, @Param('id') id: string) {
-    const overview = this.workspacesService.getModulesOverview(id, req.user.sub);
+  getModules(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    const userId = this.getUserId(req);
+    const overview = this.workspacesService.getModulesOverview(id, userId);
     return {
       message: 'Workspace modules loaded',
       result: {
@@ -223,18 +233,20 @@ export class WorkspacesController {
   @UseGuards(JwtAuthGuard, WorkspacePermissionGuard)
   @WorkspacePermission('workspaces.configure')
   @Patch(':id/modules')
-  updateModules(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateWorkspaceModulesDto) {
+  updateModules(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: UpdateWorkspaceModulesDto) {
     if (dto.enabledModules !== undefined) {
-      const modules = this.workspacesService.setEnabledModules(id, req.user.sub, dto.enabledModules);
+      const userId = this.getUserId(req);
+      const modules = this.workspacesService.setEnabledModules(id, userId, dto.enabledModules);
       return {
         message: 'Workspace modules updated',
         result: modules,
       };
     }
 
+    const userId = this.getUserId(req);
     const modules = this.workspacesService.updateWorkspaceModules(
       id,
-      req.user.sub,
+      userId,
       (dto.modules ?? []).map((module) => ({
         key: module.key,
         enabled: module.enabled,
@@ -248,8 +260,9 @@ export class WorkspacesController {
 
   @UseGuards(JwtAuthGuard, WorkspaceAdminGuard)
   @Post(':id/modules/:moduleKey/enable')
-  enableModule(@Req() req: any, @Param('id') id: string, @Param('moduleKey') moduleKey: string) {
-    const moduleState = this.workspacesService.enableModule(id, req.user.sub, moduleKey);
+  enableModule(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('moduleKey') moduleKey: string) {
+    const userId = this.getUserId(req);
+    const moduleState = this.workspacesService.enableModule(id, userId, moduleKey);
     return {
       message: 'Workspace module enabled',
       result: moduleState,
@@ -258,8 +271,9 @@ export class WorkspacesController {
 
   @UseGuards(JwtAuthGuard, WorkspaceAdminGuard)
   @Post(':id/modules/:moduleKey/configure')
-  configureModule(@Req() req: any, @Param('id') id: string, @Param('moduleKey') moduleKey: string) {
-    const moduleState = this.workspacesService.configureModule(id, req.user.sub, moduleKey);
+  configureModule(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('moduleKey') moduleKey: string) {
+    const userId = this.getUserId(req);
+    const moduleState = this.workspacesService.configureModule(id, userId, moduleKey);
     return {
       message: 'Workspace module configured',
       result: moduleState,
@@ -278,7 +292,11 @@ export class WorkspacesController {
 
   @UseGuards(JwtAuthGuard, WorkspaceAdminGuard)
   @Patch(':id/module-settings/:moduleId')
-  updateModuleSettings(@Param('id') id: string, @Param('moduleId') moduleId: string, @Body() body: Record<string, any>) {
+  updateModuleSettings(
+    @Param('id') id: string,
+    @Param('moduleId') moduleId: string,
+    @Body() body: Record<string, unknown>
+  ) {
     const settings = this.workspacesService.updateModuleSettings(id, moduleId, body ?? {});
     return {
       message: 'Module settings updated',
@@ -472,5 +490,13 @@ export class WorkspacesController {
       message: 'POS terminal removed',
       result,
     };
+  }
+
+  private getUserId(req: AuthenticatedRequest): string {
+    const userId = req.user?.sub ?? req.user?.id ?? req.userId;
+    if (!userId) {
+      throw new UnauthorizedException();
+    }
+    return userId;
   }
 }
