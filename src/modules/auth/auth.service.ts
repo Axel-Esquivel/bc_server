@@ -217,11 +217,16 @@ export class AuthService implements OnModuleInit {
   }
 
   private resolveActiveContext(userId: string): ActiveContext {
-    const memberships = this.organizationsService.listMembershipsByUser(userId);
-    const activeMembership = memberships.find(
-      (member) => member.status === OrganizationMemberStatus.Active,
-    );
-    const organizationId = activeMembership?.organizationId ?? null;
+    const user = this.usersService.findById(userId);
+    const memberships = this.organizationsService
+      .listMembershipsByUser(userId)
+      .filter((member) => member.status === OrganizationMemberStatus.Active);
+    const preferredOrgId = user.defaultOrganizationId;
+    const resolvedMembership =
+      preferredOrgId && memberships.some((member) => member.organizationId === preferredOrgId)
+        ? memberships.find((member) => member.organizationId === preferredOrgId) ?? null
+        : memberships[0] ?? null;
+    const organizationId = resolvedMembership?.organizationId ?? null;
     if (!organizationId) {
       return this.createEmptyContext();
     }
@@ -229,14 +234,19 @@ export class AuthService implements OnModuleInit {
     const companies = this.companiesService
       .listByUser(userId)
       .filter((company) => company.organizationId === organizationId);
-    const company = companies[0] ?? null;
-    const currencyId =
-      company?.baseCurrencyId ?? this.resolveOrganizationCurrency(organizationId);
+    const preferredCompanyId = user.defaultWorkspaceId;
+    const company =
+      preferredCompanyId && companies.some((item) => item.id === preferredCompanyId)
+        ? companies.find((item) => item.id === preferredCompanyId) ?? null
+        : null;
+    const enterpriseId = company?.defaultEnterpriseId ?? company?.enterprises?.[0]?.id ?? null;
+    const enterprise = company?.enterprises?.find((item) => item.id === enterpriseId) ?? null;
+    const currencyId = company ? this.resolveCompanyCurrency(organizationId, company, enterprise) : null;
 
     return {
       organizationId,
       companyId: company?.id ?? null,
-      enterpriseId: null,
+      enterpriseId,
       currencyId,
     };
   }
@@ -244,6 +254,25 @@ export class AuthService implements OnModuleInit {
   private resolveOrganizationCurrency(organizationId: string): string | null {
     const coreSettings = this.organizationsService.getCoreSettings(organizationId);
     return coreSettings.currencies[0]?.id ?? null;
+  }
+
+  private resolveCompanyCurrency(
+    organizationId: string,
+    company: { baseCurrencyId?: string | null; defaultCurrencyId?: string | null } | null,
+    enterprise: { currencyIds: string[]; defaultCurrencyId?: string | null } | null,
+  ): string | null {
+    if (!company) {
+      return this.resolveOrganizationCurrency(organizationId);
+    }
+    const enterpriseDefault = enterprise?.defaultCurrencyId ?? null;
+    if (enterpriseDefault && enterprise?.currencyIds.includes(enterpriseDefault)) {
+      return enterpriseDefault;
+    }
+    const requested = company.defaultCurrencyId ?? company.baseCurrencyId ?? null;
+    if (requested && enterprise?.currencyIds.includes(requested)) {
+      return requested;
+    }
+    return enterprise?.currencyIds[0] ?? company.baseCurrencyId ?? this.resolveOrganizationCurrency(organizationId);
   }
 
   private createEmptyContext(): ActiveContext {

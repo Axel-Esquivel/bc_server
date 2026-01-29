@@ -27,6 +27,11 @@ import {
   CompanyRoleDefinition,
   CompanyModuleStatus,
 } from './entities/company.entity';
+import {
+  CompanyEnterprise,
+  CompanyEnterpriseInput,
+  CompanyHierarchySettings,
+} from './types/company-hierarchy.types';
 
 interface CompaniesState {
   companies: CompanyEntity[];
@@ -39,6 +44,23 @@ interface CompanyCoreSettings {
   companies: Array<{ id: string; name: string }>;
   branches: Array<{ id: string; companyId: string; name: string; type?: string }>;
   warehouses: Array<{ id: string; branchId: string; name: string }>;
+}
+
+interface CompanyHierarchyInput {
+  name: string;
+  baseCountryId: string;
+  baseCurrencyId: string;
+  currencies?: string[];
+  operatingCountryIds?: string[];
+  enterprises?: CompanyEnterpriseInput[];
+  defaultEnterpriseId?: string | null;
+  defaultCurrencyId?: string | null;
+}
+
+interface NormalizedCompanyHierarchy extends CompanyHierarchySettings {
+  baseCountryId: string;
+  baseCurrencyId: string;
+  currencyIds: string[];
 }
 
 @Injectable()
@@ -89,10 +111,16 @@ export class CompaniesService implements OnModuleInit {
       throw new BadRequestException('Company name is required');
     }
 
-    this.assertBaseCountry(organizationId, dto.baseCountryId);
-    this.assertBaseCurrency(organizationId, dto.baseCurrencyId);
-
-    const currencies = this.normalizeCurrencies(dto.currencies, dto.baseCurrencyId);
+    const hierarchy = this.normalizeHierarchyForInput(organizationId, {
+      name,
+      baseCountryId: dto.baseCountryId,
+      baseCurrencyId: dto.baseCurrencyId,
+      currencies: dto.currencies,
+      operatingCountryIds: dto.operatingCountryIds,
+      enterprises: dto.enterprises,
+      defaultEnterpriseId: dto.defaultEnterpriseId,
+      defaultCurrencyId: dto.defaultCurrencyId,
+    });
 
     const company: CompanyEntity = {
       id: uuid(),
@@ -100,9 +128,13 @@ export class CompaniesService implements OnModuleInit {
       name,
       legalName: dto.legalName?.trim() || undefined,
       taxId: dto.taxId?.trim() || undefined,
-      baseCountryId: dto.baseCountryId,
-      baseCurrencyId: dto.baseCurrencyId,
-      currencies,
+      baseCountryId: hierarchy.baseCountryId,
+      baseCurrencyId: hierarchy.baseCurrencyId,
+      currencies: hierarchy.currencyIds,
+      operatingCountryIds: hierarchy.operatingCountryIds,
+      enterprises: hierarchy.enterprises,
+      defaultEnterpriseId: hierarchy.defaultEnterpriseId,
+      defaultCurrencyId: hierarchy.defaultCurrencyId,
       members: [{ userId: ownerUserId, roleKey: 'owner', status: 'active' }],
       roles: this.buildDefaultRoles(),
       moduleStates: {},
@@ -124,6 +156,14 @@ export class CompaniesService implements OnModuleInit {
     return this.companies.filter((company) => company.organizationId === organizationId);
   }
 
+  removeByOrganization(organizationId: string): void {
+    const before = this.companies.length;
+    this.companies = this.companies.filter((company) => company.organizationId !== organizationId);
+    if (this.companies.length !== before) {
+      this.persistState();
+    }
+  }
+
   listByUser(userId: string): CompanyEntity[] {
     return this.companies.filter((company) =>
       company.members.some((member) => member.userId === userId && member.status === 'active'),
@@ -142,12 +182,13 @@ export class CompaniesService implements OnModuleInit {
     const company = this.getCompany(companyId);
     this.assertPermission(companyId, userId, 'company.manage');
 
+    let nextName = company.name;
     if (dto.name !== undefined) {
       const trimmed = dto.name.trim();
       if (!trimmed) {
         throw new BadRequestException('Company name is required');
       }
-      company.name = trimmed;
+      nextName = trimmed;
     }
     if (dto.legalName !== undefined) {
       company.legalName = dto.legalName?.trim() || undefined;
@@ -155,15 +196,26 @@ export class CompaniesService implements OnModuleInit {
     if (dto.taxId !== undefined) {
       company.taxId = dto.taxId?.trim() || undefined;
     }
-    if (dto.baseCountryId !== undefined) {
-      company.baseCountryId = dto.baseCountryId;
-    }
-    if (dto.baseCurrencyId !== undefined) {
-      company.baseCurrencyId = dto.baseCurrencyId;
-    }
-    if (dto.currencies !== undefined || dto.baseCurrencyId !== undefined) {
-      company.currencies = this.normalizeCurrencies(dto.currencies ?? company.currencies, company.baseCurrencyId);
-    }
+
+    const hierarchy = this.normalizeHierarchyForInput(company.organizationId, {
+      name: nextName,
+      baseCountryId: dto.baseCountryId ?? company.baseCountryId,
+      baseCurrencyId: dto.baseCurrencyId ?? company.baseCurrencyId,
+      currencies: dto.currencies ?? company.currencies,
+      operatingCountryIds: dto.operatingCountryIds ?? company.operatingCountryIds,
+      enterprises: (dto.enterprises ?? company.enterprises) as CompanyEnterpriseInput[],
+      defaultEnterpriseId: dto.defaultEnterpriseId ?? company.defaultEnterpriseId ?? undefined,
+      defaultCurrencyId: dto.defaultCurrencyId ?? company.defaultCurrencyId ?? undefined,
+    });
+
+    company.name = nextName;
+    company.baseCountryId = hierarchy.baseCountryId;
+    company.baseCurrencyId = hierarchy.baseCurrencyId;
+    company.currencies = hierarchy.currencyIds;
+    company.operatingCountryIds = hierarchy.operatingCountryIds;
+    company.enterprises = hierarchy.enterprises;
+    company.defaultEnterpriseId = hierarchy.defaultEnterpriseId;
+    company.defaultCurrencyId = hierarchy.defaultCurrencyId;
 
     this.persistState();
     return company;
@@ -663,6 +715,18 @@ export class CompaniesService implements OnModuleInit {
 
     const baseCurrencyId = raw.baseCurrencyId || 'unknown';
     const currencies = this.normalizeCurrencies(raw.currencies, baseCurrencyId);
+    const hierarchy = this.normalizeHierarchyFromStorage({
+      name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : 'Company',
+      baseCountryId: raw.baseCountryId || 'unknown',
+      baseCurrencyId,
+      currencies,
+      operatingCountryIds: raw.operatingCountryIds,
+      enterprises: Array.isArray(raw.enterprises) ? raw.enterprises : undefined,
+      defaultEnterpriseId:
+        typeof raw.defaultEnterpriseId === 'string' ? raw.defaultEnterpriseId : null,
+      defaultCurrencyId:
+        typeof raw.defaultCurrencyId === 'string' ? raw.defaultCurrencyId : null,
+    });
 
     return {
       id: raw.id || uuid(),
@@ -670,9 +734,13 @@ export class CompaniesService implements OnModuleInit {
       name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : 'Company',
       legalName: typeof raw.legalName === 'string' && raw.legalName.trim() ? raw.legalName.trim() : undefined,
       taxId: typeof raw.taxId === 'string' && raw.taxId.trim() ? raw.taxId.trim() : undefined,
-      baseCountryId: raw.baseCountryId || 'unknown',
-      baseCurrencyId,
-      currencies,
+      baseCountryId: hierarchy.baseCountryId,
+      baseCurrencyId: hierarchy.baseCurrencyId,
+      currencies: hierarchy.currencyIds,
+      operatingCountryIds: hierarchy.operatingCountryIds,
+      enterprises: hierarchy.enterprises,
+      defaultEnterpriseId: hierarchy.defaultEnterpriseId,
+      defaultCurrencyId: hierarchy.defaultCurrencyId,
       members: normalizedMembers,
       roles: normalizedRoles,
       moduleStates: raw.moduleStates ?? {},
@@ -696,6 +764,235 @@ export class CompaniesService implements OnModuleInit {
         throw new BadRequestException('Warehouse branch not found');
       }
     });
+  }
+
+  private normalizeHierarchyForInput(
+    organizationId: string,
+    input: CompanyHierarchyInput,
+  ): NormalizedCompanyHierarchy {
+    this.assertBaseCountry(organizationId, input.baseCountryId);
+    this.assertBaseCurrency(organizationId, input.baseCurrencyId);
+
+    const operatingCountryIds = this.normalizeIdList(input.operatingCountryIds);
+    if (operatingCountryIds.length === 0) {
+      operatingCountryIds.push(input.baseCountryId);
+    }
+    if (!operatingCountryIds.includes(input.baseCountryId)) {
+      operatingCountryIds.push(input.baseCountryId);
+    }
+
+    operatingCountryIds.forEach((countryId) => this.assertBaseCountry(organizationId, countryId));
+
+    const enterprises = this.normalizeEnterprisesForInput(
+      organizationId,
+      input,
+      operatingCountryIds,
+    );
+
+    const defaultEnterpriseId = this.resolveDefaultEnterpriseId(
+      input.defaultEnterpriseId,
+      enterprises,
+    );
+    const defaultEnterprise =
+      enterprises.find((enterprise) => enterprise.id === defaultEnterpriseId) ?? enterprises[0];
+    const defaultCurrencyId = this.resolveDefaultCurrencyId(
+      input.defaultCurrencyId,
+      defaultEnterprise,
+    );
+    if (!defaultEnterprise.currencyIds.includes(defaultCurrencyId)) {
+      defaultEnterprise.currencyIds = this.normalizeIdList([
+        ...defaultEnterprise.currencyIds,
+        defaultCurrencyId,
+      ]);
+    }
+
+    const currencyIds = this.normalizeIdList(
+      enterprises.flatMap((enterprise) => enterprise.currencyIds),
+    );
+    currencyIds.forEach((currencyId) => this.assertBaseCurrency(organizationId, currencyId));
+
+    return {
+      baseCountryId: defaultEnterprise.countryId,
+      baseCurrencyId: defaultCurrencyId,
+      currencyIds,
+      operatingCountryIds: this.normalizeIdList(operatingCountryIds),
+      enterprises,
+      defaultEnterpriseId,
+      defaultCurrencyId,
+    };
+  }
+
+  private normalizeHierarchyFromStorage(input: CompanyHierarchyInput): NormalizedCompanyHierarchy {
+    const operatingCountryIds = this.normalizeIdList(input.operatingCountryIds);
+    if (operatingCountryIds.length === 0) {
+      operatingCountryIds.push(input.baseCountryId);
+    }
+    if (!operatingCountryIds.includes(input.baseCountryId)) {
+      operatingCountryIds.push(input.baseCountryId);
+    }
+
+    const enterprisesInput = Array.isArray(input.enterprises) ? input.enterprises : [];
+    const enterprises =
+      enterprisesInput.length > 0
+        ? enterprisesInput.map((enterprise) => {
+            const currencyIds = this.normalizeIdList(enterprise.currencyIds ?? input.currencies);
+            const normalizedCurrencies =
+              currencyIds.length > 0 ? currencyIds : [input.baseCurrencyId];
+            const defaultCurrencyId =
+              typeof enterprise.defaultCurrencyId === 'string' && enterprise.defaultCurrencyId.trim()
+                ? enterprise.defaultCurrencyId.trim()
+                : normalizedCurrencies[0] ?? input.baseCurrencyId;
+            const normalizedCurrencyIds = this.normalizeIdList([
+              ...normalizedCurrencies,
+              defaultCurrencyId,
+            ]);
+            return {
+              id: enterprise.id ?? uuid(),
+              name: enterprise.name?.trim() || input.name,
+              countryId: enterprise.countryId || input.baseCountryId,
+              currencyIds: normalizedCurrencyIds,
+              defaultCurrencyId,
+            };
+          })
+        : [
+            {
+              id: uuid(),
+              name: input.name,
+              countryId: input.baseCountryId,
+              currencyIds: this.normalizeIdList([input.baseCurrencyId]),
+              defaultCurrencyId: input.baseCurrencyId,
+            },
+          ];
+
+    const defaultEnterpriseId = this.resolveDefaultEnterpriseId(
+      input.defaultEnterpriseId,
+      enterprises,
+    );
+    const defaultEnterprise =
+      enterprises.find((enterprise) => enterprise.id === defaultEnterpriseId) ?? enterprises[0];
+    const defaultCurrencyId = this.resolveDefaultCurrencyId(
+      input.defaultCurrencyId,
+      defaultEnterprise,
+    );
+    if (!defaultEnterprise.currencyIds.includes(defaultCurrencyId)) {
+      defaultEnterprise.currencyIds = this.normalizeIdList([
+        ...defaultEnterprise.currencyIds,
+        defaultCurrencyId,
+      ]);
+    }
+
+    const currencyIds = this.normalizeIdList(
+      enterprises.flatMap((enterprise) => enterprise.currencyIds),
+    );
+
+    return {
+      baseCountryId: defaultEnterprise.countryId,
+      baseCurrencyId: defaultCurrencyId,
+      currencyIds,
+      operatingCountryIds: this.normalizeIdList([
+        ...operatingCountryIds,
+        ...enterprises.map((enterprise) => enterprise.countryId),
+      ]),
+      enterprises,
+      defaultEnterpriseId,
+      defaultCurrencyId,
+    };
+  }
+
+  private normalizeEnterprisesForInput(
+    organizationId: string,
+    input: CompanyHierarchyInput,
+    operatingCountryIds: string[],
+  ): CompanyEnterprise[] {
+    const enterprisesInput = Array.isArray(input.enterprises) ? input.enterprises : [];
+    if (enterprisesInput.length === 0) {
+      const fallbackCurrencies = this.normalizeIdList(input.currencies);
+      const normalizedCurrencies =
+        fallbackCurrencies.length > 0 ? fallbackCurrencies : [input.baseCurrencyId];
+      return [
+        {
+          id: uuid(),
+          name: input.name,
+          countryId: input.baseCountryId,
+          currencyIds: this.normalizeIdList([...normalizedCurrencies, input.baseCurrencyId]),
+          defaultCurrencyId: input.baseCurrencyId,
+        },
+      ];
+    }
+
+    return enterprisesInput.map((enterprise) => {
+      const name = enterprise.name?.trim();
+      if (!name) {
+        throw new BadRequestException('Enterprise name is required');
+      }
+      const countryId = enterprise.countryId?.trim();
+      if (!countryId) {
+        throw new BadRequestException('Enterprise country is required');
+      }
+
+      this.assertBaseCountry(organizationId, countryId);
+      if (!operatingCountryIds.includes(countryId)) {
+        operatingCountryIds.push(countryId);
+      }
+
+      const currencyIds = this.normalizeIdList(enterprise.currencyIds);
+      const normalizedCurrencies =
+        currencyIds.length > 0 ? currencyIds : [input.baseCurrencyId];
+      normalizedCurrencies.forEach((currencyId) =>
+        this.assertBaseCurrency(organizationId, currencyId),
+      );
+
+      const defaultCurrencyId =
+        typeof enterprise.defaultCurrencyId === 'string' && enterprise.defaultCurrencyId.trim()
+          ? enterprise.defaultCurrencyId.trim()
+          : normalizedCurrencies[0] ?? input.baseCurrencyId;
+      const normalizedCurrencyIds = this.normalizeIdList([
+        ...normalizedCurrencies,
+        defaultCurrencyId,
+      ]);
+
+      return {
+        id: enterprise.id ?? uuid(),
+        name,
+        countryId,
+        currencyIds: normalizedCurrencyIds,
+        defaultCurrencyId,
+      };
+    });
+  }
+
+  private resolveDefaultEnterpriseId(
+    requested: string | null | undefined,
+    enterprises: CompanyEnterprise[],
+  ): string | null {
+    if (requested && enterprises.some((enterprise) => enterprise.id === requested)) {
+      return requested;
+    }
+    return enterprises[0]?.id ?? null;
+  }
+
+  private resolveDefaultCurrencyId(
+    requested: string | null | undefined,
+    enterprise: CompanyEnterprise | undefined,
+  ): string {
+    if (!enterprise) {
+      return requested ?? 'unknown';
+    }
+    if (requested && enterprise.currencyIds.includes(requested)) {
+      return requested;
+    }
+    if (requested && requested.trim()) {
+      return requested;
+    }
+    return enterprise.defaultCurrencyId ?? enterprise.currencyIds[0] ?? 'unknown';
+  }
+
+  private normalizeIdList(ids: string[] | undefined): string[] {
+    const list = Array.isArray(ids) ? ids : [];
+    const normalized = list
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter((item) => item.length > 0);
+    return Array.from(new Set(normalized));
   }
 
   private mapLegacyCurrencyIds(

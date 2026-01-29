@@ -41,6 +41,7 @@ export class UsersService implements OnModuleInit {
       workspaces: dto.workspaceId ? [{ workspaceId: dto.workspaceId, roles: [] }] : [],
       devices: [],
       defaultWorkspaceId: dto.defaultWorkspaceId ?? dto.workspaceId,
+      defaultOrganizationId: dto.defaultOrganizationId,
       createdAt: new Date(),
     };
 
@@ -133,6 +134,32 @@ export class UsersService implements OnModuleInit {
     }
 
     user.defaultWorkspaceId = workspaceId;
+    const safeUser = this.toSafeUser(user);
+    this.persistState();
+    return safeUser;
+  }
+
+  setDefaultOrganization(userId: string, organizationId: string): SafeUser {
+    const user = this.users.find((candidate) => candidate.id === userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.defaultOrganizationId = organizationId;
+    const safeUser = this.toSafeUser(user);
+    this.persistState();
+    return safeUser;
+  }
+
+  clearDefaultOrganization(userId: string, organizationId: string): SafeUser {
+    const user = this.users.find((candidate) => candidate.id === userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.defaultOrganizationId === organizationId) {
+      user.defaultOrganizationId = undefined;
+    }
     const safeUser = this.toSafeUser(user);
     this.persistState();
     return safeUser;

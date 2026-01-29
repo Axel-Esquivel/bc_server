@@ -29,6 +29,15 @@ import type { CoreCompany, CoreCountry, CoreCurrency, OrganizationCoreSettings }
 import type { OrganizationWorkspaceSnapshot } from './types/organization-workspace-snapshot.types';
 import type { OrganizationModuleState } from './types/module-state.types';
 import type { OrganizationModulesOverviewResponse } from './types/organization-modules-overview.types';
+import type { SafeUser } from '../users/entities/user.entity';
+
+interface OrganizationDefaultResponse {
+  user: SafeUser;
+}
+
+interface OrganizationDeleteResponse {
+  success: true;
+}
 
 class UpdateOrganizationMemberDto {
   @IsString()
@@ -520,6 +529,40 @@ export class OrganizationsController {
     return {
       message: 'Organization updated',
       result: organization,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationMemberGuard)
+  @Patch(':id/default')
+  setDefaultOrganization(@Req() req: AuthenticatedRequest, @Param('id') id: string): ApiResponse<OrganizationDefaultResponse> {
+    const userId = this.getUserId(req);
+    const user = this.organizationsService.setDefaultOrganization(id, userId);
+    return {
+      message: 'Default organization updated',
+      result: { user },
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationMemberGuard)
+  @Delete(':id/leave')
+  leaveOrganization(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    const userId = this.getUserId(req);
+    const organization = this.organizationsService.leaveOrganization(id, userId);
+    return {
+      message: 'Organization membership removed',
+      result: organization,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('organizations.write')
+  @Delete(':id')
+  deleteOrganization(@Req() req: AuthenticatedRequest, @Param('id') id: string): ApiResponse<OrganizationDeleteResponse> {
+    const requesterId = this.getUserId(req);
+    this.organizationsService.deleteOrganization(id, requesterId);
+    return {
+      message: 'Organization removed',
+      result: { success: true },
     };
   }
 

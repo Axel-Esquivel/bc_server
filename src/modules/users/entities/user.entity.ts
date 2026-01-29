@@ -13,6 +13,7 @@ export interface UserEntity {
   workspaces: WorkspaceMembership[];
   devices: string[];
   defaultWorkspaceId?: string;
+  defaultOrganizationId?: string;
   createdAt: Date;
 }
 

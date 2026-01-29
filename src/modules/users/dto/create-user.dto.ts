@@ -27,4 +27,8 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   defaultWorkspaceId?: string;
+
+  @IsOptional()
+  @IsString()
+  defaultOrganizationId?: string;
 }

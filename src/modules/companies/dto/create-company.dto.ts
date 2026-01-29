@@ -1,4 +1,6 @@
-import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { CompanyEnterpriseDto } from './company-enterprise.dto';
 
 export class CreateCompanyDto {
   @IsString()
@@ -25,4 +27,23 @@ export class CreateCompanyDto {
   @IsString({ each: true })
   @IsOptional()
   currencies?: string[];
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  operatingCountryIds?: string[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CompanyEnterpriseDto)
+  @IsOptional()
+  enterprises?: CompanyEnterpriseDto[];
+
+  @IsString()
+  @IsOptional()
+  defaultEnterpriseId?: string;
+
+  @IsString()
+  @IsOptional()
+  defaultCurrencyId?: string;
 }

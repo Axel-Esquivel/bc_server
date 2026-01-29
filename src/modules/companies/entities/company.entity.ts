@@ -1,3 +1,5 @@
+import type { CompanyEnterprise } from '../types/company-hierarchy.types';
+
 export type CompanyMemberStatus = 'active' | 'invited' | 'disabled';
 
 export interface CompanyMember {
@@ -23,6 +25,10 @@ export interface CompanyEntity {
   baseCountryId: string;
   baseCurrencyId: string;
   currencies: string[];
+  operatingCountryIds: string[];
+  enterprises: CompanyEnterprise[];
+  defaultEnterpriseId: string | null;
+  defaultCurrencyId: string | null;
   members: CompanyMember[];
   roles: CompanyRoleDefinition[];
   moduleStates: Record<string, CompanyModuleStatus>;

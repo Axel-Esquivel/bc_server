@@ -14,6 +14,7 @@ import { v4 as uuid } from 'uuid';
 import { ModuleStateService } from '../../core/database/module-state.service';
 import { MODULE_CATALOG } from '../../core/constants/modules.catalog';
 import { UsersService } from '../users/users.service';
+import { SafeUser } from '../users/entities/user.entity';
 import { CompaniesService } from '../companies/companies.service';
 import { BranchesService } from '../branches/branches.service';
 import { WarehousesService } from '../warehouses/warehouses.service';
@@ -482,7 +483,7 @@ export class OrganizationsService implements OnModuleInit {
     dto: UpdateOrganizationDto,
   ): OrganizationEntity {
     const organization = this.getOrganization(organizationId);
-    this.assertPermission(organization, requesterId, 'organizations.write');
+    this.assertOwner(organization, requesterId);
 
     if (dto.name !== undefined) {
       organization.name = dto.name.trim();
@@ -889,8 +890,52 @@ export class OrganizationsService implements OnModuleInit {
     }
 
     organization.members.splice(index, 1);
+    this.usersService.clearDefaultOrganization(targetUserId, organizationId);
     this.persistState();
     return organization;
+  }
+
+  leaveOrganization(organizationId: string, userId: string): OrganizationEntity {
+    const organization = this.getOrganization(organizationId);
+    const index = organization.members.findIndex((item) => item.userId === userId);
+    if (index === -1) {
+      throw new NotFoundException('Organization member not found');
+    }
+
+    const member = organization.members[index];
+    if (member.roleKey === OWNER_ROLE_KEY) {
+      throw new ForbiddenException('Owner role cannot leave organization');
+    }
+
+    organization.members.splice(index, 1);
+    this.usersService.clearDefaultOrganization(userId, organizationId);
+    this.persistState();
+    return organization;
+  }
+
+  setDefaultOrganization(organizationId: string, userId: string): SafeUser {
+    const organization = this.getOrganization(organizationId);
+    const member = organization.members.find((item) => item.userId === userId);
+    if (!member) {
+      throw new ForbiddenException('User is not a member of organization');
+    }
+    if (member.status !== OrganizationMemberStatus.Active) {
+      throw new ForbiddenException('Membership is pending approval');
+    }
+
+    return this.usersService.setDefaultOrganization(userId, organizationId);
+  }
+
+  deleteOrganization(organizationId: string, requesterId: string): void {
+    const organization = this.getOrganization(organizationId);
+    this.assertOwner(organization, requesterId);
+
+    this.organizations = this.organizations.filter((item) => item.id !== organizationId);
+    organization.members.forEach((member) => {
+      this.usersService.clearDefaultOrganization(member.userId, organizationId);
+    });
+    this.companiesService.removeByOrganization(organizationId);
+    this.persistState();
   }
 
   createRole(
@@ -1191,7 +1236,16 @@ export class OrganizationsService implements OnModuleInit {
   }
 
   private assertOwner(organization: OrganizationEntity, requesterId: string): void {
-    this.assertPermission(organization, requesterId, 'roles.write');
+    const member = this.getMember(organization.id, requesterId);
+    if (!member) {
+      throw new ForbiddenException('User is not a member of organization');
+    }
+    if (member.status !== OrganizationMemberStatus.Active) {
+      throw new ForbiddenException('Membership is pending approval');
+    }
+    if (member.roleKey !== OWNER_ROLE_KEY) {
+      throw new ForbiddenException('Owner role required');
+    }
   }
 
   private assertPermission(organization: OrganizationEntity, requesterId: string, permission: string): void {
