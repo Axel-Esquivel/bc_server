@@ -2,7 +2,7 @@
   name: 'auth',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['users', 'devices', 'workspaces'],
+  dependencies: ['users', 'devices', 'organizations', 'companies'],
   isSystem: true,
   isInstallable: false,
 };

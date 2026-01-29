@@ -3,8 +3,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { DevicesModule } from '../devices/devices.module';
 import { UsersModule } from '../users/users.module';
-import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
+import { CompaniesModule } from '../companies/companies.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -16,8 +16,8 @@ import { JwtStrategy } from './jwt.strategy';
   imports: [
     UsersModule,
     forwardRef(() => DevicesModule),
-    forwardRef(() => WorkspacesModule),
     forwardRef(() => OrganizationsModule),
+    forwardRef(() => CompaniesModule),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'demo-secret',

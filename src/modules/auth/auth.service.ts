@@ -3,19 +3,31 @@ import { JwtService } from '@nestjs/jwt';
 import { ModuleStateService } from '../../core/database/module-state.service';
 import { UsersService } from '../users/users.service';
 import { DevicesService } from '../devices/devices.service';
-import { WorkspacesService } from '../workspaces/workspaces.service';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { CompaniesService } from '../companies/companies.service';
+import { ActiveContext } from '../../core/types/active-context.types';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
+import { OrganizationMemberStatus } from '../organizations/entities/organization.entity';
 
 export interface TokenBundle {
   accessToken: string;
   refreshToken: string;
+  activeContext?: ActiveContext;
 }
 
 interface AuthState {
   tokens: { key: string; value: string }[];
+}
+
+interface AuthTokenPayload {
+  sub: string;
+  email: string;
+  deviceId: string;
+  permissions: string[];
+  organizationId?: string | null;
+  companyId?: string | null;
 }
 
 @Injectable()
@@ -28,9 +40,10 @@ export class AuthService implements OnModuleInit {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly devicesService: DevicesService,
-    private readonly workspacesService: WorkspacesService,
     @Inject(forwardRef(() => OrganizationsService))
     private readonly organizationsService: OrganizationsService,
+    @Inject(forwardRef(() => CompaniesService))
+    private readonly companiesService: CompaniesService,
     private readonly moduleState: ModuleStateService,
   ) {}
 
@@ -45,20 +58,17 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const workspaceId = user.defaultWorkspaceId || user.workspaces?.[0]?.workspaceId;
-    if (workspaceId) {
-      this.workspacesService.getWorkspace(workspaceId);
-    }
+    const activeContext = this.resolveActiveContext(user.id);
     const deviceId = 'untracked-device';
 
-    this.devicesService.upsertDevice(user.id, deviceId, workspaceId);
+    this.devicesService.upsertDevice(user.id, deviceId, activeContext.companyId ?? undefined);
 
     const tokens = this.issueTokens({
       sub: user.id,
       email: user.email,
-      workspaceId,
       deviceId,
-      workspaces: user.workspaces,
+      organizationId: activeContext.organizationId,
+      companyId: activeContext.companyId,
       permissions: [],
     });
 
@@ -68,8 +78,8 @@ export class AuthService implements OnModuleInit {
       message: 'Login successful',
       result: {
         user,
-        workspaceId,
         deviceId,
+        activeContext,
         ...tokens,
       },
     };
@@ -84,14 +94,14 @@ export class AuthService implements OnModuleInit {
       password: dto.password,
     });
 
-    const workspaceId = user.defaultWorkspaceId || user.workspaces?.[0]?.workspaceId;
+    const activeContext = this.resolveActiveContext(user.id);
     const deviceId = 'untracked-device';
     const tokens = this.issueTokens({
       sub: user.id,
       email: user.email,
-      workspaceId,
       deviceId,
-      workspaces: user.workspaces,
+      organizationId: activeContext.organizationId,
+      companyId: activeContext.companyId,
       permissions: [],
     });
 
@@ -100,7 +110,7 @@ export class AuthService implements OnModuleInit {
       message: 'User registered',
       result: {
         user,
-        workspaceId,
+        activeContext,
         deviceId,
         ...tokens,
       },
@@ -114,12 +124,13 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('Refresh token revoked');
     }
 
+    const activeContext = this.resolveActiveContext(payload.sub);
     const tokens = this.issueTokens({
       sub: payload.sub,
       email: payload.email,
-      workspaceId: payload.workspaceId,
       deviceId: dto.deviceId || payload.deviceId,
-      workspaces: payload.workspaces,
+      organizationId: activeContext.organizationId,
+      companyId: activeContext.companyId,
       permissions: payload.permissions || [],
     });
 
@@ -127,7 +138,10 @@ export class AuthService implements OnModuleInit {
 
     return {
       message: 'Token refreshed',
-      result: tokens,
+      result: {
+        ...tokens,
+        activeContext,
+      },
     };
   }
 
@@ -156,7 +170,7 @@ export class AuthService implements OnModuleInit {
     };
   }
 
-  private issueTokens(payload: any): TokenBundle {
+  private issueTokens(payload: AuthTokenPayload): TokenBundle {
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET || 'demo-secret',
       expiresIn: '15m',
@@ -170,11 +184,12 @@ export class AuthService implements OnModuleInit {
     return { accessToken, refreshToken };
   }
 
-  private async verifyRefreshToken(token: string) {
+  private async verifyRefreshToken(token: string): Promise<AuthTokenPayload> {
     try {
-      return await this.jwtService.verifyAsync(token, {
+      const payload = (await this.jwtService.verifyAsync(token, {
         secret: process.env.JWT_REFRESH_SECRET || 'demo-refresh-secret',
-      });
+      })) as AuthTokenPayload;
+      return payload;
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -199,5 +214,44 @@ export class AuthService implements OnModuleInit {
         const message = error instanceof Error ? error.stack ?? error.message : String(error);
         this.logger.error(`Failed to persist refresh tokens: ${message}`);
       });
+  }
+
+  private resolveActiveContext(userId: string): ActiveContext {
+    const memberships = this.organizationsService.listMembershipsByUser(userId);
+    const activeMembership = memberships.find(
+      (member) => member.status === OrganizationMemberStatus.Active,
+    );
+    const organizationId = activeMembership?.organizationId ?? null;
+    if (!organizationId) {
+      return this.createEmptyContext();
+    }
+
+    const companies = this.companiesService
+      .listByUser(userId)
+      .filter((company) => company.organizationId === organizationId);
+    const company = companies[0] ?? null;
+    const currencyId =
+      company?.baseCurrencyId ?? this.resolveOrganizationCurrency(organizationId);
+
+    return {
+      organizationId,
+      companyId: company?.id ?? null,
+      enterpriseId: null,
+      currencyId,
+    };
+  }
+
+  private resolveOrganizationCurrency(organizationId: string): string | null {
+    const coreSettings = this.organizationsService.getCoreSettings(organizationId);
+    return coreSettings.currencies[0]?.id ?? null;
+  }
+
+  private createEmptyContext(): ActiveContext {
+    return {
+      organizationId: null,
+      companyId: null,
+      enterpriseId: null,
+      currencyId: null,
+    };
   }
 }
