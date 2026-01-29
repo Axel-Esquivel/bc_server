@@ -9,7 +9,6 @@ import {
 import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateCountryDto } from './dto/create-country.dto';
 import { UpdateCountryDto } from './dto/update-country.dto';
-import { ISO_3166_COUNTRIES } from './data/iso-3166';
 import { CountryEntity } from './entities/country.entity';
 
 interface CountriesState {
@@ -28,7 +27,6 @@ export class CountriesService implements OnModuleInit {
     const state = await this.moduleState.loadState<CountriesState>(this.stateKey, { countries: [] });
     const normalized = (state.countries ?? []).map((country) => this.normalizeCountry(country));
     this.countries = normalized;
-    await this.seedIfEmpty();
     this.persistState();
   }
 
@@ -141,37 +139,37 @@ export class CountriesService implements OnModuleInit {
     return { id: removed.id };
   }
 
-  private normalizeCountry(raw: any): CountryEntity {
-    const iso2 = typeof raw.iso2 === 'string' ? raw.iso2.trim().toUpperCase() : 'UN';
-    const iso3 = typeof raw.iso3 === 'string' ? raw.iso3.trim().toUpperCase() : 'UNK';
+  private normalizeCountry(raw: unknown): CountryEntity {
+    const candidate = raw as Partial<CountryEntity> & {
+      iso2?: unknown;
+      iso3?: unknown;
+      nameEn?: unknown;
+      nameEs?: unknown;
+      phoneCode?: unknown;
+      id?: unknown;
+    };
+    const iso2 = typeof candidate.iso2 === 'string' ? candidate.iso2.trim().toUpperCase() : 'UN';
+    const iso3 = typeof candidate.iso3 === 'string' ? candidate.iso3.trim().toUpperCase() : 'UNK';
     const nameEn =
-      typeof raw.nameEn === 'string' && raw.nameEn.trim() ? raw.nameEn.trim() : raw.nameEs || 'Country';
+      typeof candidate.nameEn === 'string' && candidate.nameEn.trim()
+        ? candidate.nameEn.trim()
+        : typeof candidate.nameEs === 'string' && candidate.nameEs.trim()
+          ? candidate.nameEs.trim()
+          : 'Country';
     const nameEs =
-      typeof raw.nameEs === 'string' && raw.nameEs.trim() ? raw.nameEs.trim() : nameEn;
+      typeof candidate.nameEs === 'string' && candidate.nameEs.trim() ? candidate.nameEs.trim() : nameEn;
 
     return {
-      id: raw.id || iso2,
+      id: typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id.trim() : iso2,
       iso2,
       iso3,
       nameEn,
       nameEs,
-      phoneCode: typeof raw.phoneCode === 'string' && raw.phoneCode.trim() ? raw.phoneCode.trim() : undefined,
+      phoneCode:
+        typeof candidate.phoneCode === 'string' && candidate.phoneCode.trim()
+          ? candidate.phoneCode.trim()
+          : undefined,
     };
-  }
-
-  private async seedIfEmpty(): Promise<void> {
-    if (this.countries.length > 0) {
-      return;
-    }
-
-    this.countries = ISO_3166_COUNTRIES.map((country) =>
-      this.normalizeCountry({
-        id: country.iso2,
-        ...country,
-      }),
-    );
-    await this.moduleState.saveState<CountriesState>(this.stateKey, { countries: this.countries });
-    this.logger.log(`Seeded ${this.countries.length} countries`);
   }
 
   private persistState(): void {

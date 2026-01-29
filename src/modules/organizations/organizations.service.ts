@@ -115,6 +115,8 @@ export class OrganizationsService implements OnModuleInit {
       code: this.generateUniqueCode(),
       ownerUserId,
       createdBy: ownerUserId,
+      countryIds: this.normalizeIds(dto.countryIds),
+      currencyIds: this.normalizeIds(dto.currencyIds),
       moduleStates: this.createModuleStatesMap(),
       moduleSettings: this.createModuleSettingsMap(),
       members: [
@@ -232,6 +234,8 @@ export class OrganizationsService implements OnModuleInit {
     });
 
     organization.coreSettings = this.buildCoreSettingsFromBootstrap(countryIds, currencyIds, coreCompanies);
+    organization.countryIds = countryIds;
+    organization.currencyIds = currencyIds;
     organization.structureSettings = {
       companies: createdCompanies,
       branches: createdBranches,
@@ -487,6 +491,12 @@ export class OrganizationsService implements OnModuleInit {
 
     if (dto.name !== undefined) {
       organization.name = dto.name.trim();
+    }
+    if (dto.countryIds !== undefined) {
+      organization.countryIds = this.normalizeIds(dto.countryIds);
+    }
+    if (dto.currencyIds !== undefined) {
+      organization.currencyIds = this.normalizeIds(dto.currencyIds);
     }
 
     this.persistState();
@@ -1153,6 +1163,12 @@ export class OrganizationsService implements OnModuleInit {
 
     const roles = this.normalizeRoles(raw.roles, members);
     const coreSettings = this.normalizeCoreSettings(raw.coreSettings);
+    const countryIds = this.normalizeIds(
+      Array.isArray(raw.countryIds) ? raw.countryIds : coreSettings.countries.map((country) => country.id),
+    );
+    const currencyIds = this.normalizeIds(
+      Array.isArray(raw.currencyIds) ? raw.currencyIds : coreSettings.currencies.map((currency) => currency.id),
+    );
     const structureSettings = raw.structureSettings
       ? {
           companies: Array.isArray(raw.structureSettings.companies)
@@ -1173,6 +1189,8 @@ export class OrganizationsService implements OnModuleInit {
       code: raw.code || this.generateUniqueCode(existing),
       ownerUserId,
       createdBy,
+      countryIds,
+      currencyIds,
       members,
       roles,
       coreSettings,

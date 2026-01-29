@@ -30,6 +30,8 @@ export interface OrganizationEntity {
   code: string;
   ownerUserId: string;
   createdBy: string;
+  countryIds: string[];
+  currencyIds: string[];
   members: OrganizationMember[];
   roles: OrganizationRoleDefinition[];
   coreSettings: OrganizationCoreSettings;

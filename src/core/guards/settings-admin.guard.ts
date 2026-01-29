@@ -6,7 +6,13 @@ export class SettingsAdminGuard implements CanActivate {
   constructor(private readonly organizationsService: OrganizationsService) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<{
+      method?: string;
+      originalUrl?: string;
+      url?: string;
+      user?: { sub?: string; id?: string };
+      userId?: string;
+    }>();
     const userId: string | undefined = request.user?.sub ?? request.user?.id ?? request.userId;
     if (!userId) {
       throw new ForbiddenException('User is not authenticated');
@@ -16,6 +22,22 @@ export class SettingsAdminGuard implements CanActivate {
       return true;
     }
 
+    if (
+      !this.organizationsService.hasActiveMemberships(userId) &&
+      this.isOnboardingSettingsRequest(request)
+    ) {
+      return true;
+    }
+
     throw new ForbiddenException('Missing permission: settings.configure');
+  }
+
+  private isOnboardingSettingsRequest(request: { method?: string; originalUrl?: string; url?: string }): boolean {
+    const method = typeof request.method === 'string' ? request.method.toUpperCase() : '';
+    if (method !== 'POST') {
+      return false;
+    }
+    const url = (request.originalUrl ?? request.url ?? '').toLowerCase();
+    return url.includes('/countries') || url.includes('/currencies');
   }
 }
