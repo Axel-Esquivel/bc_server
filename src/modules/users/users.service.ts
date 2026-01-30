@@ -42,6 +42,7 @@ export class UsersService implements OnModuleInit {
       devices: [],
       defaultWorkspaceId: dto.defaultWorkspaceId ?? dto.workspaceId,
       defaultOrganizationId: dto.defaultOrganizationId,
+      defaultCompanyId: dto.defaultCompanyId ?? dto.defaultWorkspaceId ?? dto.workspaceId,
       createdAt: new Date(),
     };
 
@@ -146,6 +147,18 @@ export class UsersService implements OnModuleInit {
     }
 
     user.defaultOrganizationId = organizationId;
+    const safeUser = this.toSafeUser(user);
+    this.persistState();
+    return safeUser;
+  }
+
+  setDefaultCompany(userId: string, companyId: string): SafeUser {
+    const user = this.users.find((candidate) => candidate.id === userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.defaultCompanyId = companyId;
     const safeUser = this.toSafeUser(user);
     this.persistState();
     return safeUser;

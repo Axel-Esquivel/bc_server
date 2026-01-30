@@ -111,16 +111,19 @@ export class CompaniesService implements OnModuleInit {
       throw new BadRequestException('Company name is required');
     }
 
-    const hierarchy = this.normalizeHierarchyForInput(organizationId, {
-      name,
-      baseCountryId: dto.baseCountryId,
-      baseCurrencyId: dto.baseCurrencyId,
-      currencies: dto.currencies,
-      operatingCountryIds: dto.operatingCountryIds,
-      enterprises: dto.enterprises,
-      defaultEnterpriseId: dto.defaultEnterpriseId,
-      defaultCurrencyId: dto.defaultCurrencyId,
-    });
+    const useV2 = Array.isArray(dto.enterprisesByCountry) && dto.enterprisesByCountry.length > 0;
+    const hierarchy = useV2
+      ? this.normalizeHierarchyForV2(organizationId, name, dto)
+      : this.normalizeHierarchyForInput(organizationId, {
+          name,
+          baseCountryId: dto.baseCountryId ?? '',
+          baseCurrencyId: dto.baseCurrencyId ?? '',
+          currencies: dto.currencies,
+          operatingCountryIds: dto.operatingCountryIds,
+          enterprises: dto.enterprises,
+          defaultEnterpriseId: dto.defaultEnterpriseId,
+          defaultCurrencyId: dto.defaultCurrencyId,
+        });
 
     const company: CompanyEntity = {
       id: uuid(),
@@ -763,6 +766,108 @@ export class CompaniesService implements OnModuleInit {
       if (!branches.has(warehouse.branchId)) {
         throw new BadRequestException('Warehouse branch not found');
       }
+    });
+  }
+
+  private normalizeHierarchyForV2(
+    organizationId: string,
+    name: string,
+    dto: CreateCompanyDto,
+  ): NormalizedCompanyHierarchy {
+    const operatingCountryIds = this.normalizeIdList(dto.operatingCountryIds);
+    if (operatingCountryIds.length === 0) {
+      throw new BadRequestException('Operating countries are required');
+    }
+
+    const currencyIds = this.normalizeIdList(dto.currencyIds);
+    if (currencyIds.length === 0) {
+      throw new BadRequestException('Currencies are required');
+    }
+
+    const groups = Array.isArray(dto.enterprisesByCountry) ? dto.enterprisesByCountry : [];
+    if (groups.length === 0) {
+      throw new BadRequestException('Enterprises are required');
+    }
+
+    const enterprises: CompanyEnterpriseInput[] = [];
+    let defaultEnterpriseId: string | undefined;
+    groups.forEach((group) => {
+      const countryId = group.countryId?.trim();
+      if (!countryId) {
+        throw new BadRequestException('Enterprise country is required');
+      }
+      if (!operatingCountryIds.includes(countryId)) {
+        throw new BadRequestException('Enterprise country must be within operating countries');
+      }
+      const units = Array.isArray(group.enterprises) ? group.enterprises : [];
+      if (units.length === 0) {
+        throw new BadRequestException('Enterprises are required');
+      }
+      units.forEach((unit, index) => {
+        const unitName = unit.name?.trim();
+        if (!unitName) {
+          throw new BadRequestException('Enterprise name is required');
+        }
+        const allowedCurrencyIds = this.normalizeIdList(unit.allowedCurrencyIds);
+        if (allowedCurrencyIds.length === 0) {
+          throw new BadRequestException('Enterprise currencies are required');
+        }
+        allowedCurrencyIds.forEach((currencyId) => {
+          if (!currencyIds.includes(currencyId)) {
+            throw new BadRequestException('Enterprise currencies must be within company currencies');
+          }
+        });
+        const baseCurrencyId = unit.baseCurrencyId?.trim();
+        if (!baseCurrencyId) {
+          throw new BadRequestException('Enterprise base currency is required');
+        }
+        if (!allowedCurrencyIds.includes(baseCurrencyId)) {
+          throw new BadRequestException('Enterprise base currency must be within enterprise currencies');
+        }
+
+        const enterpriseId = uuid();
+        enterprises.push({
+          id: enterpriseId,
+          name: unitName,
+          countryId,
+          currencyIds: allowedCurrencyIds,
+          defaultCurrencyId: baseCurrencyId,
+        });
+
+        if (
+          dto.defaultEnterpriseKey &&
+          dto.defaultEnterpriseKey.countryId === countryId &&
+          dto.defaultEnterpriseKey.enterpriseIndex === index
+        ) {
+          defaultEnterpriseId = enterpriseId;
+        }
+      });
+    });
+
+    const defaultCurrencyId =
+      typeof dto.defaultCurrencyId === 'string' && dto.defaultCurrencyId.trim()
+        ? dto.defaultCurrencyId.trim()
+        : currencyIds[0];
+    if (!currencyIds.includes(defaultCurrencyId)) {
+      throw new BadRequestException('Default currency must be within company currencies');
+    }
+
+    const baseCountryId =
+      defaultEnterpriseId
+        ? enterprises.find((enterprise) => enterprise.id === defaultEnterpriseId)?.countryId ??
+          operatingCountryIds[0]
+        : operatingCountryIds[0];
+    const baseCurrencyId = defaultCurrencyId;
+
+    return this.normalizeHierarchyForInput(organizationId, {
+      name,
+      baseCountryId,
+      baseCurrencyId,
+      currencies: currencyIds,
+      operatingCountryIds,
+      enterprises,
+      defaultEnterpriseId,
+      defaultCurrencyId,
     });
   }
 

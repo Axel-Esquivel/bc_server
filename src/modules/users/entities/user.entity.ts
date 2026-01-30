@@ -14,6 +14,7 @@ export interface UserEntity {
   devices: string[];
   defaultWorkspaceId?: string;
   defaultOrganizationId?: string;
+  defaultCompanyId?: string;
   createdAt: Date;
 }
 

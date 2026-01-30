@@ -234,7 +234,7 @@ export class AuthService implements OnModuleInit {
     const companies = this.companiesService
       .listByUser(userId)
       .filter((company) => company.organizationId === organizationId);
-    const preferredCompanyId = user.defaultWorkspaceId;
+    const preferredCompanyId = user.defaultCompanyId ?? user.defaultWorkspaceId;
     const company =
       preferredCompanyId && companies.some((item) => item.id === preferredCompanyId)
         ? companies.find((item) => item.id === preferredCompanyId) ?? null

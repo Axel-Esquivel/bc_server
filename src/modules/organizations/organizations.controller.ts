@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import { IsArray, IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { BootstrapOrganizationDto } from './dto/bootstrap-organization.dto';
@@ -20,6 +32,7 @@ import { OrganizationPermission } from './decorators/organization-permission.dec
 import { OrganizationAdminGuard } from './guards/organization-admin.guard';
 import { OrganizationMemberGuard } from './guards/organization-member.guard';
 import { OrganizationsService } from './organizations.service';
+import { CompaniesService } from '../companies/companies.service';
 import type { OrganizationRoleKey } from './types/organization-role.types';
 import type { AuthenticatedRequest } from '../../core/types/authenticated-request.types';
 import type { ApiResponse } from '../../core/types/api-response.types';
@@ -30,6 +43,7 @@ import type { OrganizationWorkspaceSnapshot } from './types/organization-workspa
 import type { OrganizationModuleState } from './types/module-state.types';
 import type { OrganizationModulesOverviewResponse } from './types/organization-modules-overview.types';
 import type { SafeUser } from '../users/entities/user.entity';
+import type { CompanyEntity } from '../companies/entities/company.entity';
 
 interface OrganizationDefaultResponse {
   user: SafeUser;
@@ -69,7 +83,10 @@ class UpdateOrganizationRoleDto {
 
 @Controller('organizations')
 export class OrganizationsController {
-  constructor(private readonly organizationsService: OrganizationsService) {}
+  constructor(
+    private readonly organizationsService: OrganizationsService,
+    private readonly companiesService: CompaniesService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @Post()
@@ -284,10 +301,38 @@ export class OrganizationsController {
   @OrganizationPermission('organizations.write')
   @Post(':id/companies')
   addCoreCompany(
+    @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Body() dto: CreateCoreCompanyDto,
-  ): ApiResponse<CoreCompany> {
-    const result = this.organizationsService.addCompany(id, dto);
+  ): ApiResponse<CoreCompany | CompanyEntity> {
+    console.log('CREATE_COMPANY_DTO_V2_ACTIVE', dto);
+    const useV2 =
+      Array.isArray(dto.operatingCountryIds) ||
+      Array.isArray(dto.currencyIds) ||
+      Array.isArray(dto.enterprisesByCountry);
+    if (useV2) {
+      const userId = this.getUserId(req);
+      const operatingCountryIds = dto.operatingCountryIds ?? (dto.countryId ? [dto.countryId] : []);
+      const company = this.companiesService.createCompany(id, userId, {
+        name: dto.name,
+        operatingCountryIds,
+        currencyIds: dto.currencyIds,
+        defaultCurrencyId: dto.defaultCurrencyId,
+        enterprisesByCountry: dto.enterprisesByCountry,
+        defaultEnterpriseKey: dto.defaultEnterpriseKey,
+        baseCountryId: dto.countryId,
+      });
+      return {
+        message: 'Company created',
+        result: company,
+      };
+    }
+
+    const countryId = dto.countryId?.trim();
+    if (!countryId) {
+      throw new BadRequestException('Company country is required');
+    }
+    const result = this.organizationsService.addCompany(id, { name: dto.name, countryId });
     return {
       message: 'Organization company added',
       result,

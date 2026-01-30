@@ -1,6 +1,7 @@
 import { Body, Controller, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ResolveUsersDto } from './dto/resolve-users.dto';
+import { SetDefaultCompanyDto } from './dto/set-default-company.dto';
 import { SetDefaultWorkspaceDto } from './dto/set-default-workspace.dto';
 import { UsersService } from './users.service';
 
@@ -14,6 +15,16 @@ export class UsersController {
     const user = this.usersService.setDefaultWorkspace(req.user.sub, dto.workspaceId);
     return {
       message: 'Default workspace updated',
+      result: user,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/default-company')
+  setDefaultCompany(@Req() req: any, @Body() dto: SetDefaultCompanyDto) {
+    const user = this.usersService.setDefaultCompany(req.user.sub, dto.companyId);
+    return {
+      message: 'Default company updated',
       result: user,
     };
   }
