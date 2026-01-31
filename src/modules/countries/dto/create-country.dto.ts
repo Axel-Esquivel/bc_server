@@ -1,8 +1,19 @@
-import { IsNotEmpty, IsOptional, IsString, Length } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, Length, ValidateIf } from 'class-validator';
 
 export class CreateCountryDto {
+  @ValidateIf((value) => !value.iso2)
   @IsString()
-  @IsOptional()
+  @IsNotEmpty()
+  @Length(2, 2)
+  code?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @ValidateIf((value) => !value.code)
+  @IsString()
+  @IsNotEmpty()
   @Length(2, 2)
   iso2?: string;
 
@@ -10,15 +21,6 @@ export class CreateCountryDto {
   @IsOptional()
   @Length(3, 3)
   iso3?: string;
-
-  @IsString()
-  @IsOptional()
-  @Length(2, 2)
-  code?: string;
-
-  @IsString()
-  @IsOptional()
-  name?: string;
 
   @IsString()
   @IsOptional()

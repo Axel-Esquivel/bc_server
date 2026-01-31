@@ -50,9 +50,10 @@ export class CountriesService {
       iso3 = `${iso2}X`.slice(0, 3);
     }
 
-    const fallbackName = dto.name?.trim() ?? '';
-    const nameEs = (dto.nameEs ?? dto.name ?? '').trim();
-    const nameEn = (dto.nameEn ?? dto.name ?? fallbackName).trim();
+    const trimmedName = dto.name?.trim() ?? '';
+    const fallbackName = trimmedName;
+    const nameEs = trimmedName || (dto.nameEs ?? '').trim();
+    const nameEn = trimmedName || (dto.nameEn ?? '').trim() || nameEs;
 
     if (!nameEs && !nameEn && !fallbackName) {
       throw new BadRequestException('Country name is required');
