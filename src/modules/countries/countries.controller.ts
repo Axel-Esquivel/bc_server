@@ -10,29 +10,29 @@ export class CountriesController {
   constructor(private readonly countriesService: CountriesService) {}
 
   @Get()
-  list(@Query('q') query?: string) {
-    const result = this.countriesService.list(query);
+  async list(@Query('q') query?: string) {
+    const result = await this.countriesService.list(query);
     return { message: 'Countries retrieved', result };
   }
 
   @UseGuards(JwtAuthGuard, SettingsAdminGuard)
   @Post()
-  create(@Body() dto: CreateCountryDto) {
-    const result = this.countriesService.create(dto);
+  async create(@Body() dto: CreateCountryDto) {
+    const result = await this.countriesService.create(dto);
     return { message: 'Country created', result };
   }
 
   @UseGuards(JwtAuthGuard, SettingsAdminGuard)
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateCountryDto) {
-    const result = this.countriesService.update(id, dto);
+  async update(@Param('id') id: string, @Body() dto: UpdateCountryDto) {
+    const result = await this.countriesService.update(id, dto);
     return { message: 'Country updated', result };
   }
 
   @UseGuards(JwtAuthGuard, SettingsAdminGuard)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    const result = this.countriesService.delete(id);
+  async remove(@Param('id') id: string) {
+    const result = await this.countriesService.delete(id);
     return { message: 'Country removed', result };
   }
 }

@@ -5,7 +5,7 @@ import { OrganizationsService } from '../../modules/organizations/organizations.
 export class SettingsAdminGuard implements CanActivate {
   constructor(private readonly organizationsService: OrganizationsService) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<{
       method?: string;
       originalUrl?: string;
@@ -18,12 +18,12 @@ export class SettingsAdminGuard implements CanActivate {
       throw new ForbiddenException('User is not authenticated');
     }
 
-    if (this.organizationsService.hasPermissionAnyOrganization(userId, 'settings.configure')) {
+    if (await this.organizationsService.hasPermissionAnyOrganization(userId, 'settings.configure')) {
       return true;
     }
 
     if (
-      !this.organizationsService.hasActiveMemberships(userId) &&
+      !(await this.organizationsService.hasActiveMemberships(userId)) &&
       this.isOnboardingSettingsRequest(request)
     ) {
       return true;

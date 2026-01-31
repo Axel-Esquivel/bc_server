@@ -11,7 +11,7 @@ import { OrganizationsService } from '../organizations.service';
 export class OrganizationMemberGuard implements CanActivate {
   constructor(private readonly organizationsService: OrganizationsService) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const organizationId: string | undefined = request.params?.id;
     if (!organizationId) {
@@ -19,7 +19,7 @@ export class OrganizationMemberGuard implements CanActivate {
     }
 
     const userId: string | undefined = request.user?.sub ?? request.user?.id ?? request.userId;
-    const member = this.organizationsService.getMember(organizationId, userId);
+    const member = await this.organizationsService.getMember(organizationId, userId);
     if (!member) {
       throw new ForbiddenException('User is not a member of organization');
     }

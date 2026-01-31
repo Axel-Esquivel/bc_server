@@ -1,30 +1,21 @@
-import { ConflictException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuid } from 'uuid';
-import { ModuleStateService } from '../../core/database/module-state.service';
+import { Model } from 'mongoose';
 import { CreateUserDto } from './dto/create-user.dto';
 import { SafeUser, UserEntity, WorkspaceMembership } from './entities/user.entity';
-
-interface UsersState {
-  users: UserEntity[];
-}
+import { User, UserDocument } from './schemas/user.schema';
 
 @Injectable()
-export class UsersService implements OnModuleInit {
+export class UsersService {
   private readonly logger = new Logger(UsersService.name);
-  private readonly stateKey = 'module:users';
-  private users: UserEntity[] = [];
 
-  constructor(private readonly moduleState: ModuleStateService) {}
-
-  async onModuleInit(): Promise<void> {
-    const state = await this.moduleState.loadState<UsersState>(this.stateKey, { users: [] });
-    this.users = state.users ?? [];
-  }
+  constructor(@InjectModel(User.name) private readonly userModel: Model<UserDocument>) {}
 
   async createUser(dto: CreateUserDto): Promise<SafeUser> {
     const normalizedEmail = dto.email.toLowerCase();
-    const existing = this.users.find((user) => user.email === normalizedEmail);
+    const existing = await this.userModel.findOne({ email: normalizedEmail }).lean().exec();
     if (existing) {
       throw new ConflictException('Email already in use');
     }
@@ -46,13 +37,12 @@ export class UsersService implements OnModuleInit {
       createdAt: new Date(),
     };
 
-    this.users.push(newUser);
-    this.persistState();
+    await this.userModel.create(newUser);
     return this.toSafeUser(newUser);
   }
 
   async validateCredentials(email: string, password: string): Promise<SafeUser | null> {
-    const user = this.findByEmail(email);
+    const user = await this.findByEmail(email);
     if (!user) {
       return null;
     }
@@ -61,111 +51,108 @@ export class UsersService implements OnModuleInit {
     return matches ? this.toSafeUser(user) : null;
   }
 
-  findByEmail(email: string): UserEntity | undefined {
+  async findByEmail(email: string): Promise<UserEntity | null> {
     const normalized = email.toLowerCase();
-    return this.users.find((user) => user.email === normalized);
+    const user = await this.userModel.findOne({ email: normalized }).lean().exec();
+    return user ? (user as UserEntity) : null;
   }
 
-  findById(id: string): SafeUser {
-    const user = this.users.find((candidate) => candidate.id === id);
+  async findById(id: string): Promise<SafeUser> {
+    const user = await this.userModel.findOne({ id }).lean().exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    const safeUser = this.toSafeUser(user);
-    this.persistState();
-    return safeUser;
+    return this.toSafeUser(user as UserEntity);
   }
 
-  addWorkspaceMembership(userId: string, membership: WorkspaceMembership): SafeUser {
-    const user = this.users.find((candidate) => candidate.id === userId);
+  async addWorkspaceMembership(
+    userId: string,
+    membership: WorkspaceMembership,
+  ): Promise<SafeUser> {
+    const user = await this.userModel.findOne({ id: userId }).exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    const existing = user.workspaces.find((item) => item.workspaceId === membership.workspaceId);
+    const existing = user.workspaces?.find((item) => item.workspaceId === membership.workspaceId);
     if (existing) {
       existing.roles = Array.from(new Set([...(existing.roles || []), ...membership.roles]));
     } else {
-      user.workspaces.push({ ...membership });
+      user.workspaces = [...(user.workspaces ?? []), { ...membership }];
     }
 
-    return this.toSafeUser(user);
+    await user.save();
+    return this.toSafeUser(user.toObject() as UserEntity);
   }
 
-  registerDevice(userId: string, deviceId: string): SafeUser {
-    const user = this.users.find((candidate) => candidate.id === userId);
+  async registerDevice(userId: string, deviceId: string): Promise<SafeUser> {
+    const user = await this.userModel.findOne({ id: userId }).exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    if (!user.devices.includes(deviceId)) {
-      user.devices.push(deviceId);
+    if (!user.devices?.includes(deviceId)) {
+      user.devices = [...(user.devices ?? []), deviceId];
     }
 
-    const safeUser = this.toSafeUser(user);
-    this.persistState();
-    return safeUser;
+    await user.save();
+    return this.toSafeUser(user.toObject() as UserEntity);
   }
 
-  resolveUsers(ids: string[]): Array<{ id: string; email: string; name?: string }> {
+  async resolveUsers(ids: string[]): Promise<Array<{ id: string; email: string; name?: string }>> {
     if (!ids || ids.length === 0) {
       return [];
     }
     const unique = Array.from(new Set(ids.filter((id) => typeof id === 'string' && id.length > 0)));
-    return unique
-      .map((id) => this.users.find((candidate) => candidate.id === id))
-      .filter((user): user is UserEntity => Boolean(user))
-      .map((user) => ({
+    const users = await this.userModel.find({ id: { $in: unique } }).lean().exec();
+    return users.map((user) => ({
         id: user.id,
         email: user.email,
         name: [user.firstName, user.lastName].filter(Boolean).join(' ') || undefined,
       }));
   }
 
-  setDefaultWorkspace(userId: string, workspaceId: string): SafeUser {
-    const user = this.users.find((candidate) => candidate.id === userId);
+  async setDefaultWorkspace(userId: string, workspaceId: string): Promise<SafeUser> {
+    const user = await this.userModel.findOne({ id: userId }).exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    const belongs = user.workspaces.some((membership) => membership.workspaceId === workspaceId);
+    const belongs = user.workspaces?.some((membership) => membership.workspaceId === workspaceId);
     if (!belongs) {
       throw new NotFoundException('Workspace membership not found');
     }
 
     user.defaultWorkspaceId = workspaceId;
-    const safeUser = this.toSafeUser(user);
-    this.persistState();
-    return safeUser;
+    await user.save();
+    return this.toSafeUser(user.toObject() as UserEntity);
   }
 
-  setDefaultOrganization(userId: string, organizationId: string): SafeUser {
-    const user = this.users.find((candidate) => candidate.id === userId);
+  async setDefaultOrganization(userId: string, organizationId: string): Promise<SafeUser> {
+    const user = await this.userModel.findOne({ id: userId }).exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
     user.defaultOrganizationId = organizationId;
-    const safeUser = this.toSafeUser(user);
-    this.persistState();
-    return safeUser;
+    await user.save();
+    return this.toSafeUser(user.toObject() as UserEntity);
   }
 
-  setDefaultCompany(userId: string, companyId: string): SafeUser {
-    const user = this.users.find((candidate) => candidate.id === userId);
+  async setDefaultCompany(userId: string, companyId: string): Promise<SafeUser> {
+    const user = await this.userModel.findOne({ id: userId }).exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
     user.defaultCompanyId = companyId;
-    const safeUser = this.toSafeUser(user);
-    this.persistState();
-    return safeUser;
+    await user.save();
+    return this.toSafeUser(user.toObject() as UserEntity);
   }
 
-  clearDefaultOrganization(userId: string, organizationId: string): SafeUser {
-    const user = this.users.find((candidate) => candidate.id === userId);
+  async clearDefaultOrganization(userId: string, organizationId: string): Promise<SafeUser> {
+    const user = await this.userModel.findOne({ id: userId }).exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -173,22 +160,12 @@ export class UsersService implements OnModuleInit {
     if (user.defaultOrganizationId === organizationId) {
       user.defaultOrganizationId = undefined;
     }
-    const safeUser = this.toSafeUser(user);
-    this.persistState();
-    return safeUser;
+    await user.save();
+    return this.toSafeUser(user.toObject() as UserEntity);
   }
 
   private toSafeUser(user: UserEntity): SafeUser {
     const { passwordHash, ...safe } = user;
     return safe;
-  }
-
-  private persistState() {
-    void this.moduleState
-      .saveState<UsersState>(this.stateKey, { users: this.users })
-      .catch((error) => {
-        const message = error instanceof Error ? error.stack ?? error.message : String(error);
-        this.logger.error(`Failed to persist users: ${message}`);
-      });
   }
 }

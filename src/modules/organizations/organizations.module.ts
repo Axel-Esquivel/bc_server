@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from '../users/users.module';
 import { ModuleLoaderModule } from '../module-loader/module-loader.module';
@@ -9,6 +10,8 @@ import { OrganizationsController } from './organizations.controller';
 import { OrganizationsService } from './organizations.service';
 import { OrganizationAdminGuard } from './guards/organization-admin.guard';
 import { OrganizationMemberGuard } from './guards/organization-member.guard';
+import { Organization, OrganizationSchema } from './schemas/organization.schema';
+import { OrgModule, OrgModuleSchema } from './schemas/org-module.schema';
 
 @Module({
   imports: [
@@ -18,6 +21,10 @@ import { OrganizationMemberGuard } from './guards/organization-member.guard';
     forwardRef(() => BranchesModule),
     forwardRef(() => WarehousesModule),
     ModuleLoaderModule,
+    MongooseModule.forFeature([
+      { name: Organization.name, schema: OrganizationSchema },
+      { name: OrgModule.name, schema: OrgModuleSchema },
+    ]),
   ],
   controllers: [OrganizationsController],
   providers: [OrganizationsService, OrganizationMemberGuard, OrganizationAdminGuard],

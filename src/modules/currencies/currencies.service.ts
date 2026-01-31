@@ -2,52 +2,45 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  Logger,
   NotFoundException,
-  OnModuleInit,
 } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
-import { ModuleStateService } from '../../core/database/module-state.service';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { CreateCurrencyDto } from './dto/create-currency.dto';
 import { UpdateCurrencyDto } from './dto/update-currency.dto';
 import { CurrencyEntity } from './entities/currency.entity';
-
-interface CurrenciesState {
-  currencies: CurrencyEntity[];
-}
+import { Currency, CurrencyDocument } from './schemas/currency.schema';
 
 @Injectable()
-export class CurrenciesService implements OnModuleInit {
-  private readonly logger = new Logger(CurrenciesService.name);
-  private readonly stateKey = 'module:currencies';
-  private currencies: CurrencyEntity[] = [];
+export class CurrenciesService {
+  constructor(@InjectModel(Currency.name) private readonly currencyModel: Model<CurrencyDocument>) {}
 
-  constructor(private readonly moduleState: ModuleStateService) {}
-
-  async onModuleInit(): Promise<void> {
-    const state = await this.moduleState.loadState<CurrenciesState>(this.stateKey, { currencies: [] });
-    this.currencies = (state.currencies ?? []).map((currency) => this.normalizeCurrency(currency));
-    this.persistState();
-  }
-
-  list(query?: string): CurrencyEntity[] {
-    const normalized = query?.trim().toLowerCase();
+  async list(query?: string): Promise<CurrencyEntity[]> {
+    const normalized = query?.trim();
     if (!normalized) {
-      return [...this.currencies];
+      const currencies = await this.currencyModel.find().lean().exec();
+      return currencies.map((currency) => this.normalizeCurrency(currency));
     }
-    return this.currencies.filter((currency) => {
-      const haystack = [currency.code, currency.name, currency.symbol ?? ''].join(' ').toLowerCase();
-      return haystack.includes(normalized);
-    });
+
+    const regex = new RegExp(this.escapeRegExp(normalized), 'i');
+    const currencies = await this.currencyModel
+      .find({
+        $or: [{ code: regex }, { name: regex }, { symbol: regex }],
+      })
+      .lean()
+      .exec();
+    return currencies.map((currency) => this.normalizeCurrency(currency));
   }
 
-  create(dto: CreateCurrencyDto): CurrencyEntity {
+  async create(dto: CreateCurrencyDto): Promise<CurrencyEntity> {
     const code = dto.code.trim().toUpperCase();
     const name = dto.name.trim();
     if (!code || !name) {
       throw new BadRequestException('Currency code and name are required');
     }
-    if (this.currencies.some((currency) => currency.code === code)) {
+    const existing = await this.currencyModel.findOne({ code }).lean().exec();
+    if (existing) {
       throw new ConflictException('Currency code already exists');
     }
 
@@ -59,13 +52,12 @@ export class CurrenciesService implements OnModuleInit {
       createdAt: new Date(),
     };
 
-    this.currencies.push(currency);
-    this.persistState();
+    await this.currencyModel.create(currency);
     return currency;
   }
 
-  update(id: string, dto: UpdateCurrencyDto): CurrencyEntity {
-    const currency = this.currencies.find((item) => item.id === id);
+  async update(id: string, dto: UpdateCurrencyDto): Promise<CurrencyEntity> {
+    const currency = await this.currencyModel.findOne({ id }).exec();
     if (!currency) {
       throw new NotFoundException('Currency not found');
     }
@@ -81,17 +73,15 @@ export class CurrenciesService implements OnModuleInit {
       currency.symbol = dto.symbol?.trim() || undefined;
     }
 
-    this.persistState();
-    return currency;
+    await currency.save();
+    return currency.toObject() as CurrencyEntity;
   }
 
-  delete(id: string): { id: string } {
-    const index = this.currencies.findIndex((item) => item.id === id);
-    if (index === -1) {
+  async delete(id: string): Promise<{ id: string }> {
+    const removed = await this.currencyModel.findOneAndDelete({ id }).lean().exec();
+    if (!removed) {
       throw new NotFoundException('Currency not found');
     }
-    const [removed] = this.currencies.splice(index, 1);
-    this.persistState();
     return { id: removed.id };
   }
 
@@ -107,12 +97,7 @@ export class CurrenciesService implements OnModuleInit {
     };
   }
 
-  private persistState(): void {
-    void this.moduleState
-      .saveState<CurrenciesState>(this.stateKey, { currencies: this.currencies })
-      .catch((error) => {
-        const message = error instanceof Error ? error.stack ?? error.message : String(error);
-        this.logger.error(`Failed to persist currencies: ${message}`);
-      });
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }

@@ -35,8 +35,8 @@ export class LocationsService implements OnModuleInit {
     this.persistState();
   }
 
-  listByCompany(organizationId: string, companyId: string): InventoryLocation[] {
-    this.assertModuleEnabled(organizationId);
+  async listByCompany(organizationId: string, companyId: string): Promise<InventoryLocation[]> {
+    await this.assertModuleEnabled(organizationId);
     this.assertCompanyOrganization(organizationId, companyId);
     return this.locations.filter(
       (location) =>
@@ -44,12 +44,12 @@ export class LocationsService implements OnModuleInit {
     );
   }
 
-  create(
+  async create(
     organizationId: string,
     companyId: string,
     dto: CreateInventoryLocationDto,
-  ): InventoryLocation {
-    this.assertModuleEnabled(organizationId);
+  ): Promise<InventoryLocation> {
+    await this.assertModuleEnabled(organizationId);
     this.assertCompanyOrganization(organizationId, companyId);
 
     const name = dto.name.trim();
@@ -86,8 +86,8 @@ export class LocationsService implements OnModuleInit {
     }
   }
 
-  private assertModuleEnabled(organizationId: string): void {
-    const state = this.organizationsService.getModuleState(organizationId, 'locations');
+  private async assertModuleEnabled(organizationId: string): Promise<void> {
+    const state = await this.organizationsService.getModuleState(organizationId, 'locations');
     if (state.status === OrganizationModuleStatus.Disabled) {
       throw new BadRequestException('Locations module is disabled');
     }

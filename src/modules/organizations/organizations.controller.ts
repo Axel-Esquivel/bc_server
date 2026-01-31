@@ -21,6 +21,7 @@ import { JoinOrganizationDto } from './dto/join-organization.dto';
 import { JoinOrganizationRequestDto } from './dto/join-organization-request.dto';
 import { JoinOrganizationRequestEmailDto } from './dto/join-organization-request-email.dto';
 import { UpdateOrganizationModulesDto } from './dto/update-organization-modules.dto';
+import { UpdateOrganizationModuleKeyDto } from './dto/update-organization-module-key.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { CreateCoreCompanyDto } from './dto/create-core-company.dto';
 import { CreateCoreCountryDto } from './dto/create-core-country.dto';
@@ -90,9 +91,9 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
-  create(@Req() req: AuthenticatedRequest, @Body() dto: CreateOrganizationDto) {
+  async create(@Req() req: AuthenticatedRequest, @Body() dto: CreateOrganizationDto) {
     const userId = this.getUserId(req);
-    const organization = this.organizationsService.createOrganization(dto, userId);
+    const organization = await this.organizationsService.createOrganization(dto, userId);
     return {
       message: 'Organization created',
       result: organization,
@@ -101,9 +102,9 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard)
   @Post('bootstrap')
-  bootstrap(@Req() req: AuthenticatedRequest, @Body() dto: BootstrapOrganizationDto) {
+  async bootstrap(@Req() req: AuthenticatedRequest, @Body() dto: BootstrapOrganizationDto) {
     const userId = this.getUserId(req);
-    const result = this.organizationsService.createOrganizationBootstrap(dto, userId);
+    const result = await this.organizationsService.createOrganizationBootstrap(dto, userId);
     return {
       message: 'Organization bootstrap created',
       result,
@@ -112,9 +113,9 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  list(@Req() req: AuthenticatedRequest) {
+  async list(@Req() req: AuthenticatedRequest) {
     const userId = this.getUserId(req);
-    const organizations = this.organizationsService.listByUser(userId);
+    const organizations = await this.organizationsService.listByUser(userId);
     return {
       message: 'Organizations loaded',
       result: organizations,
@@ -123,9 +124,9 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('memberships')
-  listMemberships(@Req() req: AuthenticatedRequest) {
+  async listMemberships(@Req() req: AuthenticatedRequest) {
     const userId = this.getUserId(req);
-    const memberships = this.organizationsService.listMembershipsByUser(userId);
+    const memberships = await this.organizationsService.listMembershipsByUser(userId);
     return {
       message: 'Organization memberships loaded',
       result: memberships,
@@ -134,9 +135,9 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('me')
-  getMe(@Req() req: AuthenticatedRequest) {
+  async getMe(@Req() req: AuthenticatedRequest) {
     const userId = this.getUserId(req);
-    const memberships = this.organizationsService.listMembershipsByUser(userId);
+    const memberships = await this.organizationsService.listMembershipsByUser(userId);
     const hasActive = memberships.some((member) => member.status === 'active');
     const hasPending = memberships.some((member) => member.status === 'pending');
     return {
@@ -151,9 +152,9 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard)
   @Post('join')
-  requestJoinBySelector(@Req() req: AuthenticatedRequest, @Body() dto: JoinOrganizationRequestDto) {
+  async requestJoinBySelector(@Req() req: AuthenticatedRequest, @Body() dto: JoinOrganizationRequestDto) {
     const userId = this.getUserId(req);
-    const organization = this.organizationsService.requestJoinBySelector(dto, userId);
+    const organization = await this.organizationsService.requestJoinBySelector(dto, userId);
     return {
       message: 'Organization join requested',
       result: organization,
@@ -162,9 +163,9 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard)
   @Post('join-request')
-  requestJoinByEmail(@Req() req: AuthenticatedRequest, @Body() dto: JoinOrganizationRequestEmailDto) {
+  async requestJoinByEmail(@Req() req: AuthenticatedRequest, @Body() dto: JoinOrganizationRequestEmailDto) {
     const userId = this.getUserId(req);
-    const organization = this.organizationsService.requestJoinByEmail(dto, userId);
+    const organization = await this.organizationsService.requestJoinByEmail(dto, userId);
     return {
       message: 'Organization join requested',
       result: organization,
@@ -173,8 +174,8 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard, OrganizationMemberGuard)
   @Get(':id')
-  getOne(@Param('id') id: string) {
-    const organization = this.organizationsService.getOrganization(id);
+  async getOne(@Param('id') id: string) {
+    const organization = await this.organizationsService.getOrganization(id);
     return {
       message: 'Organization loaded',
       result: organization,
@@ -183,8 +184,8 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard, OrganizationMemberGuard)
   @Get(':id/roles')
-  listRoles(@Param('id') id: string) {
-    const roles = this.organizationsService.listRoles(id);
+  async listRoles(@Param('id') id: string) {
+    const roles = await this.organizationsService.listRoles(id);
     return {
       message: 'Organization roles loaded',
       result: roles,
@@ -231,6 +232,38 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('modules.configure')
+  @Post(':id/modules/install')
+  async installModule(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateOrganizationModuleKeyDto,
+  ): Promise<ApiResponse<OrganizationModulesOverviewResponse>> {
+    const userId = this.getUserId(req);
+    const result = await this.organizationsService.installModule(id, dto.key, userId);
+    return {
+      message: 'Organization module installed',
+      result,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('modules.configure')
+  @Post(':id/modules/disable')
+  async disableModule(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateOrganizationModuleKeyDto,
+  ): Promise<ApiResponse<OrganizationModulesOverviewResponse>> {
+    const userId = this.getUserId(req);
+    const result = await this.organizationsService.disableModule(id, dto.key, userId);
+    return {
+      message: 'Organization module disabled',
+      result,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('modules.configure')
   @Patch(':id/modules/:moduleKey/configured')
   async markModuleConfigured(
     @Req() req: AuthenticatedRequest,
@@ -247,8 +280,8 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard, OrganizationMemberGuard)
   @Get(':id/core-settings')
-  getCoreSettings(@Param('id') id: string): ApiResponse<OrganizationCoreSettings> {
-    const settings = this.organizationsService.getCoreSettings(id);
+  async getCoreSettings(@Param('id') id: string): Promise<ApiResponse<OrganizationCoreSettings>> {
+    const settings = await this.organizationsService.getCoreSettings(id);
     return {
       message: 'Organization core settings loaded',
       result: settings,
@@ -258,11 +291,11 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('organizations.write')
   @Patch(':id/core-settings')
-  updateCoreSettings(
+  async updateCoreSettings(
     @Param('id') id: string,
     @Body() dto: UpdateCoreSettingsDto,
-  ): ApiResponse<OrganizationCoreSettings> {
-    const settings = this.organizationsService.updateCoreSettings(id, dto);
+  ): Promise<ApiResponse<OrganizationCoreSettings>> {
+    const settings = await this.organizationsService.updateCoreSettings(id, dto);
     return {
       message: 'Organization core settings updated',
       result: settings,
@@ -272,11 +305,11 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('organizations.write')
   @Post(':id/countries')
-  addCoreCountry(
+  async addCoreCountry(
     @Param('id') id: string,
     @Body() dto: CreateCoreCountryDto,
-  ): ApiResponse<CoreCountry> {
-    const result = this.organizationsService.addCountry(id, dto);
+  ): Promise<ApiResponse<CoreCountry>> {
+    const result = await this.organizationsService.addCountry(id, dto);
     return {
       message: 'Organization country added',
       result,
@@ -286,11 +319,11 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('organizations.write')
   @Post(':id/currencies')
-  addCoreCurrency(
+  async addCoreCurrency(
     @Param('id') id: string,
     @Body() dto: CreateCoreCurrencyDto,
-  ): ApiResponse<CoreCurrency> {
-    const result = this.organizationsService.addCurrency(id, dto);
+  ): Promise<ApiResponse<CoreCurrency>> {
+    const result = await this.organizationsService.addCurrency(id, dto);
     return {
       message: 'Organization currency added',
       result,
@@ -300,11 +333,11 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('organizations.write')
   @Post(':id/companies')
-  addCoreCompany(
+  async addCoreCompany(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Body() dto: CreateCoreCompanyDto,
-  ): ApiResponse<CoreCompany | CompanyEntity> {
+  ): Promise<ApiResponse<CoreCompany | CompanyEntity>> {
     console.log('CREATE_COMPANY_DTO_V2_ACTIVE', dto);
     const useV2 =
       Array.isArray(dto.operatingCountryIds) ||
@@ -313,7 +346,7 @@ export class OrganizationsController {
     if (useV2) {
       const userId = this.getUserId(req);
       const operatingCountryIds = dto.operatingCountryIds ?? (dto.countryId ? [dto.countryId] : []);
-      const company = this.companiesService.createCompany(id, userId, {
+      const company = await this.companiesService.createCompany(id, userId, {
         name: dto.name,
         operatingCountryIds,
         currencyIds: dto.currencyIds,
@@ -332,7 +365,7 @@ export class OrganizationsController {
     if (!countryId) {
       throw new BadRequestException('Company country is required');
     }
-    const result = this.organizationsService.addCompany(id, { name: dto.name, countryId });
+    const result = await this.organizationsService.addCompany(id, { name: dto.name, countryId });
     return {
       message: 'Organization company added',
       result,
@@ -341,8 +374,10 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard, OrganizationMemberGuard)
   @Get(':id/settings/core')
-  getLegacyCoreSettings(@Param('id') id: string): ApiResponse<LegacyOrganizationCoreSettings> {
-    const settings = this.organizationsService.getLegacyCoreSettings(id);
+  async getLegacyCoreSettings(
+    @Param('id') id: string,
+  ): Promise<ApiResponse<LegacyOrganizationCoreSettings>> {
+    const settings = await this.organizationsService.getLegacyCoreSettings(id);
     return {
       message: 'Organization core settings loaded',
       result: settings,
@@ -352,11 +387,11 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('organizations.write')
   @Patch(':id/settings/core')
-  updateLegacyCoreSettings(
+  async updateLegacyCoreSettings(
     @Param('id') id: string,
     @Body() dto: OrganizationCoreSettingsDto,
-  ): ApiResponse<LegacyOrganizationCoreSettings> {
-    const settings = this.organizationsService.updateLegacyCoreSettings(id, dto);
+  ): Promise<ApiResponse<LegacyOrganizationCoreSettings>> {
+    const settings = await this.organizationsService.updateLegacyCoreSettings(id, dto);
     return {
       message: 'Organization core settings updated',
       result: settings,
@@ -365,8 +400,10 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard, OrganizationMemberGuard)
   @Get(':id/settings/structure')
-  getStructureSettings(@Param('id') id: string): ApiResponse<OrganizationStructureSettings> {
-    const settings = this.organizationsService.getStructureSettings(id);
+  async getStructureSettings(
+    @Param('id') id: string,
+  ): Promise<ApiResponse<OrganizationStructureSettings>> {
+    const settings = await this.organizationsService.getStructureSettings(id);
     return {
       message: 'Organization structure settings loaded',
       result: settings,
@@ -376,11 +413,11 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('organizations.write')
   @Patch(':id/settings/structure')
-  updateStructureSettings(
+  async updateStructureSettings(
     @Param('id') id: string,
     @Body() dto: OrganizationStructureSettingsDto,
-  ): ApiResponse<OrganizationStructureSettings> {
-    const settings = this.organizationsService.updateStructureSettings(id, dto);
+  ): Promise<ApiResponse<OrganizationStructureSettings>> {
+    const settings = await this.organizationsService.updateStructureSettings(id, dto);
     return {
       message: 'Organization structure settings updated',
       result: settings,
@@ -390,9 +427,13 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('roles.write')
   @Post(':id/roles')
-  createRole(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: OrganizationRoleDto) {
+  async createRole(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: OrganizationRoleDto,
+  ) {
     const userId = this.getUserId(req);
-    const roles = this.organizationsService.createRole(id, userId, dto);
+    const roles = await this.organizationsService.createRole(id, userId, dto);
     return {
       message: 'Organization role created',
       result: roles,
@@ -402,14 +443,14 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('roles.write')
   @Patch(':id/roles/:roleKey')
-  updateRole(
+  async updateRole(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Param('roleKey') roleKey: string,
     @Body() dto: UpdateOrganizationRoleDto,
   ) {
     const userId = this.getUserId(req);
-    const roles = this.organizationsService.updateRole(id, userId, roleKey, dto);
+    const roles = await this.organizationsService.updateRole(id, userId, roleKey, dto);
     return {
       message: 'Organization role updated',
       result: roles,
@@ -419,9 +460,13 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('roles.write')
   @Delete(':id/roles/:roleKey')
-  deleteRole(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('roleKey') roleKey: string) {
+  async deleteRole(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Param('roleKey') roleKey: string,
+  ) {
     const userId = this.getUserId(req);
-    const roles = this.organizationsService.deleteRole(id, userId, roleKey);
+    const roles = await this.organizationsService.deleteRole(id, userId, roleKey);
     return {
       message: 'Organization role removed',
       result: roles,
@@ -451,9 +496,13 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('users.write')
   @Post(':id/invite')
-  inviteMember(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: InviteOrganizationMemberDto) {
+  async inviteMember(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: InviteOrganizationMemberDto,
+  ) {
     const userId = this.getUserId(req);
-    const organization = this.organizationsService.addMemberByEmail(id, userId, dto.email, dto.roleKey);
+    const organization = await this.organizationsService.addMemberByEmail(id, userId, dto.email, dto.roleKey);
     return {
       message: 'Organization member invited',
       result: organization,
@@ -462,9 +511,13 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard)
   @Post(':id/join')
-  requestJoinById(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: JoinOrganizationDto) {
+  async requestJoinById(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: JoinOrganizationDto,
+  ) {
     const userId = this.getUserId(req);
-    const organization = this.organizationsService.requestJoin(id, userId, dto.roleKey);
+    const organization = await this.organizationsService.requestJoin(id, userId, dto.roleKey);
     return {
       message: 'Organization join requested',
       result: organization,
@@ -474,9 +527,13 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('users.write')
   @Post(':id/members')
-  addMember(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: AddOrganizationMemberDto) {
+  async addMember(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: AddOrganizationMemberDto,
+  ) {
     const userId = this.getUserId(req);
-    const organization = this.organizationsService.addMemberByEmail(id, userId, dto.email, dto.role);
+    const organization = await this.organizationsService.addMemberByEmail(id, userId, dto.email, dto.role);
     return {
       message: 'Organization member added',
       result: organization,
@@ -486,9 +543,9 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('users.write')
   @Post(':id/members/:userId/accept')
-  acceptMember(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('userId') userId: string) {
+  async acceptMember(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('userId') userId: string) {
     const requesterId = this.getUserId(req);
-    const organization = this.organizationsService.acceptMember(id, requesterId, userId);
+    const organization = await this.organizationsService.acceptMember(id, requesterId, userId);
     return {
       message: 'Organization member accepted',
       result: organization,
@@ -498,9 +555,9 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('users.write')
   @Patch(':id/members/:userId/accept')
-  acceptMemberPatch(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('userId') userId: string) {
+  async acceptMemberPatch(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('userId') userId: string) {
     const requesterId = this.getUserId(req);
-    const organization = this.organizationsService.acceptMember(id, requesterId, userId);
+    const organization = await this.organizationsService.acceptMember(id, requesterId, userId);
     return {
       message: 'Organization member accepted',
       result: organization,
@@ -510,9 +567,9 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('users.write')
   @Post(':id/members/:userId/reject')
-  rejectMember(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('userId') userId: string) {
+  async rejectMember(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('userId') userId: string) {
     const requesterId = this.getUserId(req);
-    const organization = this.organizationsService.rejectMember(id, requesterId, userId);
+    const organization = await this.organizationsService.rejectMember(id, requesterId, userId);
     return {
       message: 'Organization member rejected',
       result: organization,
@@ -522,9 +579,9 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('users.write')
   @Patch(':id/members/:userId/reject')
-  rejectMemberPatch(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('userId') userId: string) {
+  async rejectMemberPatch(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('userId') userId: string) {
     const requesterId = this.getUserId(req);
-    const organization = this.organizationsService.rejectMember(id, requesterId, userId);
+    const organization = await this.organizationsService.rejectMember(id, requesterId, userId);
     return {
       message: 'Organization member rejected',
       result: organization,
@@ -534,14 +591,14 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('users.write')
   @Patch(':id/members/:userId')
-  updateMemberRole(
+  async updateMemberRole(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Param('userId') userId: string,
     @Body() dto: UpdateOrganizationMemberDto,
   ) {
     const requesterId = this.getUserId(req);
-    const organization = this.organizationsService.updateMemberRole(id, requesterId, userId, dto.role);
+    const organization = await this.organizationsService.updateMemberRole(id, requesterId, userId, dto.role);
     return {
       message: 'Organization member updated',
       result: organization,
@@ -551,14 +608,14 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('users.write')
   @Patch(':id/members/:userId/role')
-  updateMemberRoleCompat(
+  async updateMemberRoleCompat(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Param('userId') userId: string,
     @Body() dto: UpdateOrganizationMemberDto,
   ) {
     const requesterId = this.getUserId(req);
-    const organization = this.organizationsService.updateMemberRole(id, requesterId, userId, dto.role);
+    const organization = await this.organizationsService.updateMemberRole(id, requesterId, userId, dto.role);
     return {
       message: 'Organization member updated',
       result: organization,
@@ -568,9 +625,9 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('organizations.write')
   @Patch(':id')
-  updateOrganization(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: UpdateOrganizationDto) {
+  async updateOrganization(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: UpdateOrganizationDto) {
     const requesterId = this.getUserId(req);
-    const organization = this.organizationsService.updateOrganization(id, requesterId, dto);
+    const organization = await this.organizationsService.updateOrganization(id, requesterId, dto);
     return {
       message: 'Organization updated',
       result: organization,
@@ -579,9 +636,12 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard, OrganizationMemberGuard)
   @Patch(':id/default')
-  setDefaultOrganization(@Req() req: AuthenticatedRequest, @Param('id') id: string): ApiResponse<OrganizationDefaultResponse> {
+  async setDefaultOrganization(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ): Promise<ApiResponse<OrganizationDefaultResponse>> {
     const userId = this.getUserId(req);
-    const user = this.organizationsService.setDefaultOrganization(id, userId);
+    const user = await this.organizationsService.setDefaultOrganization(id, userId);
     return {
       message: 'Default organization updated',
       result: { user },
@@ -590,9 +650,9 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard, OrganizationMemberGuard)
   @Delete(':id/leave')
-  leaveOrganization(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+  async leaveOrganization(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     const userId = this.getUserId(req);
-    const organization = this.organizationsService.leaveOrganization(id, userId);
+    const organization = await this.organizationsService.leaveOrganization(id, userId);
     return {
       message: 'Organization membership removed',
       result: organization,
@@ -602,9 +662,12 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('organizations.write')
   @Delete(':id')
-  deleteOrganization(@Req() req: AuthenticatedRequest, @Param('id') id: string): ApiResponse<OrganizationDeleteResponse> {
+  async deleteOrganization(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ): Promise<ApiResponse<OrganizationDeleteResponse>> {
     const requesterId = this.getUserId(req);
-    this.organizationsService.deleteOrganization(id, requesterId);
+    await this.organizationsService.deleteOrganization(id, requesterId);
     return {
       message: 'Organization removed',
       result: { success: true },
@@ -614,9 +677,9 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('users.write')
   @Delete(':id/members/:userId')
-  removeMember(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('userId') userId: string) {
+  async removeMember(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('userId') userId: string) {
     const requesterId = this.getUserId(req);
-    const organization = this.organizationsService.removeMember(id, requesterId, userId);
+    const organization = await this.organizationsService.removeMember(id, requesterId, userId);
     return {
       message: 'Organization member removed',
       result: organization,

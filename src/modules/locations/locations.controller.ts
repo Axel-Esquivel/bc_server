@@ -12,19 +12,19 @@ export class LocationsController {
 
   @Get()
   @OrganizationPermission('locations.read')
-  list(@Param('id') organizationId: string, @Param('companyId') companyId: string) {
-    const result = this.locationsService.listByCompany(organizationId, companyId);
+  async list(@Param('id') organizationId: string, @Param('companyId') companyId: string) {
+    const result = await this.locationsService.listByCompany(organizationId, companyId);
     return { message: 'Locations retrieved', result };
   }
 
   @Post()
   @OrganizationPermission('locations.write')
-  create(
+  async create(
     @Param('id') organizationId: string,
     @Param('companyId') companyId: string,
     @Body() dto: CreateInventoryLocationDto,
   ) {
-    const result = this.locationsService.create(organizationId, companyId, dto);
+    const result = await this.locationsService.create(organizationId, companyId, dto);
     return { message: 'Location created', result };
   }
 }

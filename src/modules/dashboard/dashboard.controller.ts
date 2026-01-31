@@ -15,7 +15,7 @@ export class DashboardController {
 
   @UseGuards(JwtAuthGuard)
   @Get('overview')
-  getOverview(
+  async getOverview(
     @Req() req: AuthenticatedRequest,
     @Query('orgId') orgId?: string,
     @Query('companyId') companyId?: string,
@@ -24,12 +24,12 @@ export class DashboardController {
 
     let organizationId = orgId?.trim();
     if (!organizationId && companyId) {
-      const company = this.companiesService.getCompany(companyId);
+      const company = await this.companiesService.getCompany(companyId);
       organizationId = company.organizationId;
     }
 
     if (!organizationId) {
-      const memberships = this.organizationsService.listMembershipsByUser(userId);
+      const memberships = await this.organizationsService.listMembershipsByUser(userId);
       const active = memberships.find((member) => member.status === 'active');
       organizationId = active?.organizationId;
     }
@@ -46,8 +46,8 @@ export class DashboardController {
       };
     }
 
-    const organization = this.organizationsService.getOrganization(organizationId);
-    const member = this.organizationsService.getMember(organizationId, userId);
+    const organization = await this.organizationsService.getOrganization(organizationId);
+    const member = await this.organizationsService.getMember(organizationId, userId);
     if (!member || member.status !== 'active') {
       return {
         message: 'Dashboard overview loaded',

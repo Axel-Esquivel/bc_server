@@ -15,12 +15,12 @@ export class CompaniesController {
 
   @UseGuards(JwtAuthGuard)
   @Post('organizations/:orgId/companies')
-  create(
+  async create(
     @Req() req: any,
     @Param('orgId') orgId: string,
     @Body() dto: CreateCompanyDto,
   ) {
-    const company = this.companiesService.createCompany(orgId, req.user.sub, dto);
+    const company = await this.companiesService.createCompany(orgId, req.user.sub, dto);
     return {
       message: 'Company created',
       result: company,
@@ -29,8 +29,8 @@ export class CompaniesController {
 
   @UseGuards(JwtAuthGuard)
   @Get('organizations/:orgId/companies')
-  list(@Req() req: any, @Param('orgId') orgId: string) {
-    const companies = this.companiesService.listByOrganization(orgId, req.user.sub);
+  async list(@Req() req: any, @Param('orgId') orgId: string) {
+    const companies = await this.companiesService.listByOrganization(orgId, req.user.sub);
     return {
       message: 'Companies loaded',
       result: companies,
@@ -60,8 +60,8 @@ export class CompaniesController {
   @UseGuards(JwtAuthGuard, CompanyPermissionGuard)
   @CompanyPermission('company.manage')
   @Patch('companies/:id')
-  update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateCompanyDto) {
-    const company = this.companiesService.updateCompany(id, req.user.sub, dto);
+  async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateCompanyDto) {
+    const company = await this.companiesService.updateCompany(id, req.user.sub, dto);
     return {
       message: 'Company updated',
       result: company,
@@ -102,8 +102,8 @@ export class CompaniesController {
   @UseGuards(JwtAuthGuard, CompanyPermissionGuard)
   @CompanyPermission('company.invite')
   @Post('companies/:id/members')
-  addMember(@Req() req: any, @Param('id') id: string, @Body() dto: AddCompanyMemberDto) {
-    const company = this.companiesService.addMember(id, req.user.sub, dto);
+  async addMember(@Req() req: any, @Param('id') id: string, @Body() dto: AddCompanyMemberDto) {
+    const company = await this.companiesService.addMember(id, req.user.sub, dto);
     return {
       message: 'Company member added',
       result: company,

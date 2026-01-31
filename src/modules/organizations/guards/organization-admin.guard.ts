@@ -16,7 +16,7 @@ export class OrganizationAdminGuard implements CanActivate {
     private readonly reflector: Reflector,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const organizationId: string | undefined = request.params?.id;
     if (!organizationId) {
@@ -24,7 +24,7 @@ export class OrganizationAdminGuard implements CanActivate {
     }
 
     const userId: string | undefined = request.user?.sub ?? request.user?.id ?? request.userId;
-    const member = this.organizationsService.getMember(organizationId, userId);
+    const member = await this.organizationsService.getMember(organizationId, userId);
     if (!member) {
       throw new ForbiddenException('User is not a member of organization');
     }
@@ -38,7 +38,7 @@ export class OrganizationAdminGuard implements CanActivate {
         context.getClass(),
       ]) ?? '*';
 
-    const organization = this.organizationsService.getOrganization(organizationId);
+    const organization = await this.organizationsService.getOrganization(organizationId);
     const roleDefinition = organization.roles.find((role) => role.key === member.roleKey);
     if (!roleDefinition) {
       throw new ForbiddenException('Role not found');

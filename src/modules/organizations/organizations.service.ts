@@ -6,13 +6,14 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  OnModuleInit,
   UnauthorizedException,
   forwardRef,
 } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
 import { v4 as uuid } from 'uuid';
-import { ModuleStateService } from '../../core/database/module-state.service';
+import { Model } from 'mongoose';
 import { MODULE_CATALOG } from '../../core/constants/modules.catalog';
+import { ModuleStateService } from '../../core/database/module-state.service';
 import { UsersService } from '../users/users.service';
 import { SafeUser } from '../users/entities/user.entity';
 import { CompaniesService } from '../companies/companies.service';
@@ -62,22 +63,22 @@ import {
   OrganizationModulesOverviewResponse,
 } from './types/organization-modules-overview.types';
 import type { ModuleDescriptor } from '../module-loader/module-loader.service';
-
-interface OrganizationsState {
-  organizations: OrganizationEntity[];
-}
+import { Organization, OrganizationDocument } from './schemas/organization.schema';
+import { OrgModule, OrgModuleDocument } from './schemas/org-module.schema';
 
 interface WorkspacesState {
   workspaces: OrganizationWorkspaceSnapshot[];
 }
 
 @Injectable()
-export class OrganizationsService implements OnModuleInit {
+export class OrganizationsService {
   private readonly logger = new Logger(OrganizationsService.name);
-  private readonly stateKey = 'module:organizations';
-  private organizations: OrganizationEntity[] = [];
 
   constructor(
+    @InjectModel(Organization.name)
+    private readonly organizationModel: Model<OrganizationDocument>,
+    @InjectModel(OrgModule.name)
+    private readonly orgModuleModel: Model<OrgModuleDocument>,
     private readonly moduleState: ModuleStateService,
     private readonly usersService: UsersService,
     @Inject(forwardRef(() => CompaniesService))
@@ -89,30 +90,17 @@ export class OrganizationsService implements OnModuleInit {
     private readonly moduleLoader: ModuleLoaderService,
   ) {}
 
-  async onModuleInit(): Promise<void> {
-    const state = await this.moduleState.loadState<OrganizationsState>(this.stateKey, {
-      organizations: [],
-    });
-    const normalized: OrganizationEntity[] = [];
-    (state.organizations ?? []).forEach((org) => {
-      const normalizedOrg = this.normalizeOrganization(org, normalized);
-      normalized.push(normalizedOrg);
-    });
-    this.organizations = normalized;
-    this.persistState();
-  }
-
-  createOrganization(dto: CreateOrganizationDto, ownerUserId: string): OrganizationEntity {
+  async createOrganization(dto: CreateOrganizationDto, ownerUserId: string): Promise<OrganizationEntity> {
     if (!ownerUserId) {
       throw new UnauthorizedException();
     }
-    this.usersService.findById(ownerUserId);
+    await this.usersService.findById(ownerUserId);
 
     const now = new Date();
     const organization: OrganizationEntity = {
       id: uuid(),
       name: dto.name.trim(),
-      code: this.generateUniqueCode(),
+      code: await this.generateUniqueCode(),
       ownerUserId,
       createdBy: ownerUserId,
       countryIds: this.normalizeIds(dto.countryIds),
@@ -134,22 +122,22 @@ export class OrganizationsService implements OnModuleInit {
       createdAt: new Date(),
     };
 
-    this.organizations.push(organization);
-    this.persistState();
+    await this.organizationModel.create(organization);
+    await this.syncOrgModulesFromOrganization(organization);
     return organization;
   }
 
-  createOrganizationBootstrap(dto: BootstrapOrganizationDto, ownerUserId: string): {
+  async createOrganizationBootstrap(dto: BootstrapOrganizationDto, ownerUserId: string): Promise<{
     organization: OrganizationEntity;
     companies: Array<{ id: string; name: string }>;
     branches: Array<{ id: string; name: string; companyId: string }>;
     warehouses: Array<{ id: string; name: string; companyId: string; branchId: string }>;
-  } {
+  }> {
     if (!ownerUserId) {
       throw new UnauthorizedException();
     }
 
-    const organization = this.createOrganization({ name: dto.name }, ownerUserId);
+    const organization = await this.createOrganization({ name: dto.name }, ownerUserId);
     const currencyIds = this.normalizeIds(dto.currencyIds);
     const countryIds = this.normalizeIds(dto.countryIds);
 
@@ -165,7 +153,7 @@ export class OrganizationsService implements OnModuleInit {
     const createdBranches: Array<{ id: string; name: string; companyId: string }> = [];
     const createdWarehouses: Array<{ id: string; name: string; companyId: string; branchId: string }> = [];
 
-    (dto.companies ?? []).forEach((companyPayload) => {
+    for (const companyPayload of dto.companies ?? []) {
       if (!countryIds.includes(companyPayload.countryId)) {
         throw new BadRequestException('Company country is not in selected countries');
       }
@@ -181,7 +169,7 @@ export class OrganizationsService implements OnModuleInit {
         companyCurrencyIds.push(baseCurrencyId);
       }
 
-      const company = this.companiesService.createCompany(organization.id, ownerUserId, {
+      const company = await this.companiesService.createCompany(organization.id, ownerUserId, {
         name: companyPayload.name,
         baseCountryId: companyPayload.countryId,
         baseCurrencyId,
@@ -191,8 +179,8 @@ export class OrganizationsService implements OnModuleInit {
       coreCompanies.push({ id: company.id, name: company.name, countryId: companyPayload.countryId });
 
       const branchMap = new Map<string, string>();
-      (companyPayload.branches ?? []).forEach((branchPayload) => {
-        const branch = this.branchesService.create(company.id, {
+      for (const branchPayload of companyPayload.branches ?? []) {
+        const branch = await this.branchesService.create(company.id, {
           name: branchPayload.name,
           countryId: branchPayload.countryId ?? companyPayload.countryId,
           type: branchPayload.type ?? 'retail',
@@ -203,10 +191,10 @@ export class OrganizationsService implements OnModuleInit {
         if (branchPayload.tempKey) {
           branchMap.set(branchPayload.tempKey, branch.id);
         }
-      });
+      }
 
       const branchIds = createdBranches.filter((item) => item.companyId === company.id).map((item) => item.id);
-      (companyPayload.warehouses ?? []).forEach((warehousePayload) => {
+      for (const warehousePayload of companyPayload.warehouses ?? []) {
         let branchId = warehousePayload.branchId?.trim();
         if (!branchId && warehousePayload.branchTempKey) {
           branchId = branchMap.get(warehousePayload.branchTempKey);
@@ -219,7 +207,7 @@ export class OrganizationsService implements OnModuleInit {
           }
         }
 
-        const warehouse = this.warehousesService.createForCompany(company.id, {
+        const warehouse = await this.warehousesService.createForCompany(company.id, {
           name: warehousePayload.name,
           branchId,
           type: warehousePayload.type ?? WarehouseType.WAREHOUSE,
@@ -230,8 +218,8 @@ export class OrganizationsService implements OnModuleInit {
           companyId: company.id,
           branchId: warehouse.branchId,
         });
-      });
-    });
+      }
+    }
 
     organization.coreSettings = this.buildCoreSettingsFromBootstrap(countryIds, currencyIds, coreCompanies);
     organization.countryIds = countryIds;
@@ -241,7 +229,13 @@ export class OrganizationsService implements OnModuleInit {
       branches: createdBranches,
       warehouses: createdWarehouses,
     };
-    this.persistState();
+    await this.updateOrganizationFields(organization.id, {
+      coreSettings: organization.coreSettings,
+      countryIds: organization.countryIds,
+      currencyIds: organization.currencyIds,
+      structureSettings: organization.structureSettings,
+    });
+    await this.syncOrgModulesFromOrganization(organization);
 
     return {
       organization,
@@ -251,27 +245,27 @@ export class OrganizationsService implements OnModuleInit {
     };
   }
 
-  getCoreSettings(organizationId: string): OrganizationCoreSettings {
-    const organization = this.getOrganization(organizationId);
+  async getCoreSettings(organizationId: string): Promise<OrganizationCoreSettings> {
+    const organization = await this.getOrganization(organizationId);
     const normalized = this.normalizeCoreSettings(organization.coreSettings);
     organization.coreSettings = normalized;
     return this.cloneCoreSettings(normalized);
   }
 
-  updateCoreSettings(
+  async updateCoreSettings(
     organizationId: string,
     update: OrganizationCoreSettingsUpdate,
-  ): OrganizationCoreSettings {
-    const organization = this.getOrganization(organizationId);
+  ): Promise<OrganizationCoreSettings> {
+    const organization = await this.getOrganization(organizationId);
     const current = this.normalizeCoreSettings(organization.coreSettings);
     const next = this.mergeCoreSettings(current, update);
     organization.coreSettings = next;
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { coreSettings: next });
     return this.cloneCoreSettings(next);
   }
 
-  addCountry(organizationId: string, payload: CoreCountryInput): CoreCountry {
-    const organization = this.getOrganization(organizationId);
+  async addCountry(organizationId: string, payload: CoreCountryInput): Promise<CoreCountry> {
+    const organization = await this.getOrganization(organizationId);
     const current = this.normalizeCoreSettings(organization.coreSettings);
     const country = this.buildCoreCountry(payload);
     this.assertUniqueCountryCode(current.countries, country.code);
@@ -281,12 +275,15 @@ export class OrganizationsService implements OnModuleInit {
     };
     this.validateCoreSettings(next);
     organization.coreSettings = next;
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { coreSettings: next });
     return country;
   }
 
-  addCurrency(organizationId: string, payload: CoreCurrencyInput): CoreCurrency {
-    const organization = this.getOrganization(organizationId);
+  async addCurrency(
+    organizationId: string,
+    payload: CoreCurrencyInput,
+  ): Promise<CoreCurrency> {
+    const organization = await this.getOrganization(organizationId);
     const current = this.normalizeCoreSettings(organization.coreSettings);
     const currency = this.buildCoreCurrency(payload);
     this.assertUniqueCurrencyCode(current.currencies, currency.code);
@@ -296,12 +293,12 @@ export class OrganizationsService implements OnModuleInit {
     };
     this.validateCoreSettings(next);
     organization.coreSettings = next;
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { coreSettings: next });
     return currency;
   }
 
-  addCompany(organizationId: string, payload: CoreCompanyInput): CoreCompany {
-    const organization = this.getOrganization(organizationId);
+  async addCompany(organizationId: string, payload: CoreCompanyInput): Promise<CoreCompany> {
+    const organization = await this.getOrganization(organizationId);
     const current = this.normalizeCoreSettings(organization.coreSettings);
     const company = this.buildCoreCompany(payload);
     this.assertCountryExists(current.countries, company.countryId);
@@ -312,29 +309,29 @@ export class OrganizationsService implements OnModuleInit {
     };
     this.validateCoreSettings(next);
     organization.coreSettings = next;
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { coreSettings: next });
     return company;
   }
 
-  getLegacyCoreSettings(organizationId: string): LegacyOrganizationCoreSettings {
-    const coreSettings = this.getCoreSettings(organizationId);
+  async getLegacyCoreSettings(organizationId: string): Promise<LegacyOrganizationCoreSettings> {
+    const coreSettings = await this.getCoreSettings(organizationId);
     return this.toLegacyCoreSettings(coreSettings);
   }
 
-  updateLegacyCoreSettings(
+  async updateLegacyCoreSettings(
     organizationId: string,
     update: LegacyOrganizationCoreSettingsUpdate,
-  ): LegacyOrganizationCoreSettings {
-    const organization = this.getOrganization(organizationId);
+  ): Promise<LegacyOrganizationCoreSettings> {
+    const organization = await this.getOrganization(organizationId);
     const current = this.normalizeCoreSettings(organization.coreSettings);
     const next = this.applyLegacyCoreSettingsUpdate(current, update);
     organization.coreSettings = next;
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { coreSettings: next });
     return this.toLegacyCoreSettings(next);
   }
 
-  getStructureSettings(organizationId: string): OrganizationStructureSettings {
-    const organization = this.getOrganization(organizationId);
+  async getStructureSettings(organizationId: string): Promise<OrganizationStructureSettings> {
+    const organization = await this.getOrganization(organizationId);
     const stored = organization.structureSettings;
     return {
       companies: Array.isArray(stored?.companies) ? stored.companies : [],
@@ -343,12 +340,12 @@ export class OrganizationsService implements OnModuleInit {
     };
   }
 
-  updateStructureSettings(
+  async updateStructureSettings(
     organizationId: string,
     update: OrganizationStructureSettingsUpdate,
-  ): OrganizationStructureSettings {
-    const organization = this.getOrganization(organizationId);
-    const current = this.getStructureSettings(organizationId);
+  ): Promise<OrganizationStructureSettings> {
+    const organization = await this.getOrganization(organizationId);
+    const current = await this.getStructureSettings(organizationId);
     const next: OrganizationStructureSettings = {
       companies: update.companies ?? current.companies,
       branches: update.branches ?? current.branches,
@@ -357,20 +354,24 @@ export class OrganizationsService implements OnModuleInit {
 
     this.validateStructureSettings(next);
     organization.structureSettings = next;
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { structureSettings: next });
     return next;
   }
 
-  listByUser(userId: string): OrganizationEntity[] {
-    return this.organizations.filter((org) =>
-      org.members.some((member) => member.userId === userId),
+  async listByUser(userId: string): Promise<OrganizationEntity[]> {
+    const organizations = await this.organizationModel.find({ 'members.userId': userId }).lean().exec();
+    return organizations.map((organization) =>
+      this.normalizeOrganizationEntity(organization as unknown as OrganizationEntity),
     );
   }
 
-  listMembershipsByUser(
+  async listMembershipsByUser(
     userId: string,
-  ): Array<{ organizationId: string; name: string; code: string; roleKey: string; status: OrganizationMemberStatus }> {
-    return this.organizations
+  ): Promise<
+    Array<{ organizationId: string; name: string; code: string; roleKey: string; status: OrganizationMemberStatus }>
+  > {
+    const organizations = await this.organizationModel.find({ 'members.userId': userId }).lean().exec();
+    return organizations
       .map((organization) => {
         const member = organization.members.find((item) => item.userId === userId);
         if (!member) {
@@ -384,17 +385,23 @@ export class OrganizationsService implements OnModuleInit {
           status: member.status,
         };
       })
-      .filter((item): item is { organizationId: string; name: string; code: string; roleKey: string; status: OrganizationMemberStatus } => Boolean(item));
+      .filter(
+        (item): item is { organizationId: string; name: string; code: string; roleKey: string; status: OrganizationMemberStatus } =>
+          Boolean(item),
+      );
   }
 
-  hasActiveMemberships(userId: string): boolean {
-    return this.organizations.some((organization) =>
-      organization.members.some((member) => member.userId === userId && member.status === OrganizationMemberStatus.Active),
-    );
+  async hasActiveMemberships(userId: string): Promise<boolean> {
+    const count = await this.organizationModel
+      .countDocuments({
+        members: { $elemMatch: { userId, status: OrganizationMemberStatus.Active } },
+      })
+      .exec();
+    return count > 0;
   }
 
-  listRoles(organizationId: string): OrganizationRoleDefinition[] {
-    const organization = this.getOrganization(organizationId);
+  async listRoles(organizationId: string): Promise<OrganizationRoleDefinition[]> {
+    const organization = await this.getOrganization(organizationId);
     return organization.roles.map((role) => ({
       key: role.key,
       name: role.name,
@@ -415,25 +422,28 @@ export class OrganizationsService implements OnModuleInit {
     return [...catalog, { moduleKey: 'modules', permissions: ['modules.configure'] }];
   }
 
-  getOrganization(organizationId: string): OrganizationEntity {
-    const organization = this.organizations.find((item) => item.id === organizationId);
+  async getOrganization(organizationId: string): Promise<OrganizationEntity> {
+    const organization = await this.organizationModel.findOne({ id: organizationId }).lean().exec();
     if (!organization) {
       throw new NotFoundException('Organization not found');
     }
 
-    return organization;
+    return this.normalizeOrganizationEntity(organization as unknown as OrganizationEntity);
   }
 
-  findByCode(code: string): OrganizationEntity | null {
+  async findByCode(code: string): Promise<OrganizationEntity | null> {
     const normalized = code.trim().toUpperCase();
     if (!normalized) {
       return null;
     }
-    return this.organizations.find((item) => item.code === normalized) ?? null;
+    const organization = await this.organizationModel.findOne({ code: normalized }).lean().exec();
+    return organization
+      ? this.normalizeOrganizationEntity(organization as unknown as OrganizationEntity)
+      : null;
   }
 
   async listWorkspaces(organizationId: string): Promise<OrganizationWorkspaceSnapshot[]> {
-    this.getOrganization(organizationId);
+    await this.getOrganization(organizationId);
     const state = await this.moduleState.loadState<WorkspacesState>('module:workspaces', {
       workspaces: [],
     });
@@ -452,7 +462,7 @@ export class OrganizationsService implements OnModuleInit {
     }>;
   }> {
     const workspaces = await this.listWorkspaces(organizationId);
-    const structure = this.getStructureSettings(organizationId);
+    const structure = await this.getStructureSettings(organizationId);
     const totalCompanies = structure.companies.length;
     const totalBranches = structure.branches.length;
     const totalWarehouses = structure.warehouses.length;
@@ -481,13 +491,13 @@ export class OrganizationsService implements OnModuleInit {
     };
   }
 
-  updateOrganization(
+  async updateOrganization(
     organizationId: string,
     requesterId: string,
     dto: UpdateOrganizationDto,
-  ): OrganizationEntity {
-    const organization = this.getOrganization(organizationId);
-    this.assertOwner(organization, requesterId);
+  ): Promise<OrganizationEntity> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertOwner(organization, requesterId);
 
     if (dto.name !== undefined) {
       organization.name = dto.name.trim();
@@ -499,12 +509,16 @@ export class OrganizationsService implements OnModuleInit {
       organization.currencyIds = this.normalizeIds(dto.currencyIds);
     }
 
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, {
+      name: organization.name,
+      countryIds: organization.countryIds,
+      currencyIds: organization.currencyIds,
+    });
     return organization;
   }
 
   async getModulesOverview(organizationId: string): Promise<OrganizationModulesOverviewResponse> {
-    const organization = this.getOrganization(organizationId);
+    const organization = await this.getOrganization(organizationId);
     const descriptors = this.moduleLoader.listModules();
     const states = this.cloneModuleStates(organization.moduleStates);
     const modules = this.buildModuleOverviewItems(states, descriptors);
@@ -516,8 +530,8 @@ export class OrganizationsService implements OnModuleInit {
     moduleKeys: string[],
     userId: string,
   ): Promise<OrganizationModulesOverviewResponse> {
-    const organization = this.getOrganization(organizationId);
-    this.assertPermission(organization, userId, 'modules.configure');
+    const organization = await this.getOrganization(organizationId);
+    await this.assertPermission(organization, userId, 'modules.configure');
 
     const normalizedKeys = this.normalizeIds(moduleKeys);
     const descriptors = this.moduleLoader.listModules();
@@ -547,10 +561,44 @@ export class OrganizationsService implements OnModuleInit {
     if (!organization.moduleSettings) {
       organization.moduleSettings = this.createModuleSettingsMap();
     }
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, {
+      moduleStates: organization.moduleStates,
+      moduleSettings: organization.moduleSettings,
+    });
+    await this.syncOrgModulesFromOrganization(organization);
 
     const modules = this.buildModuleOverviewItems(organization.moduleStates, descriptors);
     return this.buildModulesOverviewResponse(modules);
+  }
+
+  async installModule(
+    organizationId: string,
+    moduleKey: string,
+    userId: string,
+  ): Promise<OrganizationModulesOverviewResponse> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertPermission(organization, userId, 'modules.configure');
+
+    const currentKeys = Object.entries(organization.moduleStates ?? {})
+      .filter(([, state]) => state?.status !== OrganizationModuleStatus.Disabled)
+      .map(([key]) => key);
+    const nextKeys = Array.from(new Set([...currentKeys, moduleKey]));
+    return this.enableModules(organizationId, nextKeys, userId);
+  }
+
+  async disableModule(
+    organizationId: string,
+    moduleKey: string,
+    userId: string,
+  ): Promise<OrganizationModulesOverviewResponse> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertPermission(organization, userId, 'modules.configure');
+
+    const currentKeys = Object.entries(organization.moduleStates ?? {})
+      .filter(([, state]) => state?.status !== OrganizationModuleStatus.Disabled)
+      .map(([key]) => key);
+    const nextKeys = currentKeys.filter((key) => key !== moduleKey);
+    return this.enableModules(organizationId, nextKeys, userId);
   }
 
   async markModuleConfigured(
@@ -558,8 +606,8 @@ export class OrganizationsService implements OnModuleInit {
     moduleKey: string,
     userId: string,
   ): Promise<OrganizationModuleState> {
-    const organization = this.getOrganization(organizationId);
-    this.assertPermission(organization, userId, 'modules.configure');
+    const organization = await this.getOrganization(organizationId);
+    await this.assertPermission(organization, userId, 'modules.configure');
 
     const descriptors = this.moduleLoader.listModules();
     const descriptorMap = this.getModuleDescriptorMap(descriptors);
@@ -573,19 +621,20 @@ export class OrganizationsService implements OnModuleInit {
     const configuredAt = new Date().toISOString();
     const nextState = this.createModuleState(OrganizationModuleStatus.Configured, configuredAt, userId);
     organization.moduleStates[moduleKey] = nextState;
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { moduleStates: organization.moduleStates });
+    await this.syncOrgModulesFromOrganization(organization);
     return nextState;
   }
 
-  addMember(
+  async addMember(
     organizationId: string,
     requesterId: string,
     member: { userId: string; role: OrganizationRoleKey },
-  ): OrganizationEntity {
-    const organization = this.getOrganization(organizationId);
-    this.assertRoleForMemberChange(organization, requesterId, member.role, null);
+  ): Promise<OrganizationEntity> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertRoleForMemberChange(organization, requesterId, member.role, null);
     this.ensureRoleExists(organization, member.role);
-    this.usersService.findById(member.userId);
+    await this.usersService.findById(member.userId);
 
     const existing = organization.members.find((item) => item.userId === member.userId);
     if (existing) {
@@ -603,15 +652,15 @@ export class OrganizationsService implements OnModuleInit {
       existing.createdAt = existing.createdAt ?? invitedAt;
       existing.requestedBy = existing.requestedBy ?? member.userId;
       existing.requestedAt = existing.requestedAt ?? existing.invitedAt;
-      this.persistState();
+      await this.updateOrganizationFields(organizationId, { members: organization.members });
       return organization;
     }
 
     const invitedAt = new Date();
-    const user = this.usersService.findById(member.userId);
+    const user = await this.usersService.findById(member.userId);
     organization.members.push({
       userId: member.userId,
-      email: user?.email?.toLowerCase(),
+      email: user.email?.toLowerCase(),
       roleKey: member.role,
       status: OrganizationMemberStatus.Active,
       invitedBy: requesterId,
@@ -619,22 +668,22 @@ export class OrganizationsService implements OnModuleInit {
       activatedAt: invitedAt,
       createdAt: invitedAt,
     });
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { members: organization.members });
     return organization;
   }
 
-  addMemberByEmail(
+  async addMemberByEmail(
     organizationId: string,
     requesterId: string,
     email: string,
     role: OrganizationRoleKey,
-  ): OrganizationEntity {
-    const organization = this.getOrganization(organizationId);
-    this.assertRoleForMemberChange(organization, requesterId, role, null);
+  ): Promise<OrganizationEntity> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertRoleForMemberChange(organization, requesterId, role, null);
     this.ensureRoleExists(organization, role);
 
     const normalizedEmail = email.trim().toLowerCase();
-    const user = this.usersService.findByEmail(normalizedEmail);
+    const user = await this.usersService.findByEmail(normalizedEmail);
     if (!user) {
       throw new NotFoundException('User with email not found');
     }
@@ -654,7 +703,7 @@ export class OrganizationsService implements OnModuleInit {
       existing.activatedAt = invitedAt;
       existing.email = existing.email ?? user.email?.toLowerCase();
       existing.createdAt = existing.createdAt ?? invitedAt;
-      this.persistState();
+      await this.updateOrganizationFields(organizationId, { members: organization.members });
       return organization;
     }
 
@@ -669,16 +718,16 @@ export class OrganizationsService implements OnModuleInit {
       activatedAt: invitedAt,
       createdAt: invitedAt,
     });
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { members: organization.members });
     return organization;
   }
 
-  requestJoin(
+  async requestJoin(
     organizationId: string,
     requesterId: string,
     roleKey?: OrganizationRoleKey,
-  ): OrganizationEntity {
-    const organization = this.getOrganization(organizationId);
+  ): Promise<OrganizationEntity> {
+    const organization = await this.getOrganization(organizationId);
     const fallbackRole = organization.roles[0]?.key;
     if (!fallbackRole && !roleKey) {
       throw new BadRequestException('Role key is required');
@@ -692,8 +741,8 @@ export class OrganizationsService implements OnModuleInit {
     const existing = organization.members.find((item) => item.userId === requesterId);
     if (existing) {
       if (!existing.email) {
-        const requester = this.usersService.findById(requesterId);
-        existing.email = requester?.email?.toLowerCase();
+        const requester = await this.usersService.findById(requesterId);
+        existing.email = requester.email?.toLowerCase();
       }
       if (!existing.createdAt) {
         existing.createdAt = new Date();
@@ -706,12 +755,12 @@ export class OrganizationsService implements OnModuleInit {
       }
       existing.requestedBy = requesterId;
       existing.requestedAt = new Date();
-      this.persistState();
+      await this.updateOrganizationFields(organizationId, { members: organization.members });
       return organization;
     }
 
     const requestedAt = new Date();
-    const requester = this.usersService.findById(requesterId);
+    const requester = await this.usersService.findById(requesterId);
     organization.members.push({
       userId: requesterId,
       email: requester?.email?.toLowerCase(),
@@ -721,26 +770,26 @@ export class OrganizationsService implements OnModuleInit {
       requestedAt,
       createdAt: requestedAt,
     });
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { members: organization.members });
     return organization;
   }
 
-  requestJoinByCode(
+  async requestJoinByCode(
     code: string,
     requesterId: string,
     roleKey?: OrganizationRoleKey,
-  ): OrganizationEntity {
-    const organization = this.findByCode(code);
+  ): Promise<OrganizationEntity> {
+    const organization = await this.findByCode(code);
     if (!organization) {
       throw new NotFoundException('Organization not found');
     }
     return this.requestJoin(organization.id, requesterId, roleKey);
   }
 
-  requestJoinBySelector(
+  async requestJoinBySelector(
     payload: { code?: string; organizationId?: string; email?: string; roleKey?: OrganizationRoleKey },
     requesterId: string,
-  ): OrganizationEntity {
+  ): Promise<OrganizationEntity> {
     const trimmedCode = payload.code?.trim();
     const trimmedOrgId = payload.organizationId?.trim();
     const trimmedEmail = payload.email?.trim().toLowerCase();
@@ -754,12 +803,12 @@ export class OrganizationsService implements OnModuleInit {
     }
 
     if (trimmedEmail) {
-      const user = this.usersService.findById(requesterId);
+      const user = await this.usersService.findById(requesterId);
       if (user.email.toLowerCase() !== trimmedEmail) {
         throw new BadRequestException('Email does not match requester');
       }
 
-      const memberships = this.listMembershipsByUser(requesterId);
+      const memberships = await this.listMembershipsByUser(requesterId);
       if (memberships.length === 0) {
         throw new NotFoundException('Organization invitation not found');
       }
@@ -768,29 +817,28 @@ export class OrganizationsService implements OnModuleInit {
       }
 
       const target = memberships[0];
-      const organization = this.getOrganization(target.organizationId);
-      return organization;
+      return this.getOrganization(target.organizationId);
     }
 
     throw new BadRequestException('Join selector is required');
   }
 
-  requestJoinByEmail(
+  async requestJoinByEmail(
     payload: { email: string; orgCode?: string },
     requesterId: string,
-  ): OrganizationEntity {
+  ): Promise<OrganizationEntity> {
     const normalizedEmail = payload.email.trim().toLowerCase();
     const orgCode = payload.orgCode?.trim();
     if (!orgCode) {
       throw new BadRequestException('Organization code is required');
     }
 
-    const requester = this.usersService.findById(requesterId);
+    const requester = await this.usersService.findById(requesterId);
     if (requester.email.toLowerCase() !== normalizedEmail) {
       throw new BadRequestException('Email does not match requester');
     }
 
-    const organization = this.findByCode(orgCode);
+    const organization = await this.findByCode(orgCode);
     if (!organization) {
       throw new NotFoundException('Organization not found');
     }
@@ -798,13 +846,13 @@ export class OrganizationsService implements OnModuleInit {
     return this.requestJoin(organization.id, requesterId);
   }
 
-  acceptMember(
+  async acceptMember(
     organizationId: string,
     requesterId: string,
     targetUserId: string,
-  ): OrganizationEntity {
-    const organization = this.getOrganization(organizationId);
-    this.assertRoleForMemberChange(organization, requesterId, null, null);
+  ): Promise<OrganizationEntity> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertRoleForMemberChange(organization, requesterId, null, null);
 
     const member = organization.members.find((item) => item.userId === targetUserId);
     if (!member) {
@@ -822,17 +870,17 @@ export class OrganizationsService implements OnModuleInit {
     member.status = OrganizationMemberStatus.Active;
     member.activatedAt = new Date();
     member.createdAt = member.createdAt ?? member.activatedAt ?? new Date();
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { members: organization.members });
     return organization;
   }
 
-  rejectMember(
+  async rejectMember(
     organizationId: string,
     requesterId: string,
     targetUserId: string,
-  ): OrganizationEntity {
-    const organization = this.getOrganization(organizationId);
-    this.assertRoleForMemberChange(organization, requesterId, null, null);
+  ): Promise<OrganizationEntity> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertRoleForMemberChange(organization, requesterId, null, null);
 
     const index = organization.members.findIndex((item) => item.userId === targetUserId);
     if (index === -1) {
@@ -854,17 +902,17 @@ export class OrganizationsService implements OnModuleInit {
     }
 
     organization.members.splice(index, 1);
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { members: organization.members });
     return organization;
   }
 
-  updateMemberRole(
+  async updateMemberRole(
     organizationId: string,
     requesterId: string,
     targetUserId: string,
     nextRole: OrganizationRoleKey,
-  ): OrganizationEntity {
-    const organization = this.getOrganization(organizationId);
+  ): Promise<OrganizationEntity> {
+    const organization = await this.getOrganization(organizationId);
     const member = organization.members.find((item) => item.userId === targetUserId);
     if (!member) {
       throw new NotFoundException('Organization member not found');
@@ -873,21 +921,21 @@ export class OrganizationsService implements OnModuleInit {
       throw new ForbiddenException('Owner role cannot be changed');
     }
 
-    this.assertRoleForMemberChange(organization, requesterId, nextRole, member.roleKey, targetUserId);
+    await this.assertRoleForMemberChange(organization, requesterId, nextRole, member.roleKey, targetUserId);
     this.ensureRoleExists(organization, nextRole);
 
     member.roleKey = nextRole;
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { members: organization.members });
     return organization;
   }
 
-  removeMember(
+  async removeMember(
     organizationId: string,
     requesterId: string,
     targetUserId: string,
-  ): OrganizationEntity {
-    const organization = this.getOrganization(organizationId);
-    this.assertRoleForMemberChange(organization, requesterId, null, null, targetUserId);
+  ): Promise<OrganizationEntity> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertRoleForMemberChange(organization, requesterId, null, null, targetUserId);
 
     const index = organization.members.findIndex((item) => item.userId === targetUserId);
     if (index === -1) {
@@ -900,13 +948,13 @@ export class OrganizationsService implements OnModuleInit {
     }
 
     organization.members.splice(index, 1);
-    this.usersService.clearDefaultOrganization(targetUserId, organizationId);
-    this.persistState();
+    await this.usersService.clearDefaultOrganization(targetUserId, organizationId);
+    await this.updateOrganizationFields(organizationId, { members: organization.members });
     return organization;
   }
 
-  leaveOrganization(organizationId: string, userId: string): OrganizationEntity {
-    const organization = this.getOrganization(organizationId);
+  async leaveOrganization(organizationId: string, userId: string): Promise<OrganizationEntity> {
+    const organization = await this.getOrganization(organizationId);
     const index = organization.members.findIndex((item) => item.userId === userId);
     if (index === -1) {
       throw new NotFoundException('Organization member not found');
@@ -918,13 +966,13 @@ export class OrganizationsService implements OnModuleInit {
     }
 
     organization.members.splice(index, 1);
-    this.usersService.clearDefaultOrganization(userId, organizationId);
-    this.persistState();
+    await this.usersService.clearDefaultOrganization(userId, organizationId);
+    await this.updateOrganizationFields(organizationId, { members: organization.members });
     return organization;
   }
 
-  setDefaultOrganization(organizationId: string, userId: string): SafeUser {
-    const organization = this.getOrganization(organizationId);
+  async setDefaultOrganization(organizationId: string, userId: string): Promise<SafeUser> {
+    const organization = await this.getOrganization(organizationId);
     const member = organization.members.find((item) => item.userId === userId);
     if (!member) {
       throw new ForbiddenException('User is not a member of organization');
@@ -936,25 +984,26 @@ export class OrganizationsService implements OnModuleInit {
     return this.usersService.setDefaultOrganization(userId, organizationId);
   }
 
-  deleteOrganization(organizationId: string, requesterId: string): void {
-    const organization = this.getOrganization(organizationId);
-    this.assertOwner(organization, requesterId);
+  async deleteOrganization(organizationId: string, requesterId: string): Promise<void> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertOwner(organization, requesterId);
 
-    this.organizations = this.organizations.filter((item) => item.id !== organizationId);
-    organization.members.forEach((member) => {
-      this.usersService.clearDefaultOrganization(member.userId, organizationId);
-    });
-    this.companiesService.removeByOrganization(organizationId);
-    this.persistState();
+    await this.organizationModel.deleteOne({ id: organizationId }).exec();
+    await Promise.all(
+      organization.members.map((member) =>
+        this.usersService.clearDefaultOrganization(member.userId, organizationId),
+      ),
+    );
+    await this.companiesService.removeByOrganization(organizationId);
   }
 
-  createRole(
+  async createRole(
     organizationId: string,
     requesterId: string,
     payload: { key: string; name: string; permissions: string[] },
-  ): OrganizationRoleDefinition[] {
-    const organization = this.getOrganization(organizationId);
-    this.assertOwner(organization, requesterId);
+  ): Promise<OrganizationRoleDefinition[]> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertOwner(organization, requesterId);
 
     const key = payload.key.trim();
     if (!key) {
@@ -976,18 +1025,18 @@ export class OrganizationsService implements OnModuleInit {
       permissions,
       isSystem: false,
     });
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { roles: organization.roles });
     return this.listRoles(organizationId);
   }
 
-  updateRole(
+  async updateRole(
     organizationId: string,
     requesterId: string,
     roleKey: string,
     payload: { name?: string; permissions?: string[] },
-  ): OrganizationRoleDefinition[] {
-    const organization = this.getOrganization(organizationId);
-    this.assertOwner(organization, requesterId);
+  ): Promise<OrganizationRoleDefinition[]> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertOwner(organization, requesterId);
 
     const role = organization.roles.find((item) => item.key === roleKey);
     if (!role) {
@@ -1006,13 +1055,17 @@ export class OrganizationsService implements OnModuleInit {
       role.permissions = permissions;
     }
 
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { roles: organization.roles });
     return this.listRoles(organizationId);
   }
 
-  deleteRole(organizationId: string, requesterId: string, roleKey: string): OrganizationRoleDefinition[] {
-    const organization = this.getOrganization(organizationId);
-    this.assertOwner(organization, requesterId);
+  async deleteRole(
+    organizationId: string,
+    requesterId: string,
+    roleKey: string,
+  ): Promise<OrganizationRoleDefinition[]> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertOwner(organization, requesterId);
 
     if (roleKey === OWNER_ROLE_KEY) {
       throw new BadRequestException('Owner role cannot be removed');
@@ -1027,41 +1080,44 @@ export class OrganizationsService implements OnModuleInit {
       throw new NotFoundException('Role not found');
     }
     organization.roles.splice(index, 1);
-    this.persistState();
+    await this.updateOrganizationFields(organizationId, { roles: organization.roles });
     return this.listRoles(organizationId);
   }
 
-  getMember(organizationId: string, userId?: string): OrganizationMember | null {
+  async getMember(organizationId: string, userId?: string): Promise<OrganizationMember | null> {
     if (!userId) {
       return null;
     }
 
-    const organization = this.getOrganization(organizationId);
+    const organization = await this.getOrganization(organizationId);
     return organization.members.find((item) => item.userId === userId) ?? null;
   }
 
-  getMemberRole(organizationId: string, userId?: string): OrganizationRoleKey | null {
-    const member = this.getMember(organizationId, userId);
+  async getMemberRole(organizationId: string, userId?: string): Promise<OrganizationRoleKey | null> {
+    const member = await this.getMember(organizationId, userId);
     if (!member || member.status !== OrganizationMemberStatus.Active) {
       return null;
     }
     return member.roleKey ?? null;
   }
 
-  getModuleState(organizationId: string, moduleKey: OrganizationModuleKey): OrganizationModuleState {
-    const organization = this.getOrganization(organizationId);
+  async getModuleState(
+    organizationId: string,
+    moduleKey: OrganizationModuleKey,
+  ): Promise<OrganizationModuleState> {
+    const organization = await this.getOrganization(organizationId);
     const state = this.ensureModuleState(organization.moduleStates, moduleKey);
     return { ...state };
   }
 
-  private assertRoleForMemberChange(
+  private async assertRoleForMemberChange(
     organization: OrganizationEntity,
     requesterId: string,
     desiredRole: OrganizationRoleKey | null,
     currentRole: OrganizationRoleKey | null,
     targetUserId?: string,
-  ): void {
-    this.assertPermission(organization, requesterId, 'users.write');
+  ): Promise<void> {
+    await this.assertPermission(organization, requesterId, 'users.write');
 
     if (currentRole === OWNER_ROLE_KEY && desiredRole !== OWNER_ROLE_KEY) {
       const ownerCount = organization.members.filter((member) => member.roleKey === OWNER_ROLE_KEY).length;
@@ -1071,7 +1127,7 @@ export class OrganizationsService implements OnModuleInit {
     }
   }
 
-  private generateUniqueCode(existing: OrganizationEntity[] = this.organizations): string {
+  private async generateUniqueCode(): Promise<string> {
     const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     const digits = '0123456789';
 
@@ -1083,7 +1139,8 @@ export class OrganizationsService implements OnModuleInit {
         '-' +
         Array.from({ length: 4 }, () => digits[Math.floor(Math.random() * digits.length)]).join('');
 
-      if (!existing.some((org) => org.code === code)) {
+      const exists = await this.organizationModel.exists({ code });
+      if (!exists) {
         return code;
       }
     }
@@ -1091,113 +1148,16 @@ export class OrganizationsService implements OnModuleInit {
     return `${uuid().slice(0, 4).toUpperCase()}-${uuid().slice(9, 13).toUpperCase()}`;
   }
 
-  private normalizeOrganization(
-    raw: Partial<OrganizationEntity>,
-    existing: OrganizationEntity[],
-  ): OrganizationEntity {
-    const baseDate = raw.createdAt ? new Date(raw.createdAt) : new Date();
-    const members: OrganizationMember[] = (raw.members ?? []).map((member) => {
-      const legacyMember = member as OrganizationMember & {
-        role?: string;
-        acceptedAt?: Date | string;
-        invitedAt?: Date | string;
-        requestedAt?: Date | string;
-        activatedAt?: Date | string;
-      };
-      const role: OrganizationRoleKey =
-        typeof legacyMember.roleKey === 'string' && legacyMember.roleKey.trim()
-          ? legacyMember.roleKey.trim()
-          : typeof legacyMember.role === 'string' && legacyMember.role.trim()
-            ? legacyMember.role.trim()
-            : 'member';
-      const status: OrganizationMember['status'] =
-        legacyMember.status === OrganizationMemberStatus.Pending
-          ? OrganizationMemberStatus.Pending
-          : OrganizationMemberStatus.Active;
-      const invitedAt = legacyMember.invitedAt ? new Date(legacyMember.invitedAt) : undefined;
-      const requestedAt = legacyMember.requestedAt ? new Date(legacyMember.requestedAt) : undefined;
-      const activatedAt =
-        legacyMember.activatedAt
-          ? new Date(legacyMember.activatedAt)
-          : legacyMember.acceptedAt
-            ? new Date(legacyMember.acceptedAt)
-            : status === OrganizationMemberStatus.Active
-              ? invitedAt ?? requestedAt ?? baseDate
-              : undefined;
-      const createdAt =
-        legacyMember.createdAt
-          ? new Date(legacyMember.createdAt)
-          : invitedAt ?? requestedAt ?? activatedAt ?? baseDate;
-      return {
-        userId: legacyMember.userId,
-        roleKey: role,
-        status,
-        email: typeof legacyMember.email === 'string' ? legacyMember.email.toLowerCase() : undefined,
-        invitedBy: typeof legacyMember.invitedBy === 'string' ? legacyMember.invitedBy : undefined,
-        requestedBy:
-          typeof legacyMember.requestedBy === 'string' ? legacyMember.requestedBy : undefined,
-        invitedAt,
-        requestedAt,
-        activatedAt,
-        createdAt,
-      };
-    });
-
-    const ownerUserId =
-      raw.ownerUserId ||
-      members.find((member) => member.roleKey === OWNER_ROLE_KEY)?.userId ||
-      members[0]?.userId ||
-      'unknown';
-    const createdBy = raw.createdBy || raw.ownerUserId || ownerUserId;
-
-    if (!members.some((member) => member.userId === ownerUserId)) {
-      members.push({
-        userId: ownerUserId,
-        roleKey: OWNER_ROLE_KEY,
-        status: OrganizationMemberStatus.Active,
-        invitedAt: baseDate,
-        activatedAt: baseDate,
-        createdAt: baseDate,
-      });
-    }
-
-    const roles = this.normalizeRoles(raw.roles, members);
-    const coreSettings = this.normalizeCoreSettings(raw.coreSettings);
-    const countryIds = this.normalizeIds(
-      Array.isArray(raw.countryIds) ? raw.countryIds : coreSettings.countries.map((country) => country.id),
-    );
-    const currencyIds = this.normalizeIds(
-      Array.isArray(raw.currencyIds) ? raw.currencyIds : coreSettings.currencies.map((currency) => currency.id),
-    );
-    const structureSettings = raw.structureSettings
-      ? {
-          companies: Array.isArray(raw.structureSettings.companies)
-            ? raw.structureSettings.companies
-            : [],
-          branches: Array.isArray(raw.structureSettings.branches)
-            ? raw.structureSettings.branches
-            : [],
-          warehouses: Array.isArray(raw.structureSettings.warehouses)
-            ? raw.structureSettings.warehouses
-            : [],
-        }
-      : undefined;
-
+  private normalizeOrganizationEntity(raw: OrganizationEntity): OrganizationEntity {
     return {
-      id: raw.id || uuid(),
-      name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : 'Organization',
-      code: raw.code || this.generateUniqueCode(existing),
-      ownerUserId,
-      createdBy,
-      countryIds,
-      currencyIds,
-      members,
-      roles,
-      coreSettings,
-      structureSettings,
+      ...raw,
+      countryIds: Array.isArray(raw.countryIds) ? raw.countryIds : [],
+      currencyIds: Array.isArray(raw.currencyIds) ? raw.currencyIds : [],
+      members: Array.isArray(raw.members) ? raw.members : [],
+      roles: Array.isArray(raw.roles) ? raw.roles : [],
+      coreSettings: this.normalizeCoreSettings(raw.coreSettings),
       moduleStates: this.normalizeModuleStates(raw.moduleStates),
       moduleSettings: this.normalizeModuleSettings(raw.moduleSettings),
-      createdAt: raw.createdAt ? new Date(raw.createdAt) : new Date(),
     };
   }
 
@@ -1253,8 +1213,8 @@ export class OrganizationsService implements OnModuleInit {
     return set;
   }
 
-  private assertOwner(organization: OrganizationEntity, requesterId: string): void {
-    const member = this.getMember(organization.id, requesterId);
+  private async assertOwner(organization: OrganizationEntity, requesterId: string): Promise<void> {
+    const member = await this.getMember(organization.id, requesterId);
     if (!member) {
       throw new ForbiddenException('User is not a member of organization');
     }
@@ -1266,8 +1226,12 @@ export class OrganizationsService implements OnModuleInit {
     }
   }
 
-  private assertPermission(organization: OrganizationEntity, requesterId: string, permission: string): void {
-    const member = this.getMember(organization.id, requesterId);
+  private async assertPermission(
+    organization: OrganizationEntity,
+    requesterId: string,
+    permission: string,
+  ): Promise<void> {
+    const member = await this.getMember(organization.id, requesterId);
     if (!member) {
       throw new ForbiddenException('User is not a member of organization');
     }
@@ -1293,8 +1257,9 @@ export class OrganizationsService implements OnModuleInit {
     }
   }
 
-  hasPermissionAnyOrganization(userId: string, permission: string): boolean {
-    return this.organizations.some((organization) => {
+  async hasPermissionAnyOrganization(userId: string, permission: string): Promise<boolean> {
+    const organizations = await this.organizationModel.find({ 'members.userId': userId }).lean().exec();
+    return organizations.some((organization) => {
       const member = organization.members.find(
         (item) => item.userId === userId && item.status === OrganizationMemberStatus.Active,
       );
@@ -1972,12 +1937,49 @@ export class OrganizationsService implements OnModuleInit {
     });
   }
 
-  private persistState(): void {
-    void this.moduleState
-      .saveState<OrganizationsState>(this.stateKey, { organizations: this.organizations })
-      .catch((error) => {
-        const message = error instanceof Error ? error.stack ?? error.message : String(error);
-        this.logger.error(`Failed to persist organizations: ${message}`);
-      });
+  private async updateOrganizationFields(
+    organizationId: string,
+    update: Partial<OrganizationEntity>,
+  ): Promise<void> {
+    await this.organizationModel.updateOne({ id: organizationId }, { $set: update }).exec();
+  }
+
+  private async syncOrgModulesFromOrganization(organization: OrganizationEntity): Promise<void> {
+    const moduleStates = organization.moduleStates ?? {};
+    const moduleSettings = organization.moduleSettings ?? {};
+    const descriptors = this.moduleLoader.listModules();
+    const versionMap = new Map(descriptors.map((descriptor) => [descriptor.config.name, descriptor.config.version]));
+    const entries = Object.entries(moduleStates);
+    if (entries.length === 0) {
+      await this.orgModuleModel.deleteMany({ organizationId: organization.id }).exec();
+      return;
+    }
+
+    const operations = entries.map(([key, state]) => {
+      const status =
+        typeof state === 'string' ? this.mapLegacyModuleStatus(state) : state.status;
+      return {
+      updateOne: {
+        filter: { organizationId: organization.id, key },
+        update: {
+          $set: {
+            organizationId: organization.id,
+            key,
+            status,
+            version: versionMap.get(key),
+            config: (moduleSettings as Record<string, unknown>)[key] ?? undefined,
+          },
+        },
+        upsert: true,
+      },
+    };
+    });
+
+    try {
+      await this.orgModuleModel.bulkWrite(operations, { ordered: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.stack ?? error.message : String(error);
+      this.logger.error(`Failed to sync org_modules for ${organization.id}: ${message}`);
+    }
   }
 }

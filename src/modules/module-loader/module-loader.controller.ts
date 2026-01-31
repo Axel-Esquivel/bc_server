@@ -20,6 +20,14 @@ export class ModuleLoaderController {
     };
   }
 
+  @Get('catalog')
+  listCatalog() {
+    return {
+      message: 'Module catalog',
+      result: this.moduleLoaderService.listModules(),
+    };
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('definitions')
   listDefinitions(@Query('workspaceId') _workspaceId?: string) {

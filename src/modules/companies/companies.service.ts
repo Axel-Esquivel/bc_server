@@ -98,13 +98,17 @@ export class CompaniesService implements OnModuleInit {
     this.persistState();
   }
 
-  createCompany(organizationId: string, ownerUserId: string, dto: CreateCompanyDto): CompanyEntity {
-    const orgRole = this.organizationsService.getMemberRole(organizationId, ownerUserId);
+  async createCompany(
+    organizationId: string,
+    ownerUserId: string,
+    dto: CreateCompanyDto,
+  ): Promise<CompanyEntity> {
+    const orgRole = await this.organizationsService.getMemberRole(organizationId, ownerUserId);
     if (!orgRole) {
       throw new BadRequestException('Organization membership not found');
     }
 
-    this.usersService.findById(ownerUserId);
+    await this.usersService.findById(ownerUserId);
 
     const name = dto.name.trim();
     if (!name) {
@@ -113,8 +117,8 @@ export class CompaniesService implements OnModuleInit {
 
     const useV2 = Array.isArray(dto.enterprisesByCountry) && dto.enterprisesByCountry.length > 0;
     const hierarchy = useV2
-      ? this.normalizeHierarchyForV2(organizationId, name, dto)
-      : this.normalizeHierarchyForInput(organizationId, {
+      ? await this.normalizeHierarchyForV2(organizationId, name, dto)
+      : await this.normalizeHierarchyForInput(organizationId, {
           name,
           baseCountryId: dto.baseCountryId ?? '',
           baseCurrencyId: dto.baseCurrencyId ?? '',
@@ -150,8 +154,8 @@ export class CompaniesService implements OnModuleInit {
     return company;
   }
 
-  listByOrganization(organizationId: string, userId: string): CompanyEntity[] {
-    const orgRole = this.organizationsService.getMemberRole(organizationId, userId);
+  async listByOrganization(organizationId: string, userId: string): Promise<CompanyEntity[]> {
+    const orgRole = await this.organizationsService.getMemberRole(organizationId, userId);
     if (!orgRole) {
       throw new ForbiddenException('Organization membership not found');
     }
@@ -181,7 +185,7 @@ export class CompaniesService implements OnModuleInit {
     return company;
   }
 
-  updateCompany(companyId: string, userId: string, dto: UpdateCompanyDto): CompanyEntity {
+  async updateCompany(companyId: string, userId: string, dto: UpdateCompanyDto): Promise<CompanyEntity> {
     const company = this.getCompany(companyId);
     this.assertPermission(companyId, userId, 'company.manage');
 
@@ -200,7 +204,7 @@ export class CompaniesService implements OnModuleInit {
       company.taxId = dto.taxId?.trim() || undefined;
     }
 
-    const hierarchy = this.normalizeHierarchyForInput(company.organizationId, {
+    const hierarchy = await this.normalizeHierarchyForInput(company.organizationId, {
       name: nextName,
       baseCountryId: dto.baseCountryId ?? company.baseCountryId,
       baseCurrencyId: dto.baseCurrencyId ?? company.baseCurrencyId,
@@ -224,7 +228,11 @@ export class CompaniesService implements OnModuleInit {
     return company;
   }
 
-  addMember(companyId: string, requesterId: string, dto: AddCompanyMemberDto): CompanyEntity {
+  async addMember(
+    companyId: string,
+    requesterId: string,
+    dto: AddCompanyMemberDto,
+  ): Promise<CompanyEntity> {
     const company = this.getCompany(companyId);
     this.assertPermission(companyId, requesterId, 'company.invite');
     this.ensureRoleExists(company, dto.roleKey);
@@ -233,7 +241,7 @@ export class CompaniesService implements OnModuleInit {
       this.assertOwnerPermission(company, requesterId);
     }
 
-    this.usersService.findById(dto.userId);
+    await this.usersService.findById(dto.userId);
 
     const existing = company.members.find((member) => member.userId === dto.userId);
     if (existing) {
@@ -245,9 +253,9 @@ export class CompaniesService implements OnModuleInit {
     return company;
   }
 
-  joinCompany(companyId: string, userId: string): CompanyEntity {
+  async joinCompany(companyId: string, userId: string): Promise<CompanyEntity> {
     const company = this.getCompany(companyId);
-    this.usersService.findById(userId);
+    await this.usersService.findById(userId);
     const existing = company.members.find((member) => member.userId === userId);
     if (!existing) {
       company.members.push({ userId, roleKey: 'member', status: 'active' });
@@ -769,11 +777,11 @@ export class CompaniesService implements OnModuleInit {
     });
   }
 
-  private normalizeHierarchyForV2(
+  private async normalizeHierarchyForV2(
     organizationId: string,
     name: string,
     dto: CreateCompanyDto,
-  ): NormalizedCompanyHierarchy {
+  ): Promise<NormalizedCompanyHierarchy> {
     const operatingCountryIds = this.normalizeIdList(dto.operatingCountryIds);
     if (operatingCountryIds.length === 0) {
       throw new BadRequestException('Operating countries are required');
@@ -871,12 +879,12 @@ export class CompaniesService implements OnModuleInit {
     });
   }
 
-  private normalizeHierarchyForInput(
+  private async normalizeHierarchyForInput(
     organizationId: string,
     input: CompanyHierarchyInput,
-  ): NormalizedCompanyHierarchy {
-    this.assertBaseCountry(organizationId, input.baseCountryId);
-    this.assertBaseCurrency(organizationId, input.baseCurrencyId);
+  ): Promise<NormalizedCompanyHierarchy> {
+    await this.assertBaseCountry(organizationId, input.baseCountryId);
+    await this.assertBaseCurrency(organizationId, input.baseCurrencyId);
 
     const operatingCountryIds = this.normalizeIdList(input.operatingCountryIds);
     if (operatingCountryIds.length === 0) {
@@ -886,9 +894,11 @@ export class CompaniesService implements OnModuleInit {
       operatingCountryIds.push(input.baseCountryId);
     }
 
-    operatingCountryIds.forEach((countryId) => this.assertBaseCountry(organizationId, countryId));
+    for (const countryId of operatingCountryIds) {
+      await this.assertBaseCountry(organizationId, countryId);
+    }
 
-    const enterprises = this.normalizeEnterprisesForInput(
+    const enterprises = await this.normalizeEnterprisesForInput(
       organizationId,
       input,
       operatingCountryIds,
@@ -914,7 +924,9 @@ export class CompaniesService implements OnModuleInit {
     const currencyIds = this.normalizeIdList(
       enterprises.flatMap((enterprise) => enterprise.currencyIds),
     );
-    currencyIds.forEach((currencyId) => this.assertBaseCurrency(organizationId, currencyId));
+    for (const currencyId of currencyIds) {
+      await this.assertBaseCurrency(organizationId, currencyId);
+    }
 
     return {
       baseCountryId: defaultEnterprise.countryId,
@@ -1004,11 +1016,11 @@ export class CompaniesService implements OnModuleInit {
     };
   }
 
-  private normalizeEnterprisesForInput(
+  private async normalizeEnterprisesForInput(
     organizationId: string,
     input: CompanyHierarchyInput,
     operatingCountryIds: string[],
-  ): CompanyEnterprise[] {
+  ): Promise<CompanyEnterprise[]> {
     const enterprisesInput = Array.isArray(input.enterprises) ? input.enterprises : [];
     if (enterprisesInput.length === 0) {
       const fallbackCurrencies = this.normalizeIdList(input.currencies);
@@ -1025,7 +1037,8 @@ export class CompaniesService implements OnModuleInit {
       ];
     }
 
-    return enterprisesInput.map((enterprise) => {
+    const normalized: CompanyEnterprise[] = [];
+    for (const enterprise of enterprisesInput) {
       const name = enterprise.name?.trim();
       if (!name) {
         throw new BadRequestException('Enterprise name is required');
@@ -1035,7 +1048,7 @@ export class CompaniesService implements OnModuleInit {
         throw new BadRequestException('Enterprise country is required');
       }
 
-      this.assertBaseCountry(organizationId, countryId);
+      await this.assertBaseCountry(organizationId, countryId);
       if (!operatingCountryIds.includes(countryId)) {
         operatingCountryIds.push(countryId);
       }
@@ -1043,9 +1056,9 @@ export class CompaniesService implements OnModuleInit {
       const currencyIds = this.normalizeIdList(enterprise.currencyIds);
       const normalizedCurrencies =
         currencyIds.length > 0 ? currencyIds : [input.baseCurrencyId];
-      normalizedCurrencies.forEach((currencyId) =>
-        this.assertBaseCurrency(organizationId, currencyId),
-      );
+      for (const currencyId of normalizedCurrencies) {
+        await this.assertBaseCurrency(organizationId, currencyId);
+      }
 
       const defaultCurrencyId =
         typeof enterprise.defaultCurrencyId === 'string' && enterprise.defaultCurrencyId.trim()
@@ -1056,14 +1069,15 @@ export class CompaniesService implements OnModuleInit {
         defaultCurrencyId,
       ]);
 
-      return {
+      normalized.push({
         id: enterprise.id ?? uuid(),
         name,
         countryId,
         currencyIds: normalizedCurrencyIds,
         defaultCurrencyId,
-      };
-    });
+      });
+    }
+    return normalized;
   }
 
   private resolveDefaultEnterpriseId(
@@ -1135,22 +1149,22 @@ export class CompaniesService implements OnModuleInit {
     return Array.from(new Set(normalized));
   }
 
-  private assertBaseCountry(organizationId: string, baseCountryId: string): void {
-    const coreSettings = this.organizationsService.getCoreSettings(organizationId);
+  private async assertBaseCountry(organizationId: string, baseCountryId: string): Promise<void> {
+    const coreSettings = await this.organizationsService.getCoreSettings(organizationId);
     const hasCoreCountry = coreSettings.countries.some((country) => country.id === baseCountryId);
     if (hasCoreCountry) {
       return;
     }
-    const country = this.countriesService
-      .list()
-      .find((item) => item.id === baseCountryId || item.iso2 === baseCountryId);
+    const country = (await this.countriesService.list()).find(
+      (item) => item.id === baseCountryId || item.iso2 === baseCountryId,
+    );
     if (!country) {
       throw new BadRequestException('Base country not found');
     }
   }
 
-  private assertBaseCurrency(organizationId: string, baseCurrencyId: string): void {
-    const coreSettings = this.organizationsService.getCoreSettings(organizationId);
+  private async assertBaseCurrency(organizationId: string, baseCurrencyId: string): Promise<void> {
+    const coreSettings = await this.organizationsService.getCoreSettings(organizationId);
     const hasCoreCurrency = coreSettings.currencies.some(
       (currency) =>
         currency.id === baseCurrencyId ||
@@ -1159,13 +1173,10 @@ export class CompaniesService implements OnModuleInit {
     if (hasCoreCurrency) {
       return;
     }
-    const currency = this.currenciesService
-      .list()
-      .find(
-        (item) =>
-          item.id === baseCurrencyId ||
-          item.code.toUpperCase() === baseCurrencyId.toUpperCase(),
-      );
+    const currency = (await this.currenciesService.list()).find(
+      (item) =>
+        item.id === baseCurrencyId || item.code.toUpperCase() === baseCurrencyId.toUpperCase(),
+    );
     if (!currency) {
       throw new BadRequestException('Base currency not found');
     }

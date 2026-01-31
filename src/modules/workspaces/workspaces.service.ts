@@ -146,27 +146,27 @@ export class WorkspacesService implements OnModuleInit {
     this.persistState();
   }
 
-  createWorkspace(dto: CreateWorkspaceDto, ownerUserId: string): WorkspaceEntity {
+  async createWorkspace(dto: CreateWorkspaceDto, ownerUserId: string): Promise<WorkspaceEntity> {
     if (this.compatMode) {
       this.warnCompat('createWorkspace');
-      const company = this.companiesService.createCompany(dto.organizationId, ownerUserId, {
+      const company = await this.companiesService.createCompany(dto.organizationId, ownerUserId, {
         name: dto.name,
         baseCountryId: dto.countryId,
         baseCurrencyId: dto.baseCurrencyId ?? 'unknown',
         currencies: dto.baseCurrencyId ? [dto.baseCurrencyId] : undefined,
       });
-      this.usersService.addWorkspaceMembership(ownerUserId, {
+      await this.usersService.addWorkspaceMembership(ownerUserId, {
         workspaceId: company.id,
         roles: ['admin'],
       });
-      const owner = this.usersService.findById(ownerUserId);
+      const owner = await this.usersService.findById(ownerUserId);
       if (!owner.defaultWorkspaceId) {
-        this.usersService.setDefaultWorkspace(ownerUserId, company.id);
+        await this.usersService.setDefaultWorkspace(ownerUserId, company.id);
       }
       return this.mapCompanyToWorkspace(company);
     }
 
-    const role = this.organizationsService.getMemberRole(dto.organizationId, ownerUserId);
+    const role = await this.organizationsService.getMemberRole(dto.organizationId, ownerUserId);
     if (!role) {
       throw new BadRequestException('Organization membership not found');
     }
@@ -188,13 +188,13 @@ export class WorkspacesService implements OnModuleInit {
     };
 
     workspace.members.push({ userId: ownerUserId, roleKey: 'admin', status: 'active' });
-    this.usersService.addWorkspaceMembership(ownerUserId, {
+    await this.usersService.addWorkspaceMembership(ownerUserId, {
       workspaceId: workspace.id,
       roles: ['admin'],
     });
-    const owner = this.usersService.findById(ownerUserId);
+    const owner = await this.usersService.findById(ownerUserId);
     if (!owner.defaultWorkspaceId) {
-      this.usersService.setDefaultWorkspace(ownerUserId, workspace.id);
+      await this.usersService.setDefaultWorkspace(ownerUserId, workspace.id);
     }
 
     this.workspaces.push(workspace);
@@ -202,14 +202,14 @@ export class WorkspacesService implements OnModuleInit {
     return workspace;
   }
 
-  addMember(workspaceId: string, member: AddMemberDto, requesterId?: string) {
+  async addMember(workspaceId: string, member: AddMemberDto, requesterId?: string) {
     if (this.compatMode) {
       this.warnCompat('addMember');
-      const company = this.companiesService.addMember(workspaceId, requesterId ?? 'unknown', {
+      const company = await this.companiesService.addMember(workspaceId, requesterId ?? 'unknown', {
         userId: member.userId,
         roleKey: member.roleKey ?? member.role ?? 'member',
       });
-      this.usersService.addWorkspaceMembership(member.userId, {
+      await this.usersService.addWorkspaceMembership(member.userId, {
         workspaceId,
         roles: [member.roleKey ?? member.role ?? 'member'],
       });
@@ -232,7 +232,7 @@ export class WorkspacesService implements OnModuleInit {
       workspace.members.push({ userId: member.userId, roleKey, status: 'active' });
     }
 
-    this.usersService.addWorkspaceMembership(member.userId, {
+    await this.usersService.addWorkspaceMembership(member.userId, {
       workspaceId: workspace.id,
       roles: [roleKey],
     });
@@ -740,7 +740,7 @@ export class WorkspacesService implements OnModuleInit {
     return this.moduleSettings.getSettings(workspace, moduleId);
   }
 
-  getCoreSettings(workspaceId: string): WorkspaceCoreSettings {
+  async getCoreSettings(workspaceId: string): Promise<WorkspaceCoreSettings> {
     if (this.compatMode) {
       this.warnCompat('getCoreSettings');
       return this.companiesService.getCoreSettings(workspaceId) as WorkspaceCoreSettings;
@@ -748,8 +748,8 @@ export class WorkspacesService implements OnModuleInit {
 
     const workspace = this.getWorkspace(workspaceId);
     const legacy = this.getLegacyCoreSettings(workspace);
-    const organizationCore = this.organizationsService.getLegacyCoreSettings(workspace.organizationId);
-    const organizationStructure = this.organizationsService.getStructureSettings(workspace.organizationId);
+    const organizationCore = await this.organizationsService.getLegacyCoreSettings(workspace.organizationId);
+    const organizationStructure = await this.organizationsService.getStructureSettings(workspace.organizationId);
 
     const baseCurrencyId =
       organizationCore.baseCurrencyId ?? legacy.baseCurrencyId ?? workspace.baseCurrencyId;
@@ -773,7 +773,10 @@ export class WorkspacesService implements OnModuleInit {
     };
   }
 
-  updateCoreSettings(workspaceId: string, dto: WorkspaceCoreSettingsDto): WorkspaceCoreSettings {
+  async updateCoreSettings(
+    workspaceId: string,
+    dto: WorkspaceCoreSettingsDto,
+  ): Promise<WorkspaceCoreSettings> {
     if (this.compatMode) {
       this.warnCompat('updateCoreSettings');
       const baseCurrencyId = dto.baseCurrencyId;
@@ -812,7 +815,7 @@ export class WorkspacesService implements OnModuleInit {
     }
 
     const workspace = this.getWorkspace(workspaceId);
-    const current = this.getCoreSettings(workspaceId);
+    const current = await this.getCoreSettings(workspaceId);
     const legacyCurrencyIds = (dto.currencies ?? [])
       .map((currency) => currency.id)
       .filter((id): id is string => Boolean(id));
@@ -821,9 +824,9 @@ export class WorkspacesService implements OnModuleInit {
       baseCurrencyId: dto.baseCurrencyId,
       currencyIds: dto.currencyIds ?? (legacyCurrencyIds.length > 0 ? legacyCurrencyIds : undefined),
     };
-    const nextCore = this.organizationsService.updateLegacyCoreSettings(workspace.organizationId, coreUpdate);
+    const nextCore = await this.organizationsService.updateLegacyCoreSettings(workspace.organizationId, coreUpdate);
 
-    const currentStructure = this.organizationsService.getStructureSettings(workspace.organizationId);
+    const currentStructure = await this.organizationsService.getStructureSettings(workspace.organizationId);
     const companies = (dto.companies ?? currentStructure.companies)
       .filter((company) => Boolean(company.name))
       .map((company) => ({
@@ -844,7 +847,7 @@ export class WorkspacesService implements OnModuleInit {
         branchId: warehouse.branchId,
         name: warehouse.name!,
       }));
-    const nextStructure = this.organizationsService.updateStructureSettings(
+    const nextStructure = await this.organizationsService.updateStructureSettings(
       workspace.organizationId,
       {
         companies,
@@ -1372,12 +1375,12 @@ export class WorkspacesService implements OnModuleInit {
     return this.getPosSettings(workspace);
   }
 
-  createPosTerminal(workspaceId: string, dto: CreatePosTerminalDto): PosTerminal {
+  async createPosTerminal(workspaceId: string, dto: CreatePosTerminalDto): Promise<PosTerminal> {
     if (this.compatMode) {
       this.warnCompat('createPosTerminal');
       const settings = this.listPosTerminals(workspaceId);
       this.assertWarehouse(dto.warehouseId, workspaceId, dto.companyId);
-      this.assertUsers(dto.allowedUsers);
+      await this.assertUsers(dto.allowedUsers);
 
       const terminal: PosTerminal = {
         id: uuid(),
@@ -1402,7 +1405,7 @@ export class WorkspacesService implements OnModuleInit {
     const workspace = this.getWorkspace(workspaceId);
     this.moduleSettings.validateModuleEnabled(workspace, 'pos');
     this.assertWarehouse(dto.warehouseId, workspace.id, dto.companyId);
-    this.assertUsers(dto.allowedUsers);
+    await this.assertUsers(dto.allowedUsers);
 
     const terminal: PosTerminal = {
       id: uuid(),
@@ -1426,11 +1429,11 @@ export class WorkspacesService implements OnModuleInit {
     return terminal;
   }
 
-  updatePosTerminal(
+  async updatePosTerminal(
     workspaceId: string,
     terminalId: string,
     dto: UpdatePosTerminalDto
-  ): PosTerminal {
+  ): Promise<PosTerminal> {
     if (this.compatMode) {
       this.warnCompat('updatePosTerminal');
       const settings = this.listPosTerminals(workspaceId);
@@ -1444,7 +1447,7 @@ export class WorkspacesService implements OnModuleInit {
       this.assertWarehouse(nextWarehouseId, workspaceId, nextCompanyId);
 
       if (dto.allowedUsers !== undefined) {
-        this.assertUsers(dto.allowedUsers);
+        await this.assertUsers(dto.allowedUsers);
       }
 
       Object.assign(terminal, {
@@ -1478,7 +1481,7 @@ export class WorkspacesService implements OnModuleInit {
     this.assertWarehouse(nextWarehouseId, workspace.id, nextCompanyId);
 
     if (dto.allowedUsers !== undefined) {
-      this.assertUsers(dto.allowedUsers);
+      await this.assertUsers(dto.allowedUsers);
     }
 
     Object.assign(terminal, {
@@ -1543,14 +1546,14 @@ export class WorkspacesService implements OnModuleInit {
     return workspace;
   }
 
-  joinByCode(userId: string, code: string): WorkspaceEntity {
+  async joinByCode(userId: string, code: string): Promise<WorkspaceEntity> {
     if (this.compatMode) {
       this.warnCompat('joinByCode');
-      const company = this.companiesService.joinCompany(code, userId);
-      this.usersService.addWorkspaceMembership(userId, { workspaceId: company.id, roles: ['member'] });
-      const user = this.usersService.findById(userId);
+      const company = await this.companiesService.joinCompany(code, userId);
+      await this.usersService.addWorkspaceMembership(userId, { workspaceId: company.id, roles: ['member'] });
+      const user = await this.usersService.findById(userId);
       if (!user.defaultWorkspaceId) {
-        this.usersService.setDefaultWorkspace(userId, company.id);
+        await this.usersService.setDefaultWorkspace(userId, company.id);
       }
       return this.mapCompanyToWorkspace(company);
     }
@@ -1564,13 +1567,13 @@ export class WorkspacesService implements OnModuleInit {
     const existing = workspace.members.find((member) => member.userId === userId);
     if (!existing) {
       workspace.members.push({ userId, roleKey: 'member', status: 'active' });
-      this.usersService.addWorkspaceMembership(userId, {
+      await this.usersService.addWorkspaceMembership(userId, {
         workspaceId: workspace.id,
         roles: ['member'],
       });
-      const user = this.usersService.findById(userId);
+      const user = await this.usersService.findById(userId);
       if (!user.defaultWorkspaceId) {
-        this.usersService.setDefaultWorkspace(userId, workspace.id);
+        await this.usersService.setDefaultWorkspace(userId, workspace.id);
       }
       this.persistState();
     }
@@ -1882,11 +1885,11 @@ export class WorkspacesService implements OnModuleInit {
     });
   }
 
-  private assertUsers(userIds?: string[]): void {
+  private async assertUsers(userIds?: string[]): Promise<void> {
     if (!userIds || userIds.length === 0) {
       return;
     }
-    userIds.forEach((id) => this.usersService.findById(id));
+    await Promise.all(userIds.map((id) => this.usersService.findById(id)));
   }
 
   private assertWarehouse(warehouseId: string, workspaceId: string, companyId?: string): void {

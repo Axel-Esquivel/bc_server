@@ -79,10 +79,10 @@ export class WorkspacesController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  list(@Req() req: AuthenticatedRequest) {
+  async list(@Req() req: AuthenticatedRequest) {
     const userId = this.getUserId(req);
     const workspaces = this.workspacesService.listByUser(userId);
-    const user = this.usersService.findById(userId);
+    const user = await this.usersService.findById(userId);
     return {
       message: 'Workspaces loaded',
       result: {
@@ -94,9 +94,9 @@ export class WorkspacesController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
-  createWorkspace(@Req() req: AuthenticatedRequest, @Body() dto: CreateWorkspaceDto) {
+  async createWorkspace(@Req() req: AuthenticatedRequest, @Body() dto: CreateWorkspaceDto) {
     const userId = this.getUserId(req);
-    const workspace = this.workspacesService.createWorkspace(dto, userId);
+    const workspace = await this.workspacesService.createWorkspace(dto, userId);
     return {
       message: 'Workspace created',
       result: this.decorateCompat(workspace),
@@ -105,9 +105,9 @@ export class WorkspacesController {
 
   @UseGuards(JwtAuthGuard)
   @Post('join')
-  join(@Req() req: AuthenticatedRequest, @Body() dto: JoinWorkspaceDto) {
+  async join(@Req() req: AuthenticatedRequest, @Body() dto: JoinWorkspaceDto) {
     const userId = this.getUserId(req);
-    const workspace = this.workspacesService.joinByCode(userId, dto.code);
+    const workspace = await this.workspacesService.joinByCode(userId, dto.code);
     return {
       message: 'Workspace joined',
       result: this.decorateCompat(workspace),
@@ -117,9 +117,9 @@ export class WorkspacesController {
   @UseGuards(JwtAuthGuard, WorkspacePermissionGuard)
   @WorkspacePermission('workspace.invite')
   @Post(':id/members')
-  addMember(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: AddMemberDto) {
+  async addMember(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Body() dto: AddMemberDto) {
     const userId = this.getUserId(req);
-    const workspace = this.workspacesService.addMember(id, dto, userId);
+    const workspace = await this.workspacesService.addMember(id, dto, userId);
     return {
       message: 'Member added to workspace',
       result: workspace,
@@ -211,8 +211,8 @@ export class WorkspacesController {
 
   @UseGuards(JwtAuthGuard, WorkspaceMemberGuard)
   @Get(':id/settings/core')
-  getCoreSettings(@Param('id') id: string) {
-    const settings = this.workspacesService.getCoreSettings(id);
+  async getCoreSettings(@Param('id') id: string) {
+    const settings = await this.workspacesService.getCoreSettings(id);
     return {
       message: 'Workspace core settings loaded',
       result: settings,
@@ -222,8 +222,8 @@ export class WorkspacesController {
   @UseGuards(JwtAuthGuard, WorkspacePermissionGuard)
   @WorkspacePermission('workspace.manage')
   @Patch(':id/settings/core')
-  updateCoreSettings(@Param('id') id: string, @Body() dto: WorkspaceCoreSettingsDto) {
-    const settings = this.workspacesService.updateCoreSettings(id, dto);
+  async updateCoreSettings(@Param('id') id: string, @Body() dto: WorkspaceCoreSettingsDto) {
+    const settings = await this.workspacesService.updateCoreSettings(id, dto);
     return {
       message: 'Workspace core settings updated',
       result: settings,
@@ -460,8 +460,8 @@ export class WorkspacesController {
 
   @UseGuards(JwtAuthGuard, WorkspaceAdminGuard)
   @Post(':id/pos/terminals')
-  createPosTerminal(@Param('id') id: string, @Body() dto: CreatePosTerminalDto) {
-    const terminal = this.workspacesService.createPosTerminal(id, dto);
+  async createPosTerminal(@Param('id') id: string, @Body() dto: CreatePosTerminalDto) {
+    const terminal = await this.workspacesService.createPosTerminal(id, dto);
     return {
       message: 'POS terminal created',
       result: terminal,
@@ -470,12 +470,12 @@ export class WorkspacesController {
 
   @UseGuards(JwtAuthGuard, WorkspaceAdminGuard)
   @Patch(':id/pos/terminals/:terminalId')
-  updatePosTerminal(
+  async updatePosTerminal(
     @Param('id') id: string,
     @Param('terminalId') terminalId: string,
     @Body() dto: UpdatePosTerminalDto
   ) {
-    const terminal = this.workspacesService.updatePosTerminal(id, terminalId, dto);
+    const terminal = await this.workspacesService.updatePosTerminal(id, terminalId, dto);
     return {
       message: 'POS terminal updated',
       result: terminal,

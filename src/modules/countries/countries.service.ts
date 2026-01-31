@@ -2,55 +2,41 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  Logger,
   NotFoundException,
-  OnModuleInit,
 } from '@nestjs/common';
-import { ModuleStateService } from '../../core/database/module-state.service';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { CreateCountryDto } from './dto/create-country.dto';
 import { UpdateCountryDto } from './dto/update-country.dto';
 import { CountryEntity } from './entities/country.entity';
-
-interface CountriesState {
-  countries: CountryEntity[];
-}
+import { Country, CountryDocument } from './schemas/country.schema';
 
 @Injectable()
-export class CountriesService implements OnModuleInit {
-  private readonly logger = new Logger(CountriesService.name);
-  private readonly stateKey = 'module:countries';
-  private countries: CountryEntity[] = [];
+export class CountriesService {
+  constructor(@InjectModel(Country.name) private readonly countryModel: Model<CountryDocument>) {}
 
-  constructor(private readonly moduleState: ModuleStateService) {}
-
-  async onModuleInit(): Promise<void> {
-    const state = await this.moduleState.loadState<CountriesState>(this.stateKey, { countries: [] });
-    const normalized = (state.countries ?? []).map((country) => this.normalizeCountry(country));
-    this.countries = normalized;
-    this.persistState();
-  }
-
-  list(query?: string): CountryEntity[] {
-    const normalizedQuery = query?.trim().toLowerCase();
+  async list(query?: string): Promise<CountryEntity[]> {
+    const normalizedQuery = query?.trim();
     if (!normalizedQuery) {
-      return [...this.countries];
+      return this.countryModel.find().lean().exec();
     }
 
-    return this.countries.filter((country) => {
-      const haystack = [
-        country.nameEs,
-        country.nameEn,
-        country.iso2,
-        country.iso3,
-        country.phoneCode ?? '',
-      ]
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(normalizedQuery);
-    });
+    const regex = new RegExp(this.escapeRegExp(normalizedQuery), 'i');
+    return this.countryModel
+      .find({
+        $or: [
+          { nameEs: regex },
+          { nameEn: regex },
+          { iso2: regex },
+          { iso3: regex },
+          { phoneCode: regex },
+        ],
+      })
+      .lean()
+      .exec();
   }
 
-  create(dto: CreateCountryDto): CountryEntity {
+  async create(dto: CreateCountryDto): Promise<CountryEntity> {
     const iso2 = (dto.iso2 ?? dto.code ?? '').trim().toUpperCase();
     if (!iso2 || iso2.length !== 2) {
       throw new BadRequestException('Country code is required');
@@ -75,7 +61,11 @@ export class CountriesService implements OnModuleInit {
     const resolvedNameEs = nameEs || nameEn || fallbackName;
     const resolvedNameEn = nameEn || nameEs || fallbackName;
 
-    if (this.countries.some((country) => country.iso2 === iso2 || country.iso3 === iso3)) {
+    const existing = await this.countryModel
+      .findOne({ $or: [{ iso2 }, { iso3 }] })
+      .lean()
+      .exec();
+    if (existing) {
       throw new ConflictException('Country code already exists');
     }
 
@@ -88,13 +78,14 @@ export class CountriesService implements OnModuleInit {
       phoneCode: dto.phoneCode?.trim() || undefined,
     };
 
-    this.countries.push(country);
-    this.persistState();
+    await this.countryModel.create(country);
     return country;
   }
 
-  update(id: string, dto: UpdateCountryDto): CountryEntity {
-    const country = this.countries.find((item) => item.id === id || item.iso2 === id);
+  async update(id: string, dto: UpdateCountryDto): Promise<CountryEntity> {
+    const country = await this.countryModel
+      .findOne({ $or: [{ id }, { iso2: id }] })
+      .exec();
     if (!country) {
       throw new NotFoundException('Country not found');
     }
@@ -125,59 +116,22 @@ export class CountriesService implements OnModuleInit {
       country.phoneCode = dto.phoneCode?.trim() || undefined;
     }
 
-    this.persistState();
-    return country;
+    await country.save();
+    return country.toObject() as CountryEntity;
   }
 
-  delete(id: string): { id: string } {
-    const index = this.countries.findIndex((item) => item.id === id || item.iso2 === id);
-    if (index === -1) {
+  async delete(id: string): Promise<{ id: string }> {
+    const removed = await this.countryModel
+      .findOneAndDelete({ $or: [{ id }, { iso2: id }] })
+      .lean()
+      .exec();
+    if (!removed) {
       throw new NotFoundException('Country not found');
     }
-    const [removed] = this.countries.splice(index, 1);
-    this.persistState();
     return { id: removed.id };
   }
 
-  private normalizeCountry(raw: unknown): CountryEntity {
-    const candidate = raw as Partial<CountryEntity> & {
-      iso2?: unknown;
-      iso3?: unknown;
-      nameEn?: unknown;
-      nameEs?: unknown;
-      phoneCode?: unknown;
-      id?: unknown;
-    };
-    const iso2 = typeof candidate.iso2 === 'string' ? candidate.iso2.trim().toUpperCase() : 'UN';
-    const iso3 = typeof candidate.iso3 === 'string' ? candidate.iso3.trim().toUpperCase() : 'UNK';
-    const nameEn =
-      typeof candidate.nameEn === 'string' && candidate.nameEn.trim()
-        ? candidate.nameEn.trim()
-        : typeof candidate.nameEs === 'string' && candidate.nameEs.trim()
-          ? candidate.nameEs.trim()
-          : 'Country';
-    const nameEs =
-      typeof candidate.nameEs === 'string' && candidate.nameEs.trim() ? candidate.nameEs.trim() : nameEn;
-
-    return {
-      id: typeof candidate.id === 'string' && candidate.id.trim() ? candidate.id.trim() : iso2,
-      iso2,
-      iso3,
-      nameEn,
-      nameEs,
-      phoneCode:
-        typeof candidate.phoneCode === 'string' && candidate.phoneCode.trim()
-          ? candidate.phoneCode.trim()
-          : undefined,
-    };
-  }
-
-  private persistState(): void {
-    void this.moduleState
-      .saveState<CountriesState>(this.stateKey, { countries: this.countries })
-      .catch((error) => {
-        const message = error instanceof Error ? error.stack ?? error.message : String(error);
-        this.logger.error(`Failed to persist countries: ${message}`);
-      });
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }

@@ -1,6 +1,7 @@
-import { Inject, Injectable, Logger, OnModuleInit, UnauthorizedException, forwardRef } from '@nestjs/common';
+import { Inject, Injectable, Logger, UnauthorizedException, forwardRef } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { ModuleStateService } from '../../core/database/module-state.service';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { UsersService } from '../users/users.service';
 import { DevicesService } from '../devices/devices.service';
 import { OrganizationsService } from '../organizations/organizations.service';
@@ -10,15 +11,12 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { OrganizationMemberStatus } from '../organizations/entities/organization.entity';
+import { RefreshToken, RefreshTokenDocument } from './schemas/refresh-token.schema';
 
 export interface TokenBundle {
   accessToken: string;
   refreshToken: string;
   activeContext?: ActiveContext;
-}
-
-interface AuthState {
-  tokens: { key: string; value: string }[];
 }
 
 interface AuthTokenPayload {
@@ -31,10 +29,8 @@ interface AuthTokenPayload {
 }
 
 @Injectable()
-export class AuthService implements OnModuleInit {
+export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  private readonly refreshTokens = new Map<string, string>();
-  private readonly stateKey = 'module:auth:refresh-tokens';
 
   constructor(
     private readonly usersService: UsersService,
@@ -44,13 +40,9 @@ export class AuthService implements OnModuleInit {
     private readonly organizationsService: OrganizationsService,
     @Inject(forwardRef(() => CompaniesService))
     private readonly companiesService: CompaniesService,
-    private readonly moduleState: ModuleStateService,
+    @InjectModel(RefreshToken.name)
+    private readonly refreshTokenModel: Model<RefreshTokenDocument>,
   ) {}
-
-  async onModuleInit(): Promise<void> {
-    const state = await this.moduleState.loadState<AuthState>(this.stateKey, { tokens: [] });
-    state.tokens?.forEach(({ key, value }) => this.refreshTokens.set(key, value));
-  }
 
   async login(dto: LoginDto) {
     const user = await this.usersService.validateCredentials(dto.email, dto.password);
@@ -58,7 +50,7 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const activeContext = this.resolveActiveContext(user.id);
+    const activeContext = await this.resolveActiveContext(user.id);
     const deviceId = 'untracked-device';
 
     this.devicesService.upsertDevice(user.id, deviceId, activeContext.companyId ?? undefined);
@@ -72,7 +64,7 @@ export class AuthService implements OnModuleInit {
       permissions: [],
     });
 
-    this.storeRefreshToken(user.id, deviceId, tokens.refreshToken);
+    await this.storeRefreshToken(user.id, deviceId, tokens.refreshToken);
 
     return {
       message: 'Login successful',
@@ -94,7 +86,7 @@ export class AuthService implements OnModuleInit {
       password: dto.password,
     });
 
-    const activeContext = this.resolveActiveContext(user.id);
+    const activeContext = await this.resolveActiveContext(user.id);
     const deviceId = 'untracked-device';
     const tokens = this.issueTokens({
       sub: user.id,
@@ -105,7 +97,7 @@ export class AuthService implements OnModuleInit {
       permissions: [],
     });
 
-    this.storeRefreshToken(user.id, deviceId, tokens.refreshToken);
+    await this.storeRefreshToken(user.id, deviceId, tokens.refreshToken);
     return {
       message: 'User registered',
       result: {
@@ -119,22 +111,26 @@ export class AuthService implements OnModuleInit {
 
   async refresh(dto: RefreshTokenDto) {
     const payload = await this.verifyRefreshToken(dto.refreshToken);
-    const stored = this.refreshTokens.get(this.refreshKey(payload.sub, dto.deviceId || payload.deviceId));
-    if (!stored || stored !== dto.refreshToken) {
+    const deviceId = dto.deviceId || payload.deviceId;
+    const stored = await this.refreshTokenModel
+      .findOne({ userId: payload.sub, deviceId })
+      .lean()
+      .exec();
+    if (!stored || stored.token !== dto.refreshToken) {
       throw new UnauthorizedException('Refresh token revoked');
     }
 
-    const activeContext = this.resolveActiveContext(payload.sub);
+    const activeContext = await this.resolveActiveContext(payload.sub);
     const tokens = this.issueTokens({
       sub: payload.sub,
       email: payload.email,
-      deviceId: dto.deviceId || payload.deviceId,
+      deviceId,
       organizationId: activeContext.organizationId,
       companyId: activeContext.companyId,
       permissions: payload.permissions || [],
     });
 
-    this.storeRefreshToken(payload.sub, dto.deviceId || payload.deviceId, tokens.refreshToken);
+    await this.storeRefreshToken(payload.sub, deviceId, tokens.refreshToken);
 
     return {
       message: 'Token refreshed',
@@ -146,8 +142,8 @@ export class AuthService implements OnModuleInit {
   }
 
   async getProfile(userId: string) {
-    const user = this.usersService.findById(userId);
-    const isFirstTime = !this.organizationsService.hasActiveMemberships(userId);
+    const user = await this.usersService.findById(userId);
+    const isFirstTime = !(await this.organizationsService.hasActiveMemberships(userId));
     return {
       message: 'User profile',
       result: {
@@ -159,9 +155,10 @@ export class AuthService implements OnModuleInit {
 
   logout(userId?: string, deviceId?: string) {
     if (userId) {
-      const key = this.refreshKey(userId, deviceId);
-      this.refreshTokens.delete(key);
-      this.persistTokens();
+      void this.refreshTokenModel.deleteOne({
+        userId,
+        deviceId: deviceId || 'unknown-device',
+      }).exec();
     }
 
     return {
@@ -195,32 +192,19 @@ export class AuthService implements OnModuleInit {
     }
   }
 
-  private storeRefreshToken(userId: string, deviceId: string, refreshToken: string) {
-    const key = this.refreshKey(userId, deviceId);
-    this.refreshTokens.set(key, refreshToken);
-    this.persistTokens();
+  private async storeRefreshToken(userId: string, deviceId: string, refreshToken: string) {
+    await this.refreshTokenModel.updateOne(
+      { userId, deviceId },
+      { $set: { token: refreshToken } },
+      { upsert: true },
+    ).exec();
   }
 
-  private refreshKey(userId: string, deviceId?: string) {
-    return `${userId}:${deviceId || 'unknown-device'}`;
-  }
-
-  private persistTokens() {
-    void this.moduleState
-      .saveState<AuthState>(this.stateKey, {
-        tokens: Array.from(this.refreshTokens.entries()).map(([key, value]) => ({ key, value })),
-      })
-      .catch((error) => {
-        const message = error instanceof Error ? error.stack ?? error.message : String(error);
-        this.logger.error(`Failed to persist refresh tokens: ${message}`);
-      });
-  }
-
-  private resolveActiveContext(userId: string): ActiveContext {
-    const user = this.usersService.findById(userId);
-    const memberships = this.organizationsService
-      .listMembershipsByUser(userId)
-      .filter((member) => member.status === OrganizationMemberStatus.Active);
+  private async resolveActiveContext(userId: string): Promise<ActiveContext> {
+    const user = await this.usersService.findById(userId);
+    const memberships = (await this.organizationsService.listMembershipsByUser(userId)).filter(
+      (member) => member.status === OrganizationMemberStatus.Active,
+    );
     const preferredOrgId = user.defaultOrganizationId;
     const resolvedMembership =
       preferredOrgId && memberships.some((member) => member.organizationId === preferredOrgId)
@@ -231,9 +215,9 @@ export class AuthService implements OnModuleInit {
       return this.createEmptyContext();
     }
 
-    const companies = this.companiesService
-      .listByUser(userId)
-      .filter((company) => company.organizationId === organizationId);
+    const companies = (await this.companiesService.listByUser(userId)).filter(
+      (company) => company.organizationId === organizationId,
+    );
     const preferredCompanyId = user.defaultCompanyId ?? user.defaultWorkspaceId;
     const company =
       preferredCompanyId && companies.some((item) => item.id === preferredCompanyId)
@@ -241,7 +225,9 @@ export class AuthService implements OnModuleInit {
         : null;
     const enterpriseId = company?.defaultEnterpriseId ?? company?.enterprises?.[0]?.id ?? null;
     const enterprise = company?.enterprises?.find((item) => item.id === enterpriseId) ?? null;
-    const currencyId = company ? this.resolveCompanyCurrency(organizationId, company, enterprise) : null;
+    const currencyId = company
+      ? await this.resolveCompanyCurrency(organizationId, company, enterprise)
+      : null;
 
     return {
       organizationId,
@@ -251,16 +237,16 @@ export class AuthService implements OnModuleInit {
     };
   }
 
-  private resolveOrganizationCurrency(organizationId: string): string | null {
-    const coreSettings = this.organizationsService.getCoreSettings(organizationId);
+  private async resolveOrganizationCurrency(organizationId: string): Promise<string | null> {
+    const coreSettings = await this.organizationsService.getCoreSettings(organizationId);
     return coreSettings.currencies[0]?.id ?? null;
   }
 
-  private resolveCompanyCurrency(
+  private async resolveCompanyCurrency(
     organizationId: string,
     company: { baseCurrencyId?: string | null; defaultCurrencyId?: string | null } | null,
     enterprise: { currencyIds: string[]; defaultCurrencyId?: string | null } | null,
-  ): string | null {
+  ): Promise<string | null> {
     if (!company) {
       return this.resolveOrganizationCurrency(organizationId);
     }
@@ -272,7 +258,11 @@ export class AuthService implements OnModuleInit {
     if (requested && enterprise?.currencyIds.includes(requested)) {
       return requested;
     }
-    return enterprise?.currencyIds[0] ?? company.baseCurrencyId ?? this.resolveOrganizationCurrency(organizationId);
+    return (
+      enterprise?.currencyIds[0] ??
+      company.baseCurrencyId ??
+      (await this.resolveOrganizationCurrency(organizationId))
+    );
   }
 
   private createEmptyContext(): ActiveContext {

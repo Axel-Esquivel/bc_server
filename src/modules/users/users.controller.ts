@@ -11,8 +11,8 @@ export class UsersController {
 
   @UseGuards(JwtAuthGuard)
   @Patch('me/default-workspace')
-  setDefaultWorkspace(@Req() req: any, @Body() dto: SetDefaultWorkspaceDto) {
-    const user = this.usersService.setDefaultWorkspace(req.user.sub, dto.workspaceId);
+  async setDefaultWorkspace(@Req() req: any, @Body() dto: SetDefaultWorkspaceDto) {
+    const user = await this.usersService.setDefaultWorkspace(req.user.sub, dto.workspaceId);
     return {
       message: 'Default workspace updated',
       result: user,
@@ -21,8 +21,8 @@ export class UsersController {
 
   @UseGuards(JwtAuthGuard)
   @Patch('me/default-company')
-  setDefaultCompany(@Req() req: any, @Body() dto: SetDefaultCompanyDto) {
-    const user = this.usersService.setDefaultCompany(req.user.sub, dto.companyId);
+  async setDefaultCompany(@Req() req: any, @Body() dto: SetDefaultCompanyDto) {
+    const user = await this.usersService.setDefaultCompany(req.user.sub, dto.companyId);
     return {
       message: 'Default company updated',
       result: user,
@@ -31,8 +31,8 @@ export class UsersController {
 
   @UseGuards(JwtAuthGuard)
   @Post('resolve')
-  resolveUsers(@Body() dto: ResolveUsersDto) {
-    const users = this.usersService.resolveUsers(dto.ids ?? []);
+  async resolveUsers(@Body() dto: ResolveUsersDto) {
+    const users = await this.usersService.resolveUsers(dto.ids ?? []);
     return {
       message: 'Users resolved',
       result: users,
