@@ -123,6 +123,11 @@ export class OrganizationsService {
     };
 
     await this.organizationModel.create(organization);
+    await this.usersService.addOrganizationMembership(ownerUserId, {
+      organizationId: organization.id,
+      role: 'owner',
+      status: 'active',
+    });
     await this.syncOrgModulesFromOrganization(organization);
     return organization;
   }
@@ -427,7 +432,6 @@ export class OrganizationsService {
     if (!organization) {
       throw new NotFoundException('Organization not found');
     }
-
     return this.normalizeOrganizationEntity(organization as unknown as OrganizationEntity);
   }
 

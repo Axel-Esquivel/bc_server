@@ -85,6 +85,16 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
           dbName,
           appName: 'business-control-backend',
           connectionFactory: (connection: Connection) => {
+            const rawUri = uri ?? '';
+            const sanitizedUri = rawUri.replace(/\/\/([^:/]+):([^@]+)@/, '//$1:***@');
+            const dbLabel = connection?.db?.databaseName ?? dbName ?? 'unknown';
+            const host = (connection as Connection & { host?: string })?.host ?? 'unknown';
+            // eslint-disable-next-line no-console
+            console.log('[Mongo] uri:', sanitizedUri);
+            // eslint-disable-next-line no-console
+            console.log('[Mongo] db:', dbLabel);
+            // eslint-disable-next-line no-console
+            console.log('[Mongo] host:', host);
             connection.on('error', (error) => {
               // eslint-disable-next-line no-console
               console.error(
