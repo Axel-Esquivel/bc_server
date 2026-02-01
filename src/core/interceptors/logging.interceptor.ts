@@ -29,11 +29,11 @@ export class LoggingInterceptor implements NestInterceptor {
         request.user?.id ||
         request.user?._id ||
         request.headers['x-user-id'];
-      const workspaceId =
-        context.workspaceId ||
-        request.workspaceId ||
-        request.user?.workspaceId ||
-        request.headers['x-workspace-id'];
+      const OrganizationId =
+        context.OrganizationId ||
+        request.OrganizationId ||
+        request.user?.OrganizationId ||
+        request.headers['x-Organization-id'];
       const deviceId =
         context.deviceId ||
         request.deviceId ||
@@ -50,7 +50,7 @@ export class LoggingInterceptor implements NestInterceptor {
       const payloadSummary = RedactionUtil.stringifyPayload(sanitized);
 
       this.logger.log(
-        `${method} ${url} ${statusCode ?? response.statusCode} | userId=${userId ?? 'anonymous'} workspaceId=${workspaceId ?? 'n/a'} deviceId=${deviceId ?? 'n/a'} ip=${ip ?? 'unknown'} durationMs=${durationMs} requestId=${requestId ?? 'n/a'} payload=${payloadSummary}`,
+        `${method} ${url} ${statusCode ?? response.statusCode} | userId=${userId ?? 'anonymous'} OrganizationId=${OrganizationId ?? 'n/a'} deviceId=${deviceId ?? 'n/a'} ip=${ip ?? 'unknown'} durationMs=${durationMs} requestId=${requestId ?? 'n/a'} payload=${payloadSummary}`,
       );
     };
 

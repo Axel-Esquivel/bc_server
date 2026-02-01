@@ -35,7 +35,7 @@ export class CreateInventoryMovementDto {
 
   @IsString()
   @IsNotEmpty()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   @IsNotEmpty()

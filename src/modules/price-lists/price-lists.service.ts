@@ -32,7 +32,7 @@ export class PriceListsService implements OnModuleInit {
       name: dto.name,
       description: dto.description,
       items: this.mapItems(dto.items),
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
     };
 
@@ -57,7 +57,7 @@ export class PriceListsService implements OnModuleInit {
     const priceList = this.findOne(id);
     if (dto.name !== undefined) priceList.name = dto.name;
     if (dto.description !== undefined) priceList.description = dto.description;
-    if (dto.workspaceId !== undefined) priceList.workspaceId = dto.workspaceId;
+    if (dto.OrganizationId !== undefined) priceList.OrganizationId = dto.OrganizationId;
     if (dto.companyId !== undefined) priceList.companyId = dto.companyId;
     if (dto.items !== undefined) {
       priceList.items = this.mapItems(dto.items);

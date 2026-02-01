@@ -9,7 +9,7 @@ import { SaleRecord } from '../modules/pos/entities/sale.entity';
 
 export interface RealtimeContext {
   userId?: string;
-  workspaceId?: string;
+  OrganizationId?: string;
   companyId?: string;
   deviceId?: string;
   permissions?: string[];
@@ -47,7 +47,7 @@ export class RealtimeService {
 
       const context: RealtimeContext = {
         userId: payload.sub,
-        workspaceId: payload.workspaceId,
+        OrganizationId: payload.OrganizationId,
         companyId: payload.companyId,
         deviceId: payload.deviceId,
         permissions: payload.permissions ?? [],
@@ -65,8 +65,8 @@ export class RealtimeService {
     if (context.userId) {
       client.join(`user:${context.userId}`);
     }
-    if (context.workspaceId) {
-      client.join(`workspace:${context.workspaceId}`);
+    if (context.OrganizationId) {
+      client.join(`Organization:${context.OrganizationId}`);
     }
     if (context.deviceId) {
       client.join(`device:${context.deviceId}`);
@@ -107,9 +107,9 @@ export class RealtimeService {
     target.emit(event, payload);
   }
 
-  emitToWorkspace(workspaceId: string | undefined, event: string, payload: any) {
-    if (!workspaceId) return;
-    this.emitEvent(event, payload, [`workspace:${workspaceId}`]);
+  emitToOrganization(OrganizationId: string | undefined, event: string, payload: any) {
+    if (!OrganizationId) return;
+    this.emitEvent(event, payload, [`Organization:${OrganizationId}`]);
   }
 
   emitToUser(userId: string | undefined, event: string, payload: any) {
@@ -120,7 +120,7 @@ export class RealtimeService {
   emitPosCartUpdated(cart: CartRecord) {
     const payload = {
       id: cart.id,
-      workspaceId: cart.workspaceId,
+      OrganizationId: cart.OrganizationId,
       companyId: cart.companyId,
       userId: cart.userId,
       status: cart.status,
@@ -128,17 +128,17 @@ export class RealtimeService {
       warehouseId: cart.warehouseId,
       updatedAt: cart.updatedAt,
     };
-    this.emitToWorkspace(cart.workspaceId, 'pos:cart:updated', payload);
+    this.emitToOrganization(cart.OrganizationId, 'pos:cart:updated', payload);
     this.emitToUser(cart.userId, 'pos:cart:updated', payload);
   }
 
-  emitPosCartDeleted(cartId: string, workspaceId: string | undefined, userId?: string) {
-    const payload = { id: cartId, workspaceId };
-    this.emitToWorkspace(workspaceId, 'pos:cart:deleted', payload);
+  emitPosCartDeleted(cartId: string, OrganizationId: string | undefined, userId?: string) {
+    const payload = { id: cartId, OrganizationId };
+    this.emitToOrganization(OrganizationId, 'pos:cart:deleted', payload);
     this.emitToUser(userId, 'pos:cart:deleted', payload);
   }
 
-  emitPosInventoryAvailability(projection: StockProjectionRecord, workspaceId: string) {
+  emitPosInventoryAvailability(projection: StockProjectionRecord, OrganizationId: string) {
     const payload = {
       variantId: projection.variantId,
       warehouseId: projection.warehouseId,
@@ -147,9 +147,9 @@ export class RealtimeService {
       onHand: projection.onHand,
       reserved: projection.reserved,
       version: projection.version,
-      workspaceId,
+      OrganizationId,
     };
-    this.emitToWorkspace(workspaceId, 'pos:inventory:availability', payload);
+    this.emitToOrganization(OrganizationId, 'pos:inventory:availability', payload);
   }
 
   emitInventoryStockUpdated(projection: StockProjectionRecord) {
@@ -162,10 +162,10 @@ export class RealtimeService {
       reserved: projection.reserved,
       available: projection.available,
       version: projection.version,
-      workspaceId: projection.workspaceId,
+      OrganizationId: projection.OrganizationId,
       companyId: projection.companyId,
     };
-    this.emitToWorkspace(projection.workspaceId, 'inventory:stock:updated', payload);
+    this.emitToOrganization(projection.OrganizationId, 'inventory:stock:updated', payload);
   }
 
   emitDashboardSalesTick(sale: SaleRecord) {
@@ -173,11 +173,11 @@ export class RealtimeService {
       saleId: sale.id,
       total: sale.total,
       storeId: sale.warehouseId,
-      workspaceId: sale.workspaceId,
+      OrganizationId: sale.OrganizationId,
       companyId: sale.companyId,
       timestamp: sale.updatedAt ?? sale.createdAt,
     };
-    this.emitToWorkspace(sale.workspaceId, 'dashboard:sales:tick', payload);
+    this.emitToOrganization(sale.OrganizationId, 'dashboard:sales:tick', payload);
   }
 
   emitInventoryAlert(projection: StockProjectionRecord, threshold = 5) {
@@ -186,29 +186,29 @@ export class RealtimeService {
       variantId: projection.variantId,
       warehouseId: projection.warehouseId,
       available: projection.available,
-      workspaceId: projection.workspaceId,
+      OrganizationId: projection.OrganizationId,
       alert: 'low_stock',
     };
-    this.emitToWorkspace(projection.workspaceId, 'dashboard:inventory:alerts', payload);
+    this.emitToOrganization(projection.OrganizationId, 'dashboard:inventory:alerts', payload);
   }
 
   logConnection(context: RealtimeContext, event: 'connected' | 'disconnected', client: Socket) {
     this.logger.log(
-      `[ws:${event}] user=${context.userId ?? 'anonymous'} workspace=${context.workspaceId ?? '-'} device=${context.deviceId ?? '-'} ip=${client.handshake.address}`,
+      `[ws:${event}] user=${context.userId ?? 'anonymous'} Organization=${context.OrganizationId ?? '-'} device=${context.deviceId ?? '-'} ip=${client.handshake.address}`,
     );
   }
 
   logSecurityEvent(context: RealtimeContext, event: string, action: string, meta?: Record<string, any>) {
-    const details = { userId: context.userId, workspaceId: context.workspaceId, deviceId: context.deviceId, ip: context.ip, ...meta };
+    const details = { userId: context.userId, OrganizationId: context.OrganizationId, deviceId: context.deviceId, ip: context.ip, ...meta };
     this.logger.log(`[ws:audit] event=${event} action=${action} scope=${JSON.stringify(details)}`);
   }
 
-  logDomainEvent(event: string, workspaceId?: string, companyId?: string) {
-    this.logger.debug(`[ws:event] ${event} workspace=${workspaceId ?? '-'} company=${companyId ?? '-'}`);
+  logDomainEvent(event: string, OrganizationId?: string, companyId?: string) {
+    this.logger.debug(`[ws:event] ${event} Organization=${OrganizationId ?? '-'} company=${companyId ?? '-'}`);
   }
 
   auditMovementEvent(projection: StockProjectionRecord, movement: InventoryMovementRecord) {
-    this.logDomainEvent(`movement:${movement.operationId}`, projection.workspaceId, projection.companyId);
+    this.logDomainEvent(`movement:${movement.operationId}`, projection.OrganizationId, projection.companyId);
   }
 
   private extractToken(client: Socket): string | undefined {

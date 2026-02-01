@@ -12,7 +12,7 @@ export class Promotion {
   discountRate!: number;
 
   @prop({ required: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true })
   companyId!: string;
@@ -30,7 +30,7 @@ export class ComboRule {
   bundlePrice!: number;
 
   @prop({ required: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true })
   companyId!: string;

@@ -4,7 +4,7 @@ Define cómo se manejan seguridad, logs y auditoría en el backend.
 
 ## 1. Seguridad
 
-- Autenticación con JWT (ver `03_AUTH_WORKSPACES_ROLES.md`).
+- Autenticación con JWT (ver `03_AUTH_Organizations_ROLES.md`).
 - Autorización con roles y permisos.
 - Rate limiting en endpoints sensibles (login, etc.).
 - Sanitización de entrada:
@@ -18,7 +18,7 @@ Define cómo se manejan seguridad, logs y auditoría en el backend.
   - `url`
   - `statusCode`
   - `userId` (o `anonymous`)
-  - `workspaceId` (o `n/a`)
+  - `OrganizationId` (o `n/a`)
   - `deviceId` (si existe)
   - `ip`
   - `requestId`

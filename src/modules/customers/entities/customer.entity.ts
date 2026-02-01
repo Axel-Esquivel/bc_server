@@ -15,7 +15,7 @@ export class Customer {
   active!: boolean;
 
   @prop({ required: true, index: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true, index: true })
   companyId!: string;

@@ -1,9 +1,9 @@
-# 03 – Auth, Workspaces, Roles y Permissions
+# 03 – Auth, Organizations, Roles y Permissions
 
 Este documento define los requisitos funcionales y de diseño para:
 
 - Autenticación y sesiones.
-- Workspaces y miembros.
+- Organizations y miembros.
 - Roles y permisos.
 - Dispositivos (devices).
 
@@ -24,7 +24,7 @@ Este documento define los requisitos funcionales y de diseño para:
 - **Refresh token**:
   - Permite renovar accessToken mientras el refreshToken sea válido y no revocado.
 - **Perfil actual**:
-  - `/auth/me` devuelve el usuario actual, sus roles y workspaces.
+  - `/auth/me` devuelve el usuario actual, sus roles y Organizations.
 
 ### 1.2. Requisitos técnicos
 
@@ -33,15 +33,15 @@ Este documento define los requisitos funcionales y de diseño para:
   - Validar el token.
   - Adjuntar al request:
     - `userId`
-    - `workspaceId` actual (si viene en el token o cabecera)
+    - `OrganizationId` actual (si viene en el token o cabecera)
     - `deviceId`
 - Hash de contraseñas con `bcrypt`.
 
-## 2. Workspaces (WorkspacesModule)
+## 2. Organizations (OrganizationsModule)
 
 ### 2.1. Concepto
 
-- Un workspace agrupa:
+- Un Organization agrupa:
   - Datos de negocio.
   - Configuraciones específicas.
   - Miembros (usuarios) con roles.
@@ -59,9 +59,9 @@ Este documento define los requisitos funcionales y de diseño para:
 
 ### 2.3. Endpoints
 
-- `POST /workspaces`
-  - Crea un nuevo workspace.
-- `POST /workspaces/:id/members`
+- `POST /Organizations`
+  - Crea un nuevo Organization.
+- `POST /Organizations/:id/members`
   - Agrega o actualiza un miembro con un rol determinado.
 
 ## 3. Roles y permisos
@@ -71,7 +71,7 @@ Este documento define los requisitos funcionales y de diseño para:
 - Representan conjuntos de permisos nombrados:
   - `name`, `description`
   - `permissions: string[]` (o relación con Permission)
-  - Asociados a un workspace.
+  - Asociados a un Organization.
 
 ### 3.2. PermissionsModule
 
@@ -84,7 +84,7 @@ Este documento define los requisitos funcionales y de diseño para:
 ### 3.3. Guards
 
 - `RolesGuard`:
-  - Verifica que el usuario tenga un rol requerido en el workspace.
+  - Verifica que el usuario tenga un rol requerido en el Organization.
 - `PermissionsGuard`:
   - Verifica que el usuario tenga el permiso requerido para la acción.
 
@@ -117,5 +117,5 @@ Este documento define los requisitos funcionales y de diseño para:
 ## 5. Auditoría y seguridad
 
 - Todas las acciones de auth y gestión de roles/permisos deben:
-  - Loguearse con `userId`, `workspaceId`, `deviceId`, `ip`.
+  - Loguearse con `userId`, `OrganizationId`, `deviceId`, `ip`.
 - Ver detalles en `14_SECURITY_LOGS_AUDIT.md`.

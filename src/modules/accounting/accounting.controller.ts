@@ -11,10 +11,10 @@ export class AccountingController {
   constructor(private readonly accountingService: AccountingService) {}
 
   @Get('accounts')
-  listAccounts(@Query('workspaceId') workspaceId?: string, @Query('companyId') companyId?: string) {
+  listAccounts(@Query('OrganizationId') OrganizationId?: string, @Query('companyId') companyId?: string) {
     return {
       message: 'Accounts listed',
-      result: this.accountingService.listAccounts(workspaceId, companyId),
+      result: this.accountingService.listAccounts(OrganizationId, companyId),
     };
   }
 
@@ -27,10 +27,10 @@ export class AccountingController {
   }
 
   @Get('tax-rules')
-  listTaxRules(@Query('workspaceId') workspaceId?: string, @Query('companyId') companyId?: string) {
+  listTaxRules(@Query('OrganizationId') OrganizationId?: string, @Query('companyId') companyId?: string) {
     return {
       message: 'Tax rules listed',
-      result: this.accountingService.listTaxRules(workspaceId, companyId),
+      result: this.accountingService.listTaxRules(OrganizationId, companyId),
     };
   }
 
@@ -43,10 +43,10 @@ export class AccountingController {
   }
 
   @Get('journal-entries')
-  listJournalEntries(@Query('workspaceId') workspaceId?: string, @Query('companyId') companyId?: string) {
+  listJournalEntries(@Query('OrganizationId') OrganizationId?: string, @Query('companyId') companyId?: string) {
     return {
       message: 'Journal entries listed',
-      result: this.accountingService.listJournalEntries(workspaceId, companyId),
+      result: this.accountingService.listJournalEntries(OrganizationId, companyId),
     };
   }
 

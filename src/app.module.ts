@@ -16,7 +16,7 @@ import { RolesModule } from './modules/roles/roles.module';
 import { UsersModule } from './modules/users/users.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { CompaniesModule } from './modules/companies/companies.module';
-import { WorkspacesModule } from './modules/workspaces/workspaces.module';
+import { OrganizationsModule } from './modules/Organizations/Organizations.module';
 import { CountriesModule } from './modules/countries/countries.module';
 import { CurrenciesModule } from './modules/currencies/currencies.module';
 import { BranchesModule } from './modules/branches/branches.module';
@@ -115,7 +115,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     CompaniesModule,
     RolesModule,
     PermissionsModule,
-    WorkspacesModule,
+    OrganizationsModule,
     CountriesModule,
     CurrenciesModule,
     BranchesModule,

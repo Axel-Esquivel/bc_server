@@ -16,7 +16,7 @@ export class ConfigureCreditDto {
 
   @IsString()
   @IsNotEmpty()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   @IsNotEmpty()

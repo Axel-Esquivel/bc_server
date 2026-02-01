@@ -11,7 +11,7 @@ Este documento detalla el modelo de bodegas y ubicaciones.
   - flags:
     - `allowNegativeStock`
     - `allowCountingLock`
-  - `workspaceId`, `companyId`
+  - `OrganizationId`, `companyId`
 
 - Ver módulo `WarehousesModule`.
 

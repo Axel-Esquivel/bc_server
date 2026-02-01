@@ -32,7 +32,7 @@ export class UomService implements OnModuleInit {
       name: dto.name,
       code: dto.code,
       factor: dto.factor,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
     };
     this.uoms.push(uom);
@@ -59,7 +59,7 @@ export class UomService implements OnModuleInit {
       name: dto.name ?? uom.name,
       code: dto.code ?? uom.code,
       factor: dto.factor ?? uom.factor,
-      workspaceId: dto.workspaceId ?? uom.workspaceId,
+      OrganizationId: dto.OrganizationId ?? uom.OrganizationId,
       companyId: dto.companyId ?? uom.companyId,
     });
     return uom;

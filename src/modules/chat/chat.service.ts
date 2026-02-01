@@ -5,7 +5,7 @@ import { ModuleStateService } from '../../core/database/module-state.service';
 
 export interface ChatMessage {
   id: string;
-  workspaceId: string;
+  OrganizationId: string;
   channelId?: string;
   toUserId?: string;
   fromUserId?: string;
@@ -34,18 +34,18 @@ export class ChatService implements OnModuleInit {
     this.messages = state.messages ?? [];
   }
 
-  buildMessage(context: RealtimeContext, payload: { workspaceId: string; channelId?: string; toUserId?: string; content: string }): ChatMessage {
+  buildMessage(context: RealtimeContext, payload: { OrganizationId: string; channelId?: string; toUserId?: string; content: string }): ChatMessage {
     if (!context.userId) {
       throw new BadRequestException('User is not authenticated');
     }
 
-    if (context.workspaceId !== payload.workspaceId) {
-      throw new BadRequestException('Workspace mismatch for chat message');
+    if (context.OrganizationId !== payload.OrganizationId) {
+      throw new BadRequestException('Organization mismatch for chat message');
     }
 
     return {
       id: uuid(),
-      workspaceId: payload.workspaceId,
+      OrganizationId: payload.OrganizationId,
       channelId: payload.channelId,
       toUserId: payload.toUserId,
       fromUserId: context.userId,
@@ -65,15 +65,15 @@ export class ChatService implements OnModuleInit {
     }
   }
 
-  getHistory(workspaceId: string, channelId?: string): ChatMessage[] {
+  getHistory(OrganizationId: string, channelId?: string): ChatMessage[] {
     return this.messages.filter((item) => {
-      if (item.workspaceId !== workspaceId) return false;
+      if (item.OrganizationId !== OrganizationId) return false;
       if (channelId && item.channelId !== channelId) return false;
       return true;
     });
   }
 
-  emitTyping(context: RealtimeContext, payload: { workspaceId: string; channelId?: string }) {
+  emitTyping(context: RealtimeContext, payload: { OrganizationId: string; channelId?: string }) {
     const rooms = this.getRoomsForMessage(context, payload.channelId, undefined);
     this.realtimeService.emitEvent('chat:user:typing', { userId: context.userId, channelId: payload.channelId }, rooms, 'chat');
   }
@@ -82,7 +82,7 @@ export class ChatService implements OnModuleInit {
     const rooms = this.getRoomsForMessage(message, message.channelId, message.toUserId);
     this.realtimeService.emitEvent('chat:message:received', message, rooms, 'chat');
     this.realtimeService.logSecurityEvent(
-      { userId: message.fromUserId, workspaceId: message.workspaceId },
+      { userId: message.fromUserId, OrganizationId: message.OrganizationId },
       'chat:message:sent',
       'delivered',
       { channelId: message.channelId },
@@ -90,17 +90,17 @@ export class ChatService implements OnModuleInit {
   }
 
   private getRoomsForMessage(
-    context: { workspaceId?: string; fromUserId?: string; toUserId?: string },
+    context: { OrganizationId?: string; fromUserId?: string; toUserId?: string },
     channelId?: string,
     toUserId?: string,
   ): string[] {
     const rooms: string[] = [];
-    const workspaceId = context.workspaceId;
-    if (workspaceId) {
-      rooms.push(`workspace:${workspaceId}`);
+    const OrganizationId = context.OrganizationId;
+    if (OrganizationId) {
+      rooms.push(`Organization:${OrganizationId}`);
     }
-    if (channelId && workspaceId) {
-      rooms.push(`workspace:${workspaceId}:channel:${channelId}`);
+    if (channelId && OrganizationId) {
+      rooms.push(`Organization:${OrganizationId}:channel:${channelId}`);
     }
     if (toUserId) {
       rooms.push(`user:${toUserId}`);

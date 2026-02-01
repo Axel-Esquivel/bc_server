@@ -14,7 +14,7 @@ Este documento define **cómo debe trabajar cualquier agente de IA / asistente d
   - Inventario, bodegas, ubicaciones, conteos físicos.
   - Compras, POS, ventas, clientes y crédito.
   - Contabilidad automática, impuestos, reportes.
-  - Multiempresa / multi-workspace.
+  - Multiempresa / multi-Organization.
 
 El agente debe **siempre respetar** la estructura de carpetas, nombres de clases y contratos ya definidos.
 
@@ -31,7 +31,7 @@ Antes de generar código o modificar archivos, el agente debe considerar como re
 
 Para tareas específicas también deberá revisar:
 
-- `docs/03_AUTH_WORKSPACES_ROLES.md`
+- `docs/03_AUTH_Organizations_ROLES.md`
 - `docs/04_PRODUCTS_VARIANTS_PROVIDERS.md`
 - `docs/05_INVENTORY_STOCK_COSTS.md`
 - `docs/06_SALES_POS.md`
@@ -55,7 +55,7 @@ Para tareas específicas también deberá revisar:
    a menos que el usuario lo pida explícitamente y se explique el impacto.
 
 2. Mantener:
-   - `workspaceId` y `companyId` en las entidades que lo usan.
+   - `OrganizationId` y `companyId` en las entidades que lo usan.
    - Patrones de repositorio, servicios y controladores ya definidos.
 
 3. **Respuestas HTTP**:
@@ -83,16 +83,16 @@ Para tareas específicas también deberá revisar:
    - Usar los middlewares / interceptores del core para:
      - `requestId`
      - `userId`
-     - `workspaceId`
+     - `OrganizationId`
      - `deviceId`
      - `ip`
    - No imprimir datos sensibles en logs.
 
 7. **Multi-tenancy**:
    - Cualquier entidad nueva que represente datos de negocio debe incluir:
-     - `workspaceId: string`
+     - `OrganizationId: string`
      - opcionalmente `companyId: string`
-   - Nunca mezclar datos de workspaces distintos en la misma consulta.
+   - Nunca mezclar datos de Organizations distintos en la misma consulta.
 
 ## 4. Estilo de código
 

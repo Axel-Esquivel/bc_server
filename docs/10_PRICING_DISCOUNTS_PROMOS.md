@@ -6,7 +6,7 @@ Define el sistema de precios y promociones.
 
 - Ver `04_PRODUCTS_VARIANTS_PROVIDERS.md` para la entidad base `PriceList`.
 - Reglas:
-  - Cada workspace puede tener varias listas.
+  - Cada Organization puede tener varias listas.
   - Una lista puede ser default para un canal o tipo de venta.
 
 ## 2. Reglas de descuento

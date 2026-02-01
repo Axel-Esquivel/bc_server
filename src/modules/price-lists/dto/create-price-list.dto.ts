@@ -53,7 +53,7 @@ export class CreatePriceListDto {
 
   @IsString()
   @IsNotEmpty()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   @IsNotEmpty()

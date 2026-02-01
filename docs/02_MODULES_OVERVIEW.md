@@ -16,17 +16,17 @@ Este documento lista los módulos principales del backend y su responsabilidad.
 - **AuthModule**
   - Login, registro, refresh tokens, `/auth/me`.
 - **UsersModule**
-  - Usuarios del sistema, datos básicos, relación con workspaces.
+  - Usuarios del sistema, datos básicos, relación con Organizations.
 - **RolesModule**
-  - Roles por workspace, colección de permisos.
+  - Roles por Organization, colección de permisos.
 - **PermissionsModule**
   - Permisos granulares (`resource:action:scope`).
-- **WorkspacesModule**
-  - Gestión de workspaces y sus miembros.
+- **OrganizationsModule**
+  - Gestión de Organizations y sus miembros.
 - **DevicesModule**
   - Dispositivos de acceso (deviceId), bloqueo y auditoría.
 
-Ver `03_AUTH_WORKSPACES_ROLES.md` para detalles.
+Ver `03_AUTH_Organizations_ROLES.md` para detalles.
 
 ## 3. Productos y catálogos
 

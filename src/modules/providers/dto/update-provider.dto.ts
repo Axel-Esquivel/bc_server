@@ -24,7 +24,7 @@ export class UpdateProviderDto {
 
   @IsOptional()
   @IsString()
-  workspaceId?: string;
+  OrganizationId?: string;
 
   @IsOptional()
   @IsString()

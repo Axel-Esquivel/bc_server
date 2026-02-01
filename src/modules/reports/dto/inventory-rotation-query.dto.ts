@@ -17,7 +17,7 @@ export class InventoryRotationQueryDto {
 
   @IsOptional()
   @IsString()
-  workspaceId?: string;
+  OrganizationId?: string;
 
   @IsOptional()
   @IsString()

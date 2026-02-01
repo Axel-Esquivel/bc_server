@@ -34,7 +34,7 @@ export class ProvidersService implements OnModuleInit {
       contactEmail: dto.contactEmail,
       contactPhone: dto.contactPhone,
       variants,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
     };
 
@@ -61,7 +61,7 @@ export class ProvidersService implements OnModuleInit {
     if (dto.name !== undefined) provider.name = dto.name;
     if (dto.contactEmail !== undefined) provider.contactEmail = dto.contactEmail;
     if (dto.contactPhone !== undefined) provider.contactPhone = dto.contactPhone;
-    if (dto.workspaceId !== undefined) provider.workspaceId = dto.workspaceId;
+    if (dto.OrganizationId !== undefined) provider.OrganizationId = dto.OrganizationId;
     if (dto.companyId !== undefined) provider.companyId = dto.companyId;
     if (dto.variants !== undefined) {
       provider.variants = this.mapVariants(dto.variants);

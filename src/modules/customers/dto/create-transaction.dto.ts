@@ -19,7 +19,7 @@ export class CreateTransactionDto {
 
   @IsString()
   @IsNotEmpty()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   @IsNotEmpty()

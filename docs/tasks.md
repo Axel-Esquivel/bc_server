@@ -10,7 +10,7 @@
 
 ## Sprint 1 – Usuarios y Auth
 - [ ] `src/core/users/users.module.ts`
-- [ ] `src/core/users/models/user.model.ts` (email único, name, passwordHash, workspaceIds[], companyIds[])
+- [ ] `src/core/users/models/user.model.ts` (email único, name, passwordHash, OrganizationIds[], companyIds[])
 - [ ] `src/core/users/services/users.service.ts` (create, findByEmail, findById)
 - [ ] `src/core/users/controllers/users.controller.ts` (POST /users, GET /users/me)
 

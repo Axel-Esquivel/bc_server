@@ -28,8 +28,8 @@ export class LocationsService implements OnModuleInit {
   }
 
   createForWarehouse(warehouse: WarehouseRecord, dto: CreateLocationDto): LocationRecord {
-    if (dto.workspaceId !== warehouse.workspaceId || dto.companyId !== warehouse.companyId) {
-      throw new BadRequestException('Workspace or company mismatch for location');
+    if (dto.OrganizationId !== warehouse.OrganizationId || dto.companyId !== warehouse.companyId) {
+      throw new BadRequestException('Organization or company mismatch for location');
     }
 
     const duplicateCode = this.locations.some((location) => location.code === dto.code);
@@ -44,7 +44,7 @@ export class LocationsService implements OnModuleInit {
       type: dto.type,
       capacity: dto.capacity ?? 0,
       restrictions: dto.restrictions ?? [],
-      workspaceId: warehouse.workspaceId,
+      OrganizationId: warehouse.OrganizationId,
       companyId: warehouse.companyId,
     };
 
@@ -81,7 +81,7 @@ export class LocationsService implements OnModuleInit {
       type: dto.type ?? location.type,
       capacity: dto.capacity ?? location.capacity,
       restrictions: dto.restrictions ?? location.restrictions,
-      workspaceId: dto.workspaceId ?? location.workspaceId,
+      OrganizationId: dto.OrganizationId ?? location.OrganizationId,
       companyId: dto.companyId ?? location.companyId,
     });
 

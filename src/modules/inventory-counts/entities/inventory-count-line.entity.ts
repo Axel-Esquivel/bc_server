@@ -43,7 +43,7 @@ export class InventoryCountLine {
   status!: InventoryCountLineStatus;
 
   @prop({ required: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true })
   companyId!: string;

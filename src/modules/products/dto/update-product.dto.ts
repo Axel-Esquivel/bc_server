@@ -24,7 +24,7 @@ export class UpdateProductDto {
 
   @IsOptional()
   @IsString()
-  workspaceId?: string;
+  OrganizationId?: string;
 
   @IsOptional()
   @IsString()

@@ -28,7 +28,7 @@ export class CreateVariantDto {
 
   @IsString()
   @IsNotEmpty()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   @IsNotEmpty()

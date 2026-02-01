@@ -31,7 +31,7 @@ export class UpdateVariantDto {
 
   @IsOptional()
   @IsString()
-  workspaceId?: string;
+  OrganizationId?: string;
 
   @IsOptional()
   @IsString()

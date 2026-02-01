@@ -24,7 +24,7 @@ export class InventoryCountRound {
   source?: string;
 
   @prop({ required: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true })
   companyId!: string;

@@ -1,6 +1,6 @@
 import { IsString } from 'class-validator';
 
-export class SetDefaultWorkspaceDto {
+export class SetDefaultOrganizationDto {
   @IsString()
-  workspaceId!: string;
+  OrganizationId!: string;
 }

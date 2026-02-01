@@ -18,11 +18,11 @@ Alcance:
    - Crea un módulo dedicado, por ejemplo: `src/modules/realtime/` con:
      - `realtime.module.ts`
      - `realtime.gateway.ts` (o varios gateways por dominio si lo consideras necesario)
-     - Adaptador/configuración de socket.io (autenticación en el handshake, extracción de `userId`, `workspaceId`, `deviceId` desde el JWT y los headers).
+     - Adaptador/configuración de socket.io (autenticación en el handshake, extracción de `userId`, `OrganizationId`, `deviceId` desde el JWT y los headers).
    - Define la convención de:
      - Namespace principal: `/realtime`.
-     - Rooms por workspace, usuario y dispositivo:
-       - `workspace:{workspaceId}`
+     - Rooms por Organization, usuario y dispositivo:
+       - `Organization:{OrganizationId}`
        - `user:{userId}`
        - `device:{deviceId}`
      - Rooms específicos para módulos donde tenga sentido (ej: `pos:workstation:{posId}`, `inventory:warehouse:{warehouseId}`, `chat:channel:{channelId}`).
@@ -45,7 +45,7 @@ Alcance:
      - `pos:cart:confirmed` → cuando se confirma una venta.
      - `pos:inventory:availability` → para avisar cambios relevantes de stock que afecten ventas.
    - Publica estos eventos hacia:
-     - Room del workspace.
+     - Room del Organization.
      - Room del cajero / POS cuando aplique.
    - Define interfaces TypeScript para los payloads de estos eventos, y mantenlos en una carpeta compartida (por ejemplo `src/shared/realtime/`).
 
@@ -55,8 +55,8 @@ Alcance:
      - Cuando cambie el estado de una sesión de conteo físico, emite `inventory:count-session:updated`.
    - Usa rooms tipo:
      - `inventory:warehouse:{warehouseId}`
-     - `workspace:{workspaceId}` según corresponda.
-   - Asegúrate que estos eventos respeten las reglas de multitenancy (`workspaceId`) y solo notifiquen a quienes pertenezcan a ese workspace.
+     - `Organization:{OrganizationId}` según corresponda.
+   - Asegúrate que estos eventos respeten las reglas de multitenancy (`OrganizationId`) y solo notifiquen a quienes pertenezcan a ese Organization.
 
 5. **Dashboards y KPIs en tiempo real**:
    - Diseña una forma de emitir eventos de dashboard en tiempo real, por ejemplo:
@@ -68,9 +68,9 @@ Alcance:
 
 6. **Chat de ayuda y chat interno (empleados)**:
    - Define la estructura para soportar dos tipos de chat:
-     - Chat de ayuda/soporte (`chat:help`), por workspace, opcionalmente por ticket.
-     - Chat interno de empleados (`chat:staff`), por workspace, sucursal o canal.
-   - Crea modelos y endpoints mínimos para persistir mensajes (sin lógica compleja, pero dejando claro cómo se audita cada mensaje: `userId`, `workspaceId`, `deviceId`, `timestamp`).
+     - Chat de ayuda/soporte (`chat:help`), por Organization, opcionalmente por ticket.
+     - Chat interno de empleados (`chat:staff`), por Organization, sucursal o canal.
+   - Crea modelos y endpoints mínimos para persistir mensajes (sin lógica compleja, pero dejando claro cómo se audita cada mensaje: `userId`, `OrganizationId`, `deviceId`, `timestamp`).
    - Implementa los eventos de socket para:
      - `chat:help:new-message`, `chat:help:message-read`.
      - `chat:staff:new-message`, `chat:staff:message-read`.
@@ -80,12 +80,12 @@ Alcance:
    - Implementa autenticación en el handshake de socket.io usando los mismos JWT que en HTTP.
    - Resuelve y asigna siempre en el contexto del socket:
      - `userId`
-     - `workspaceId`
+     - `OrganizationId`
      - `deviceId`
    - Integra logs y auditoría para:
      - Conexión y desconexión de sockets.
      - Eventos emitidos (al menos a nivel de resumen, sin payloads sensibles).
-   - Respeta la separación de datos por workspace en todos los canales y rooms.
+   - Respeta la separación de datos por Organization en todos los canales y rooms.
 
 Entrega esperada:
 - Archivos TypeScript que definan:

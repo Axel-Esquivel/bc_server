@@ -24,7 +24,7 @@ export class UpdateWarehouseDto {
 
   @IsString()
   @IsOptional()
-  workspaceId?: string;
+  OrganizationId?: string;
 
   @IsString()
   @IsOptional()

@@ -30,7 +30,7 @@ export class Account {
   active!: boolean;
 
   @prop({ required: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true })
   companyId!: string;

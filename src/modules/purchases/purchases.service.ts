@@ -23,7 +23,7 @@ export interface PurchaseSuggestion {
   available: number;
   reasons: string[];
   decision: SuggestionDecision;
-  workspaceId: string;
+  OrganizationId: string;
   companyId: string;
 }
 
@@ -78,16 +78,16 @@ export class PurchasesService implements OnModuleInit {
     this.suggestions.splice(
       0,
       this.suggestions.length,
-      ...this.suggestions.filter((s) => s.workspaceId !== query.workspaceId || s.companyId !== query.companyId),
+      ...this.suggestions.filter((s) => s.OrganizationId !== query.OrganizationId || s.companyId !== query.companyId),
     );
 
     const projections = this.inventoryService.listStock({ warehouseId: query.warehouseId });
 
-    const workspaceProjections = projections.filter(
-      (projection) => projection.workspaceId === query.workspaceId && projection.companyId === query.companyId,
+    const OrganizationProjections = projections.filter(
+      (projection) => projection.OrganizationId === query.OrganizationId && projection.companyId === query.companyId,
     );
 
-    workspaceProjections.forEach((projection) => {
+    OrganizationProjections.forEach((projection) => {
       const reasons: string[] = [];
       const recommendedQty = Math.max(targetOnHand - projection.available, 0);
 
@@ -112,7 +112,7 @@ export class PurchasesService implements OnModuleInit {
         available: projection.available,
         reasons,
         decision: 'pending',
-        workspaceId: query.workspaceId,
+        OrganizationId: query.OrganizationId,
         companyId: query.companyId,
       };
 
@@ -120,7 +120,7 @@ export class PurchasesService implements OnModuleInit {
     });
 
     const result = this.suggestions.filter(
-      (suggestion) => suggestion.workspaceId === query.workspaceId && suggestion.companyId === query.companyId,
+      (suggestion) => suggestion.OrganizationId === query.OrganizationId && suggestion.companyId === query.companyId,
     );
     this.persistState();
     return result;
@@ -132,9 +132,9 @@ export class PurchasesService implements OnModuleInit {
       supplierId: dto.supplierId,
       warehouseId: dto.warehouseId,
       status: PurchaseOrderStatus.DRAFT,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
-      lines: dto.lines.map((line) => this.mapOrderLine(line, dto.workspaceId, dto.companyId)),
+      lines: dto.lines.map((line) => this.mapOrderLine(line, dto.OrganizationId, dto.companyId)),
     };
 
     this.applySuggestionDecisions(order, dto.rejectedSuggestionIds ?? []);
@@ -145,7 +145,7 @@ export class PurchasesService implements OnModuleInit {
 
   confirmPurchaseOrder(orderId: string, dto: ConfirmPurchaseOrderDto): PurchaseOrder {
     const order = this.findOrder(orderId);
-    this.ensureSameTenant(order.workspaceId, order.companyId, dto.workspaceId, dto.companyId);
+    this.ensureSameTenant(order.OrganizationId, order.companyId, dto.OrganizationId, dto.companyId);
 
     order.status = PurchaseOrderStatus.CONFIRMED;
     this.persistState();
@@ -156,16 +156,16 @@ export class PurchasesService implements OnModuleInit {
     const order = dto.purchaseOrderId ? this.findOrder(dto.purchaseOrderId) : undefined;
 
     if (order) {
-      this.ensureSameTenant(order.workspaceId, order.companyId, dto.workspaceId, dto.companyId);
+      this.ensureSameTenant(order.OrganizationId, order.companyId, dto.OrganizationId, dto.companyId);
     }
 
     const receipt: GoodsReceiptNote = {
       id: uuid(),
       purchaseOrderId: order?.id,
       warehouseId: dto.warehouseId,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
-      lines: dto.lines.map((line) => this.mapReceiptLine(line, dto.workspaceId, dto.companyId)),
+      lines: dto.lines.map((line) => this.mapReceiptLine(line, dto.OrganizationId, dto.companyId)),
     };
 
     receipt.lines.forEach((line) => {
@@ -183,7 +183,7 @@ export class PurchasesService implements OnModuleInit {
         quantity: line.quantity,
         operationId: `${receipt.id}:${line.variantId}`,
         references,
-        workspaceId: dto.workspaceId,
+        OrganizationId: dto.OrganizationId,
         companyId: dto.companyId,
       });
 
@@ -194,7 +194,7 @@ export class PurchasesService implements OnModuleInit {
         variantId: line.variantId,
         unitCost: line.unitCost,
         currency: line.currency,
-        workspaceId: dto.workspaceId,
+        OrganizationId: dto.OrganizationId,
         companyId: dto.companyId,
       });
 
@@ -231,13 +231,13 @@ export class PurchasesService implements OnModuleInit {
     return this.costHistory;
   }
 
-  listSuggestions(workspaceId: string, companyId: string): PurchaseSuggestion[] {
-    return this.suggestions.filter((suggestion) => suggestion.workspaceId === workspaceId && suggestion.companyId === companyId);
+  listSuggestions(OrganizationId: string, companyId: string): PurchaseSuggestion[] {
+    return this.suggestions.filter((suggestion) => suggestion.OrganizationId === OrganizationId && suggestion.companyId === companyId);
   }
 
-  private mapOrderLine(line: CreatePurchaseOrderDto['lines'][number], workspaceId: string, companyId: string): PurchaseOrderLine {
+  private mapOrderLine(line: CreatePurchaseOrderDto['lines'][number], OrganizationId: string, companyId: string): PurchaseOrderLine {
     const decision = this.suggestions.find(
-      (suggestion) => suggestion.id === line.suggestionId && suggestion.workspaceId === workspaceId && suggestion.companyId === companyId,
+      (suggestion) => suggestion.id === line.suggestionId && suggestion.OrganizationId === OrganizationId && suggestion.companyId === companyId,
     );
 
     if (decision) {
@@ -253,15 +253,15 @@ export class PurchasesService implements OnModuleInit {
       currency: line.currency,
       status: PurchaseOrderLineStatus.PENDING,
       suggestionId: line.suggestionId,
-      workspaceId,
+      OrganizationId,
       companyId,
     };
   }
 
-  private mapReceiptLine(line: GoodsReceiptLineDto, workspaceId: string, companyId: string) {
+  private mapReceiptLine(line: GoodsReceiptLineDto, OrganizationId: string, companyId: string) {
     const suggestion = line.suggestionId
       ? this.suggestions.find(
-          (candidate) => candidate.id === line.suggestionId && candidate.workspaceId === workspaceId && candidate.companyId === companyId,
+          (candidate) => candidate.id === line.suggestionId && candidate.OrganizationId === OrganizationId && candidate.companyId === companyId,
         )
       : undefined;
 
@@ -277,7 +277,7 @@ export class PurchasesService implements OnModuleInit {
       currency: line.currency,
       locationId: line.locationId,
       batchId: line.batchId,
-      workspaceId,
+      OrganizationId,
       companyId,
     };
   }
@@ -293,7 +293,7 @@ export class PurchasesService implements OnModuleInit {
   private applySuggestionDecisions(order: PurchaseOrder, rejectedSuggestionIds: string[]) {
     rejectedSuggestionIds.forEach((id) => {
       const suggestion = this.suggestions.find(
-        (candidate) => candidate.id === id && candidate.workspaceId === order.workspaceId && candidate.companyId === order.companyId,
+        (candidate) => candidate.id === id && candidate.OrganizationId === order.OrganizationId && candidate.companyId === order.companyId,
       );
       if (suggestion) {
         suggestion.decision = 'rejected';
@@ -301,9 +301,9 @@ export class PurchasesService implements OnModuleInit {
     });
   }
 
-  private ensureSameTenant(entityWorkspace: string, entityCompany: string, workspaceId: string, companyId: string) {
-    if (entityWorkspace !== workspaceId || entityCompany !== companyId) {
-      throw new BadRequestException('Entity does not belong to the provided workspace/company');
+  private ensureSameTenant(entityOrganization: string, entityCompany: string, OrganizationId: string, companyId: string) {
+    if (entityOrganization !== OrganizationId || entityCompany !== companyId) {
+      throw new BadRequestException('Entity does not belong to the provided Organization/company');
     }
   }
 

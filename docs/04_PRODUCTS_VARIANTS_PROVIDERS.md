@@ -10,7 +10,7 @@ Este documento define el modelo de productos tipo Odoo para Business Control.
 - Campos:
   - `name`
   - `categoryId` (del catálogo)
-  - `workspaceId`, `companyId`
+  - `OrganizationId`, `companyId`
   - flags:
     - `isActive`
     - `isStockTracked`
@@ -26,7 +26,7 @@ Este documento define el modelo de productos tipo Odoo para Business Control.
   - `sku` (interno, obligatorio)
   - `barcodes: string[]`
   - `uomId` (unidad de medida base)
-  - `workspaceId`, `companyId`
+  - `OrganizationId`, `companyId`
   - flags:
     - `isSalable`
     - `isPurchasable`
@@ -47,7 +47,7 @@ Este documento define el modelo de productos tipo Odoo para Business Control.
 - Entidad `Provider`:
   - `name`, `nit` / identificación fiscal
   - `contacts`, `phones`, `emails`
-  - `workspaceId`, `companyId`
+  - `OrganizationId`, `companyId`
 - Relación con variantes:
   - `providerVariants[]` con:
     - `variantId`
@@ -60,7 +60,7 @@ Este documento define el modelo de productos tipo Odoo para Business Control.
 - Entidad `PriceList`:
   - `name`
   - `currency`
-  - `workspaceId`, `companyId`
+  - `OrganizationId`, `companyId`
   - `isDefault`
 - `PriceListLine` (embebido o separado):
   - `variantId`
@@ -78,7 +78,7 @@ Este documento define el modelo de productos tipo Odoo para Business Control.
 ## 6. Reglas generales
 
 - Todas las entidades deben tener:
-  - `workspaceId`
+  - `OrganizationId`
   - `companyId` cuando aplique.
-- No se deben mezclar variantes de distintos workspaces.
+- No se deben mezclar variantes de distintos Organizations.
 - Las búsquedas por nombre/sku/barcode deben estar indexadas.

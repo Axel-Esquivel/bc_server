@@ -74,7 +74,7 @@ export class CompaniesService implements OnModuleInit {
     'roles.manage',
     'modules.enable',
     'modules.configure',
-    'workspaces.configure',
+    'Organizations.configure',
   ];
 
   constructor(

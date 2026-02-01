@@ -1,4 +1,4 @@
-﻿/* eslint-disable no-console */
+/* eslint-disable no-console */
 const mongoose = require('mongoose');
 
 const resolveEnv = (key, fallback) => {
@@ -43,7 +43,7 @@ const migrate = async () => {
   }
 
   const users = db.collection('users');
-  const unsetWorkspaces = process.env.UNSET_WORKSPACES === 'true';
+  const unsetOrganizations = process.env.UNSET_Organizations === 'true';
 
   const setOrganizations = await users.updateMany(
     { organizations: { $exists: false } },
@@ -51,10 +51,10 @@ const migrate = async () => {
   );
 
   let unsetResult = null;
-  if (unsetWorkspaces) {
+  if (unsetOrganizations) {
     unsetResult = await users.updateMany(
-      { workspaces: { $exists: true } },
-      { $unset: { workspaces: '' } }
+      { Organizations: { $exists: true } },
+      { $unset: { Organizations: '' } }
     );
   }
 
@@ -64,7 +64,7 @@ const migrate = async () => {
       matched: setOrganizations.matchedCount,
       modified: setOrganizations.modifiedCount,
     },
-    workspacesUnset: unsetResult
+    OrganizationsUnset: unsetResult
       ? { matched: unsetResult.matchedCount, modified: unsetResult.modifiedCount }
       : 'skipped',
   });

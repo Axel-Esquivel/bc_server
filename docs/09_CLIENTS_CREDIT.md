@@ -16,7 +16,7 @@ Define el módulo de **clientes**, líneas de crédito y estados de cuenta.
   - `nit` / identificación fiscal
   - `phones`, `emails`
   - `address`
-  - `workspaceId`, `companyId`
+  - `OrganizationId`, `companyId`
   - `creditLineId?`
 
 ### 1.2. CreditLine

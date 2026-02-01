@@ -56,30 +56,30 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     this.realtimeService.logConnection(context, 'disconnected', client);
   }
 
-  @SubscribeMessage('join:workspace')
-  handleJoinWorkspace(@ConnectedSocket() client: Socket, @MessageBody() data: { workspaceId: string }) {
-    this.realtimeService.enforceRateLimit(client, 'join:workspace', 15, 60_000);
+  @SubscribeMessage('join:Organization')
+  handleJoinOrganization(@ConnectedSocket() client: Socket, @MessageBody() data: { OrganizationId: string }) {
+    this.realtimeService.enforceRateLimit(client, 'join:Organization', 15, 60_000);
     const context = this.realtimeService.resolveContext(client);
-    if (context.workspaceId && context.workspaceId === data?.workspaceId) {
-      client.join(`workspace:${context.workspaceId}`);
-      this.realtimeService.logSecurityEvent(context, 'join:workspace', 'joined', { workspaceId: context.workspaceId });
-      return { joined: context.workspaceId };
+    if (context.OrganizationId && context.OrganizationId === data?.OrganizationId) {
+      client.join(`Organization:${context.OrganizationId}`);
+      this.realtimeService.logSecurityEvent(context, 'join:Organization', 'joined', { OrganizationId: context.OrganizationId });
+      return { joined: context.OrganizationId };
     }
 
-    this.realtimeService.logSecurityEvent(context, 'join:workspace', 'rejected', {
-      requested: data?.workspaceId,
+    this.realtimeService.logSecurityEvent(context, 'join:Organization', 'rejected', {
+      requested: data?.OrganizationId,
     });
-    return { error: 'Workspace mismatch' };
+    return { error: 'Organization mismatch' };
   }
 
   @SubscribeMessage('join:room')
   handleJoinRoom(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { room: string; allowWorkspaceScoped?: boolean },
+    @MessageBody() data: { room: string; allowOrganizationscoped?: boolean },
   ) {
     this.realtimeService.enforceRateLimit(client, 'join:room');
     const context = this.realtimeService.resolveContext(client);
-    if (data?.allowWorkspaceScoped && context.workspaceId && data.room.startsWith(`workspace:${context.workspaceId}:`)) {
+    if (data?.allowOrganizationscoped && context.OrganizationId && data.room.startsWith(`Organization:${context.OrganizationId}:`)) {
       client.join(data.room);
       this.realtimeService.logSecurityEvent(context, 'join:room', 'joined', { room: data.room });
       return { joined: data.room };

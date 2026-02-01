@@ -20,7 +20,7 @@ export class DevicesService implements OnModuleInit {
     this.devices = state.devices ?? [];
   }
 
-  upsertDevice(userId: string, deviceId: string, workspaceId?: string): DeviceEntity {
+  upsertDevice(userId: string, deviceId: string, OrganizationId?: string): DeviceEntity {
     let device = this.devices.find((item) => item.userId === userId && item.deviceId === deviceId);
 
     if (!device) {
@@ -30,12 +30,12 @@ export class DevicesService implements OnModuleInit {
         deviceId,
         status: 'active',
         lastSeenAt: new Date(),
-        workspaceId,
+        OrganizationId,
       };
       this.devices.push(device);
     } else {
       device.lastSeenAt = new Date();
-      device.workspaceId = workspaceId ?? device.workspaceId;
+      device.OrganizationId = OrganizationId ?? device.OrganizationId;
       if (device.status === 'inactive') {
         device.status = 'active';
       }

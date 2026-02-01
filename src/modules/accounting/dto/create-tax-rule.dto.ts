@@ -17,7 +17,7 @@ export class CreateTaxRuleDto {
   active?: boolean = true;
 
   @IsString()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   companyId!: string;

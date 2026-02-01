@@ -27,7 +27,7 @@ export class StockProjection {
   version!: number;
 
   @prop({ required: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true })
   companyId!: string;

@@ -13,12 +13,12 @@ export class RolesGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest();
     const user = request.user;
-    const workspaceId = request.workspaceId;
+    const OrganizationId = request.OrganizationId;
 
-    const rolesForWorkspace: string[] =
-      user?.workspaces?.find((ws: any) => ws.workspaceId === workspaceId)?.roles || [];
+    const rolesForOrganization: string[] =
+      user?.Organizations?.find((ws: any) => ws.OrganizationId === OrganizationId)?.roles || [];
 
-    const hasRole = requiredRoles.some((role) => rolesForWorkspace.includes(role));
+    const hasRole = requiredRoles.some((role) => rolesForOrganization.includes(role));
     if (!hasRole) {
       throw new ForbiddenException('Insufficient role');
     }

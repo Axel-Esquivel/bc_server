@@ -11,7 +11,7 @@ export enum SaleStatus {
 @modelOptions({ schemaOptions: { timestamps: true } })
 export class Sale {
   @prop({ required: true, index: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true, index: true })
   companyId!: string;

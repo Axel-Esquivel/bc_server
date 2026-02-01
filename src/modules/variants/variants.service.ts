@@ -35,7 +35,7 @@ export class VariantsService implements OnModuleInit {
       barcodes: dto.barcodes?.length ? dto.barcodes : [],
       baseUomId: dto.baseUomId,
       sellable: dto.sellable ?? true,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
     };
 
@@ -66,7 +66,7 @@ export class VariantsService implements OnModuleInit {
       barcodes: dto.barcodes ?? variant.barcodes,
       baseUomId: dto.baseUomId ?? variant.baseUomId,
       sellable: dto.sellable ?? variant.sellable,
-      workspaceId: dto.workspaceId ?? variant.workspaceId,
+      OrganizationId: dto.OrganizationId ?? variant.OrganizationId,
       companyId: dto.companyId ?? variant.companyId,
     });
     return variant;

@@ -34,7 +34,7 @@ export class ProductsService implements OnModuleInit {
       purchasable: dto.purchasable ?? false,
       sellable: dto.sellable ?? true,
       trackInventory: dto.trackInventory ?? false,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
     };
 
@@ -64,7 +64,7 @@ export class ProductsService implements OnModuleInit {
       purchasable: dto.purchasable ?? product.purchasable,
       sellable: dto.sellable ?? product.sellable,
       trackInventory: dto.trackInventory ?? product.trackInventory,
-      workspaceId: dto.workspaceId ?? product.workspaceId,
+      OrganizationId: dto.OrganizationId ?? product.OrganizationId,
       companyId: dto.companyId ?? product.companyId,
     });
     return product;

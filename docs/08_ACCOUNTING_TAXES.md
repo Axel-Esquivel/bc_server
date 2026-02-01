@@ -16,7 +16,7 @@ Define el módulo de **contabilidad automática** e **impuestos**.
   - `code`
   - `name`
   - `type` (activo, pasivo, patrimonio, ingreso, gasto, etc.)
-  - `workspaceId`, `companyId`
+  - `OrganizationId`, `companyId`
 
 ### 1.2. JournalEntry
 
@@ -25,7 +25,7 @@ Define el módulo de **contabilidad automática** e **impuestos**.
   - `date`
   - `reference`
   - `lines[]`
-  - `workspaceId`, `companyId`
+  - `OrganizationId`, `companyId`
   - `status`: `DRAFT`, `POSTED`
 
 ### 1.3. JournalEntryLine
@@ -42,7 +42,7 @@ Define el módulo de **contabilidad automática** e **impuestos**.
   - `name`
   - `rate`
   - `type` (IVA, retención, etc.)
-  - `workspaceId`, `companyId`
+  - `OrganizationId`, `companyId`
 
 ## 2. Integración basada en eventos
 

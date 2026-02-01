@@ -18,7 +18,7 @@ export class SupplierCostHistory {
   currency?: string;
 
   @prop({ required: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true })
   companyId!: string;

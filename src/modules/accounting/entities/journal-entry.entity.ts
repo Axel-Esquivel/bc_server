@@ -30,7 +30,7 @@ export class JournalEntry {
   lines!: JournalEntryLine[];
 
   @prop({ required: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true })
   companyId!: string;

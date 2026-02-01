@@ -17,7 +17,7 @@ export class UpdateUomDto {
 
   @IsOptional()
   @IsString()
-  workspaceId?: string;
+  OrganizationId?: string;
 
   @IsOptional()
   @IsString()

@@ -12,7 +12,7 @@ export class Uom {
   factor!: number;
 
   @prop({ required: true, index: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true, index: true })
   companyId!: string;

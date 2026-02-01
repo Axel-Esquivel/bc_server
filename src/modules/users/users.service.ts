@@ -4,7 +4,7 @@ import * as bcrypt from 'bcrypt';
 import { v4 as uuid } from 'uuid';
 import { Model } from 'mongoose';
 import { CreateUserDto } from './dto/create-user.dto';
-import { OrganizationMembership, SafeUser, UserEntity, WorkspaceMembership } from './entities/user.entity';
+import { OrganizationMembership, SafeUser, UserEntity, OrganizationMembership } from './entities/user.entity';
 import { User, UserDocument } from './schemas/user.schema';
 
 @Injectable()
@@ -29,12 +29,12 @@ export class UsersService {
       lastName: dto.lastName,
       phone: dto.phone,
       passwordHash,
-      workspaces: dto.workspaceId ? [{ workspaceId: dto.workspaceId, roles: [] }] : [],
+      Organizations: dto.OrganizationId ? [{ OrganizationId: dto.OrganizationId, roles: [] }] : [],
       organizations: [],
       devices: [],
-      defaultWorkspaceId: dto.defaultWorkspaceId ?? dto.workspaceId,
+      defaultOrganizationId: dto.defaultOrganizationId ?? dto.OrganizationId,
       defaultOrganizationId: dto.defaultOrganizationId,
-      defaultCompanyId: dto.defaultCompanyId ?? dto.defaultWorkspaceId ?? dto.workspaceId,
+      defaultCompanyId: dto.defaultCompanyId ?? dto.defaultOrganizationId ?? dto.OrganizationId,
       createdAt: new Date(),
     };
 
@@ -67,20 +67,20 @@ export class UsersService {
     return this.toSafeUser(user as UserEntity);
   }
 
-  async addWorkspaceMembership(
+  async addOrganizationMembership(
     userId: string,
-    membership: WorkspaceMembership,
+    membership: OrganizationMembership,
   ): Promise<SafeUser> {
     const user = await this.userModel.findOne({ id: userId }).exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    const existing = user.workspaces?.find((item) => item.workspaceId === membership.workspaceId);
+    const existing = user.Organizations?.find((item) => item.OrganizationId === membership.OrganizationId);
     if (existing) {
       existing.roles = Array.from(new Set([...(existing.roles || []), ...membership.roles]));
     } else {
-      user.workspaces = [...(user.workspaces ?? []), { ...membership }];
+      user.Organizations = [...(user.Organizations ?? []), { ...membership }];
     }
 
     await user.save();
@@ -132,18 +132,18 @@ export class UsersService {
       }));
   }
 
-  async setDefaultWorkspace(userId: string, workspaceId: string): Promise<SafeUser> {
+  async setDefaultOrganization(userId: string, OrganizationId: string): Promise<SafeUser> {
     const user = await this.userModel.findOne({ id: userId }).exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    const belongs = user.workspaces?.some((membership) => membership.workspaceId === workspaceId);
+    const belongs = user.Organizations?.some((membership) => membership.OrganizationId === OrganizationId);
     if (!belongs) {
-      throw new NotFoundException('Workspace membership not found');
+      throw new NotFoundException('Organization membership not found');
     }
 
-    user.defaultWorkspaceId = workspaceId;
+    user.defaultOrganizationId = OrganizationId;
     await user.save();
     return this.toSafeUser(user.toObject() as UserEntity);
   }

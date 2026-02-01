@@ -23,7 +23,7 @@ export class InventoryCountLineInputDto {
 export class CreateInventoryCountSessionDto {
   @IsString()
   @IsNotEmpty()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   @IsNotEmpty()

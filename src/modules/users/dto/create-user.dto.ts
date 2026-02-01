@@ -22,11 +22,11 @@ export class CreateUserDto {
 
   @IsOptional()
   @IsString()
-  workspaceId?: string;
+  OrganizationId?: string;
 
   @IsOptional()
   @IsString()
-  defaultWorkspaceId?: string;
+  defaultOrganizationId?: string;
 
   @IsOptional()
   @IsString()

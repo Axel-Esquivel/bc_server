@@ -67,8 +67,8 @@ async function expectStatus(label, response, expected) {
   const anonMe = await requestJson('GET', '/api/auth/me');
   ok = (await expectStatus('GET /api/auth/me (no token)', anonMe, 401)) && ok;
 
-  const anonWorkspaces = await requestJson('GET', '/api/workspaces');
-  ok = (await expectStatus('GET /api/workspaces (no token)', anonWorkspaces, 401)) && ok;
+  const anonOrganizations = await requestJson('GET', '/api/Organizations');
+  ok = (await expectStatus('GET /api/Organizations (no token)', anonOrganizations, 401)) && ok;
 
   const stamp = Date.now();
   const email = `codex_${stamp}@demo.local`;
@@ -104,27 +104,27 @@ async function expectStatus(label, response, expected) {
   const meRes = await requestJson('GET', '/api/auth/me', null, authHeaders);
   ok = (await expectStatus('GET /api/auth/me (token)', meRes, 200)) && ok;
 
-  const workspacesRes = await requestJson('GET', '/api/workspaces', null, authHeaders);
-  ok = (await expectStatus('GET /api/workspaces (token)', workspacesRes, 200)) && ok;
+  const OrganizationsRes = await requestJson('GET', '/api/Organizations', null, authHeaders);
+  ok = (await expectStatus('GET /api/Organizations (token)', OrganizationsRes, 200)) && ok;
 
-  const createWorkspacePayload = { name: `Workspace ${stamp}` };
-  const createWorkspaceRes = await requestJson('POST', '/api/workspaces', createWorkspacePayload, authHeaders);
-  ok = (await expectStatus('POST /api/workspaces', createWorkspaceRes, [200, 201])) && ok;
+  const createOrganizationPayload = { name: `Organization ${stamp}` };
+  const createOrganizationRes = await requestJson('POST', '/api/Organizations', createOrganizationPayload, authHeaders);
+  ok = (await expectStatus('POST /api/Organizations', createOrganizationRes, [200, 201])) && ok;
 
-  const workspaceId =
-    createWorkspaceRes.json?.result?.id || createWorkspaceRes.json?.result?._id || null;
+  const OrganizationId =
+    createOrganizationRes.json?.result?.id || createOrganizationRes.json?.result?._id || null;
 
-  if (!workspaceId) {
-    console.error('[check:endpoints] missing workspace id from create workspace response');
+  if (!OrganizationId) {
+    console.error('[check:endpoints] missing Organization id from create Organization response');
     ok = false;
   } else {
     const modulesRes = await requestJson(
       'GET',
-      `/api/workspaces/${workspaceId}/modules`,
+      `/api/Organizations/${OrganizationId}/modules`,
       null,
       authHeaders
     );
-    ok = (await expectStatus('GET /api/workspaces/:id/modules (token)', modulesRes, 200)) && ok;
+    ok = (await expectStatus('GET /api/Organizations/:id/modules (token)', modulesRes, 200)) && ok;
   }
 
   if (!ok) {

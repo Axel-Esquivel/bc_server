@@ -24,7 +24,7 @@ export class TaxRule {
   active!: boolean;
 
   @prop({ required: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true })
   companyId!: string;

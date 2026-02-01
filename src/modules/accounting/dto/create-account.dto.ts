@@ -22,7 +22,7 @@ export class CreateAccountDto {
   active?: boolean = true;
 
   @IsString()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   companyId!: string;

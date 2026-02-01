@@ -46,7 +46,7 @@ export class WarehousesService implements OnModuleInit {
       type: dto.type,
       allowNegativeStock: dto.allowNegativeStock ?? false,
       allowCountingLock: dto.allowCountingLock ?? true,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
       branchId: dto.branchId ?? 'unknown',
     };
@@ -85,7 +85,7 @@ export class WarehousesService implements OnModuleInit {
       type: dto.type ?? warehouse.type,
       allowNegativeStock: dto.allowNegativeStock ?? warehouse.allowNegativeStock,
       allowCountingLock: dto.allowCountingLock ?? warehouse.allowCountingLock,
-      workspaceId: dto.workspaceId ?? warehouse.workspaceId,
+      OrganizationId: dto.OrganizationId ?? warehouse.OrganizationId,
       companyId: dto.companyId ?? warehouse.companyId,
       branchId: dto.branchId ?? warehouse.branchId,
     });
@@ -119,7 +119,7 @@ export class WarehousesService implements OnModuleInit {
       type,
       allowNegativeStock: dto.allowNegativeStock ?? false,
       allowCountingLock: dto.allowCountingLock ?? true,
-      workspaceId: 'company',
+      OrganizationId: 'company',
       companyId,
       branchId: dto.branchId,
     };

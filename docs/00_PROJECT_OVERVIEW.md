@@ -9,7 +9,7 @@ Este documento describe a alto nivel qué es **Business Control** y qué resuelv
 - Tiendas, puntos de venta y pequeños negocios.
 - Control de inventario, compras y ventas.
 - Contabilidad automática a partir de los eventos de negocio.
-- Soporte multiempresa y multi-workspace.
+- Soporte multiempresa y multi-Organization.
 
 El backend debe ser:
 
@@ -31,26 +31,26 @@ El backend debe ser:
   - **CQRS** (commands/queries) y **eventos de dominio**.
   - Uso progresivo de **event sourcing** para módulos clave.
 
-## 3. Multiempresa y multi-workspace
+## 3. Multiempresa y multi-Organization
 
 El sistema debe soportar:
 
 - Múltiples empresas dentro de la misma instalación.
-- Múltiples workspaces que agrupan datos y configuración.
-- Usuarios que pertenecen a uno o varios workspaces, con roles y permisos distintos en cada uno.
+- Múltiples Organizations que agrupan datos y configuración.
+- Usuarios que pertenecen a uno o varios Organizations, con roles y permisos distintos en cada uno.
 
 Reglas básicas:
 
-- Cada entidad importante de negocio debe incluir `workspaceId`.
+- Cada entidad importante de negocio debe incluir `OrganizationId`.
 - Donde aplique, también `companyId`.
-- Nunca devolver datos de otro workspace en una misma respuesta.
+- Nunca devolver datos de otro Organization en una misma respuesta.
 
 ## 4. Módulos principales del backend
 
 Ver detalles en `02_MODULES_OVERVIEW.md`. En resumen:
 
 - **Seguridad y acceso**:
-  - Auth, Users, Roles, Permissions, Workspaces, Devices.
+  - Auth, Users, Roles, Permissions, Organizations, Devices.
 - **Catálogos y productos**:
   - Products, Variants, UoM, Providers, Price Lists, Catalogs.
 - **Inventario y bodega**:

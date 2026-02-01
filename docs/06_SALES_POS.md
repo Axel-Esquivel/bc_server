@@ -8,7 +8,7 @@ Define el módulo de **ventas** y **punto de venta (POS)**.
 
 - Carrito de venta temporal.
 - Campos:
-  - `workspaceId`, `companyId`
+  - `OrganizationId`, `companyId`
   - `customerId?`
   - `warehouseId`
   - `status`: `OPEN`, `CONFIRMED`, `CANCELLED`
@@ -31,7 +31,7 @@ Define el módulo de **ventas** y **punto de venta (POS)**.
   - `Sale` (cabecera)
   - `SaleLine[]` (detalle)
 - `Sale` incluye:
-  - `workspaceId`, `companyId`
+  - `OrganizationId`, `companyId`
   - `customerId?`
   - `warehouseId`
   - `status`: `CONFIRMED`, `CANCELLED`, `REFUNDED`, etc.

@@ -30,7 +30,7 @@ export class ModuleLoaderController {
 
   @UseGuards(JwtAuthGuard)
   @Get('definitions')
-  listDefinitions(@Query('workspaceId') _workspaceId?: string) {
+  listDefinitions(@Query('OrganizationId') _OrganizationId?: string) {
     const modules = this.moduleLoaderService
       .listModules()
       .filter(

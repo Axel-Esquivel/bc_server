@@ -12,7 +12,7 @@ Define el módulo de **compras**, **reabasto** y costos de proveedor.
 ### 1.1. PurchaseOrder
 
 - Campos:
-  - `workspaceId`, `companyId`
+  - `OrganizationId`, `companyId`
   - `providerId`
   - `status`: `DRAFT`, `CONFIRMED`, `RECEIVED`, `CANCELLED`
   - `expectedDate`

@@ -40,7 +40,7 @@ import type { ApiResponse } from '../../core/types/api-response.types';
 import type { OrganizationCoreSettings as LegacyOrganizationCoreSettings } from '../../core/types/organization-core-settings.types';
 import type { OrganizationStructureSettings } from '../../core/types/organization-structure-settings.types';
 import type { CoreCompany, CoreCountry, CoreCurrency, OrganizationCoreSettings } from './types/core-settings.types';
-import type { OrganizationWorkspaceSnapshot } from './types/organization-workspace-snapshot.types';
+import type { OrganizationOrganizationsnapshot } from './types/organization-Organization-snapshot.types';
 import type { OrganizationModuleState } from './types/module-state.types';
 import type { OrganizationModulesOverviewResponse } from './types/organization-modules-overview.types';
 import type { SafeUser } from '../users/entities/user.entity';
@@ -474,12 +474,12 @@ export class OrganizationsController {
   }
 
   @UseGuards(JwtAuthGuard, OrganizationMemberGuard)
-  @Get(':id/workspaces')
-  async listWorkspaces(@Param('id') id: string): Promise<ApiResponse<OrganizationWorkspaceSnapshot[]>> {
-    const workspaces = await this.organizationsService.listWorkspaces(id);
+  @Get(':id/Organizations')
+  async listOrganizations(@Param('id') id: string): Promise<ApiResponse<OrganizationOrganizationsnapshot[]>> {
+    const Organizations = await this.organizationsService.listOrganizations(id);
     return {
-      message: 'Organization workspaces loaded',
-      result: workspaces,
+      message: 'Organization Organizations loaded',
+      result: Organizations,
     };
   }
 

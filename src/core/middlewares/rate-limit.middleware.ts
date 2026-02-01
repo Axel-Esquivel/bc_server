@@ -17,7 +17,7 @@ export class RateLimitMiddleware implements NestMiddleware {
   use(req: AuditRequest, _res: Response, next: NextFunction) {
     const context: AuditContext = req.auditContext || {};
     const key = [
-      context.workspaceId || 'anon',
+      context.OrganizationId || 'anon',
       context.userId || 'guest',
       context.deviceId || (req.headers['x-device-id'] as string | undefined) || 'nodevice',
       context.ip || req.ip,

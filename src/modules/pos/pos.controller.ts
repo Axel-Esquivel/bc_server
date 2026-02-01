@@ -46,7 +46,7 @@ export class PosController {
   @Get('sales')
   @UseGuards(JwtAuthGuard)
   listSales(
-    @Query('workspaceId') workspaceId?: string,
+    @Query('OrganizationId') OrganizationId?: string,
     @Query('companyId') companyId?: string,
     @Query('terminalId') terminalId?: string,
     @Query('cashierUserId') cashierUserId?: string,
@@ -65,7 +65,7 @@ export class PosController {
     return {
       message: 'POS sales loaded',
       result: this.posService.listSales({
-        workspaceId,
+        OrganizationId,
         companyId,
         terminalId,
         cashierUserId,

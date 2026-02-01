@@ -30,7 +30,7 @@ export class GoodsReceiptLineDto {
 
 export class CreateGoodsReceiptDto {
   @IsString()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   companyId!: string;

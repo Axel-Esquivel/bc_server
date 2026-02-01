@@ -1,8 +1,8 @@
-﻿const moduleConfig = {
+const moduleConfig = {
   name: 'pos',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['inventory', 'workspaces'],
+  dependencies: ['inventory', 'Organizations'],
   setupWizard: {
     steps: [
       {

@@ -52,7 +52,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   @SubscribeMessage('chat:message:sent')
   async handleMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { workspaceId: string; channelId?: string; toUserId?: string; content: string },
+    @MessageBody() payload: { OrganizationId: string; channelId?: string; toUserId?: string; content: string },
   ) {
     this.realtimeService.enforceRateLimit(client, 'chat:message:sent', 30, 10_000);
     const context = this.realtimeService.resolveContext(client);
@@ -65,12 +65,12 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
   @SubscribeMessage('chat:user:typing')
   handleTyping(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { workspaceId: string; channelId?: string },
+    @MessageBody() payload: { OrganizationId: string; channelId?: string },
   ) {
     this.realtimeService.enforceRateLimit(client, 'chat:user:typing', 60, 15_000);
     const context = this.realtimeService.resolveContext(client);
-    if (context.workspaceId !== payload.workspaceId) {
-      return { error: 'Workspace mismatch' };
+    if (context.OrganizationId !== payload.OrganizationId) {
+      return { error: 'Organization mismatch' };
     }
     this.chatService.emitTyping(context, payload);
     return { typing: true };

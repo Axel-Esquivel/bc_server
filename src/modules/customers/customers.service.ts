@@ -64,12 +64,12 @@ export class CustomersService implements OnModuleInit {
       email: dto.email,
       phone: dto.phone,
       active: dto.active ?? true,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
     };
 
     this.customers.push(customer);
-    this.initializeCredit(customer, dto.companyId, dto.workspaceId);
+    this.initializeCredit(customer, dto.companyId, dto.OrganizationId);
     this.persistState();
     return customer;
   }
@@ -93,7 +93,7 @@ export class CustomersService implements OnModuleInit {
       email: dto.email ?? customer.email,
       phone: dto.phone ?? customer.phone,
       active: dto.active ?? customer.active,
-      workspaceId: dto.workspaceId ?? customer.workspaceId,
+      OrganizationId: dto.OrganizationId ?? customer.OrganizationId,
       companyId: dto.companyId ?? customer.companyId,
     });
     this.persistState();
@@ -122,7 +122,7 @@ export class CustomersService implements OnModuleInit {
 
   configureCredit(customerId: string, dto: ConfigureCreditDto): CreditLineRecord {
     const customer = this.findOne(customerId);
-    this.ensureTenant(customer.workspaceId, customer.companyId, dto.workspaceId, dto.companyId);
+    this.ensureTenant(customer.OrganizationId, customer.companyId, dto.OrganizationId, dto.companyId);
 
     let creditLine = this.creditLines.find((line) => line.customerId === customerId);
     if (!creditLine) {
@@ -132,7 +132,7 @@ export class CustomersService implements OnModuleInit {
         creditLimit: dto.creditLimit,
         currency: dto.currency ?? 'USD',
         status: dto.status ?? CreditStatus.ACTIVE,
-        workspaceId: dto.workspaceId,
+        OrganizationId: dto.OrganizationId,
         companyId: dto.companyId,
       };
       this.creditLines.push(creditLine);
@@ -140,7 +140,7 @@ export class CustomersService implements OnModuleInit {
       creditLine.creditLimit = dto.creditLimit;
       creditLine.currency = dto.currency ?? creditLine.currency;
       creditLine.status = dto.status ?? creditLine.status;
-      creditLine.workspaceId = dto.workspaceId;
+      creditLine.OrganizationId = dto.OrganizationId;
       creditLine.companyId = dto.companyId;
     }
 
@@ -151,9 +151,9 @@ export class CustomersService implements OnModuleInit {
 
   recordTransaction(customerId: string, dto: CreateTransactionDto): CustomerBalanceRecord {
     const customer = this.findOne(customerId);
-    this.ensureTenant(customer.workspaceId, customer.companyId, dto.workspaceId, dto.companyId);
-    const creditLine = this.getOrCreateCreditLine(customer, dto.workspaceId, dto.companyId);
-    const balance = this.balances.get(customerId) ?? this.initializeCredit(customer, customer.companyId, customer.workspaceId);
+    this.ensureTenant(customer.OrganizationId, customer.companyId, dto.OrganizationId, dto.companyId);
+    const creditLine = this.getOrCreateCreditLine(customer, dto.OrganizationId, dto.companyId);
+    const balance = this.balances.get(customerId) ?? this.initializeCredit(customer, customer.companyId, customer.OrganizationId);
 
     const transaction: CustomerTransactionRecord = {
       id: uuid(),
@@ -163,7 +163,7 @@ export class CustomersService implements OnModuleInit {
       description: dto.description,
       reference: dto.reference,
       occurredAt: new Date(),
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
     };
 
@@ -213,14 +213,14 @@ export class CustomersService implements OnModuleInit {
     return { customer, balance, transactions };
   }
 
-  private initializeCredit(customer: CustomerRecord, companyId: string, workspaceId: string): CustomerBalanceRecord {
+  private initializeCredit(customer: CustomerRecord, companyId: string, OrganizationId: string): CustomerBalanceRecord {
     const creditLine: CreditLineRecord = {
       id: uuid(),
       customerId: customer.id,
       creditLimit: 0,
       currency: 'USD',
       status: CreditStatus.ACTIVE,
-      workspaceId,
+      OrganizationId,
       companyId,
     };
     this.creditLines.push(creditLine);
@@ -257,14 +257,14 @@ export class CustomersService implements OnModuleInit {
       balance,
       creditLimit: creditLine.creditLimit,
       availableCredit,
-      workspaceId: creditLine.workspaceId,
+      OrganizationId: creditLine.OrganizationId,
       companyId: creditLine.companyId,
     };
     this.balances.set(customerId, balanceRecord);
     return balanceRecord;
   }
 
-  private getOrCreateCreditLine(customer: CustomerRecord, workspaceId: string, companyId: string): CreditLineRecord {
+  private getOrCreateCreditLine(customer: CustomerRecord, OrganizationId: string, companyId: string): CreditLineRecord {
     let creditLine = this.creditLines.find((line) => line.customerId === customer.id);
     if (!creditLine) {
       creditLine = {
@@ -273,7 +273,7 @@ export class CustomersService implements OnModuleInit {
         creditLimit: 0,
         currency: 'USD',
         status: CreditStatus.ACTIVE,
-        workspaceId,
+        OrganizationId,
         companyId,
       };
       this.creditLines.push(creditLine);
@@ -281,9 +281,9 @@ export class CustomersService implements OnModuleInit {
     return creditLine;
   }
 
-  private ensureTenant(existingWorkspaceId: string, existingCompanyId: string, workspaceId?: string, companyId?: string) {
-    if (workspaceId && workspaceId !== existingWorkspaceId) {
-      throw new BadRequestException('Workspace mismatch');
+  private ensureTenant(existingOrganizationId: string, existingCompanyId: string, OrganizationId?: string, companyId?: string) {
+    if (OrganizationId && OrganizationId !== existingOrganizationId) {
+      throw new BadRequestException('Organization mismatch');
     }
     if (companyId && companyId !== existingCompanyId) {
       throw new BadRequestException('Company mismatch');

@@ -7,7 +7,7 @@ Define cómo se implementan los conteos físicos de inventario.
 ### 1.1. InventoryCountSession
 
 - Campos:
-  - `workspaceId`, `companyId`
+  - `OrganizationId`, `companyId`
   - `warehouseId`
   - `scope`: `FULL`, `PARTIAL`, `CYCLE`
   - `mode`: `BLIND`, `GUIDED`

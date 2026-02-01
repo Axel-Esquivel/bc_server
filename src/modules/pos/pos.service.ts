@@ -14,8 +14,8 @@ import { PaymentRecord } from './entities/payment.entity';
 import { Promotion, ComboRule } from './entities/promotion.entity';
 import { SaleLineRecord } from './entities/sale-line.entity';
 import { SaleRecord, SaleStatus } from './entities/sale.entity';
-import { WorkspacesService } from '../workspaces/workspaces.service';
-import { PosTerminal } from '../workspaces/dto/pos-terminal.dto';
+import { OrganizationsService } from '../Organizations/Organizations.service';
+import { PosTerminal } from '../Organizations/dto/pos-terminal.dto';
 
 interface PosState {
   carts: CartRecord[];
@@ -38,7 +38,7 @@ export class PosService implements OnModuleInit {
     private readonly inventoryService: InventoryService,
     private readonly realtimeService: RealtimeService,
     private readonly moduleState: ModuleStateService,
-    private readonly workspacesService: WorkspacesService,
+    private readonly OrganizationsService: OrganizationsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -57,7 +57,7 @@ export class PosService implements OnModuleInit {
   createCart(dto: CreateCartDto): CartRecord {
     const cart: CartRecord = {
       id: uuid(),
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
       warehouseId: dto.warehouseId,
       userId: dto.userId,
@@ -80,7 +80,7 @@ export class PosService implements OnModuleInit {
 
   addLine(cartId: string, dto: AddCartLineDto): CartRecord {
     const cart = this.findCart(cartId);
-    this.ensureTenant(cart.workspaceId, cart.companyId, dto.workspaceId, dto.companyId);
+    this.ensureTenant(cart.OrganizationId, cart.companyId, dto.OrganizationId, dto.companyId);
 
     if (cart.status !== CartStatus.OPEN) {
       throw new BadRequestException('Cart is not open for modifications');
@@ -104,21 +104,21 @@ export class PosService implements OnModuleInit {
       locationId: dto.locationId,
       batchId: dto.batchId,
       quantity: dto.quantity,
-      workspaceId: cart.workspaceId,
+      OrganizationId: cart.OrganizationId,
       companyId: cart.companyId,
     });
 
     cart.lines.push(line);
     this.applyPricing(cart);
     this.realtimeService.emitPosCartUpdated(cart);
-    this.realtimeService.emitPosInventoryAvailability(projection, cart.workspaceId);
+    this.realtimeService.emitPosInventoryAvailability(projection, cart.OrganizationId);
     this.persistState();
     return cart;
   }
 
   addPayment(cartId: string, dto: AddPaymentDto): CartRecord {
     const cart = this.findCart(cartId);
-    this.ensureTenant(cart.workspaceId, cart.companyId, dto.workspaceId, dto.companyId);
+    this.ensureTenant(cart.OrganizationId, cart.companyId, dto.OrganizationId, dto.companyId);
 
     if (cart.status !== CartStatus.OPEN) {
       throw new BadRequestException('Cart is not open for payments');
@@ -130,7 +130,7 @@ export class PosService implements OnModuleInit {
       amount: dto.amount,
       currency: dto.currency ?? cart.currency,
       reference: dto.reference,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
       cartId: cart.id,
     };
@@ -144,8 +144,8 @@ export class PosService implements OnModuleInit {
 
   confirmCart(cartId: string, dto: ConfirmCartDto, cashierUserId: string): SaleRecord {
     const cart = this.findCart(cartId);
-    this.ensureTenant(cart.workspaceId, cart.companyId, dto.workspaceId, dto.companyId);
-    const terminal = this.getTerminal(dto.workspaceId, dto.terminalId);
+    this.ensureTenant(cart.OrganizationId, cart.companyId, dto.OrganizationId, dto.companyId);
+    const terminal = this.getTerminal(dto.OrganizationId, dto.terminalId);
     if (terminal.companyId !== cart.companyId) {
       throw new BadRequestException('Terminal does not belong to the company');
     }
@@ -171,7 +171,7 @@ export class PosService implements OnModuleInit {
 
     const sale: SaleRecord = {
       id: uuid(),
-      workspaceId: cart.workspaceId,
+      OrganizationId: cart.OrganizationId,
       companyId: cart.companyId,
       warehouseId: cart.warehouseId,
       branchId: terminal.branchId,
@@ -201,12 +201,12 @@ export class PosService implements OnModuleInit {
         quantity: line.quantity,
         operationId: `${sale.id}:${line.id}`,
         references: { saleId: sale.id, cartId: cart.id },
-        workspaceId: cart.workspaceId,
+        OrganizationId: cart.OrganizationId,
         companyId: cart.companyId,
       });
 
-      this.realtimeService.emitPosInventoryAvailability(releaseProjection, cart.workspaceId);
-      this.realtimeService.emitPosInventoryAvailability(projection, cart.workspaceId);
+      this.realtimeService.emitPosInventoryAvailability(releaseProjection, cart.OrganizationId);
+      this.realtimeService.emitPosInventoryAvailability(projection, cart.OrganizationId);
 
       const saleLine: SaleLineRecord = {
         id: uuid(),
@@ -232,16 +232,16 @@ export class PosService implements OnModuleInit {
     return sale;
   }
 
-  listCarts(workspaceId?: string, companyId?: string): CartRecord[] {
+  listCarts(OrganizationId?: string, companyId?: string): CartRecord[] {
     return this.carts.filter((cart) => {
-      if (workspaceId && cart.workspaceId !== workspaceId) return false;
+      if (OrganizationId && cart.OrganizationId !== OrganizationId) return false;
       if (companyId && cart.companyId !== companyId) return false;
       return true;
     });
   }
 
   listSales(params: {
-    workspaceId?: string;
+    OrganizationId?: string;
     companyId?: string;
     terminalId?: string;
     cashierUserId?: string;
@@ -249,7 +249,7 @@ export class PosService implements OnModuleInit {
     dateTo?: Date;
   } = {}): SaleRecord[] {
     return this.sales.filter((sale) => {
-      if (params.workspaceId && sale.workspaceId !== params.workspaceId) return false;
+      if (params.OrganizationId && sale.OrganizationId !== params.OrganizationId) return false;
       if (params.companyId && sale.companyId !== params.companyId) return false;
       if (params.terminalId && sale.terminalId !== params.terminalId) return false;
       if (params.cashierUserId && sale.cashierUserId !== params.cashierUserId) return false;
@@ -266,7 +266,7 @@ export class PosService implements OnModuleInit {
     cart.lines.forEach((line) => {
       const lineSubtotal = line.quantity * line.unitPrice;
       const appliedDiscount = line.discountAmount ?? 0;
-      const promotionalDiscount = this.applyPromotions(line, cart.workspaceId, cart.companyId);
+      const promotionalDiscount = this.applyPromotions(line, cart.OrganizationId, cart.companyId);
       const totalDiscount = appliedDiscount + promotionalDiscount;
 
       line.total = lineSubtotal - totalDiscount;
@@ -278,11 +278,11 @@ export class PosService implements OnModuleInit {
     cart.updatedAt = new Date();
   }
 
-  private applyPromotions(line: CartLineRecord, workspaceId: string, companyId: string): number {
+  private applyPromotions(line: CartLineRecord, OrganizationId: string, companyId: string): number {
     // Placeholder for promo + combo evaluation based on docs/10_PRICING_DISCOUNTS_PROMOS.md
     // and docs/06_SALES_POS.md. Real logic will query price lists, promotions, and combo rules.
     const activePromotions = this.promotions.filter(
-      (promotion) => promotion.workspaceId === workspaceId && promotion.companyId === companyId,
+      (promotion) => promotion.OrganizationId === OrganizationId && promotion.companyId === companyId,
     );
 
     if (activePromotions.length === 0) {
@@ -302,13 +302,13 @@ export class PosService implements OnModuleInit {
   }
 
   private ensureTenant(
-    workspaceId: string,
+    OrganizationId: string,
     companyId: string,
-    expectedWorkspaceId: string,
+    expectedOrganizationId: string,
     expectedCompanyId: string,
   ) {
-    if (workspaceId !== expectedWorkspaceId || companyId !== expectedCompanyId) {
-      throw new BadRequestException('Workspace or company mismatch');
+    if (OrganizationId !== expectedOrganizationId || companyId !== expectedCompanyId) {
+      throw new BadRequestException('Organization or company mismatch');
     }
   }
 
@@ -326,8 +326,8 @@ export class PosService implements OnModuleInit {
       });
   }
 
-  private getTerminal(workspaceId: string, terminalId: string): PosTerminal {
-    const settings = this.workspacesService.listPosTerminals(workspaceId);
+  private getTerminal(OrganizationId: string, terminalId: string): PosTerminal {
+    const settings = this.OrganizationsService.listPosTerminals(OrganizationId);
     const terminal = settings.terminals.find((item) => item.id === terminalId);
     if (!terminal) {
       throw new NotFoundException('POS terminal not found');

@@ -13,7 +13,7 @@ export class MarginCategoryQueryDto {
 
   @IsOptional()
   @IsString()
-  workspaceId?: string;
+  OrganizationId?: string;
 
   @IsOptional()
   @IsString()

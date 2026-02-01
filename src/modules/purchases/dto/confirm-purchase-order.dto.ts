@@ -2,7 +2,7 @@ import { IsOptional, IsString } from 'class-validator';
 
 export class ConfirmPurchaseOrderDto {
   @IsString()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   companyId!: string;

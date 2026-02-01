@@ -30,7 +30,7 @@ Generar y editar archivos del **servidor NestJS** (Node 18/20) con MongoDB y Red
 - `ioredis helmet cors uuid dotenv`
 
 ## Convenciones
-- Multi-empresa por `workspaceId` y `companyId` en modelos de negocio.
+- Multi-empresa por `OrganizationId` y `companyId` en modelos de negocio.
 - Indexar campos críticos (búsquedas, integridad).
 - Endpoints REST con prefijo de módulo; sin mezclar responsabilidades.
 

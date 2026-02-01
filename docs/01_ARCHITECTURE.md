@@ -70,13 +70,13 @@ Reglas:
 - El **controller** solo maneja HTTP → llama a comandos / consultas o servicios.
 - Los **services** coordinan lógica de dominio (pero evitan ser “dios”).
 - Los **handlers** de commands/queries contienen la lógica específica de cada operación.
-- Los **models** usan Typegoose y Mongoose, con índices importantes (por workspaceId, etc.).
+- Los **models** usan Typegoose y Mongoose, con índices importantes (por OrganizationId, etc.).
 
 ## 4. Manejo de datos y multitenancy
 
-- Todas las operaciones deben filtrar por `workspaceId` (obligatorio).
-- `companyId` se usa cuando se necesita distinguir por empresa dentro del mismo workspace.
-- Se deben usar índices compuestos (`workspaceId + otros campos`) para acelerar búsquedas.
+- Todas las operaciones deben filtrar por `OrganizationId` (obligatorio).
+- `companyId` se usa cuando se necesita distinguir por empresa dentro del mismo Organization.
+- Se deben usar índices compuestos (`OrganizationId + otros campos`) para acelerar búsquedas.
 
 ## 5. CQRS y eventos de dominio
 

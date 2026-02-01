@@ -6,5 +6,5 @@ export interface DeviceEntity {
   deviceId: string;
   status: DeviceStatus;
   lastSeenAt: Date;
-  workspaceId?: string;
+  OrganizationId?: string;
 }

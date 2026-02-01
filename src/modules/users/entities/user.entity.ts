@@ -1,5 +1,5 @@
-export interface WorkspaceMembership {
-  workspaceId: string;
+export interface OrganizationMembership {
+  OrganizationId: string;
   roles: string[];
 }
 
@@ -18,10 +18,10 @@ export interface UserEntity {
   lastName: string;
   phone: string;
   passwordHash: string;
-  workspaces: WorkspaceMembership[];
+  Organizations: OrganizationMembership[];
   organizations: OrganizationMembership[];
   devices: string[];
-  defaultWorkspaceId?: string;
+  defaultOrganizationId?: string;
   defaultOrganizationId?: string;
   defaultCompanyId?: string;
   createdAt: Date;

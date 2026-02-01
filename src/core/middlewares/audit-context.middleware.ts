@@ -3,7 +3,7 @@ import { NextFunction, Request, Response } from 'express';
 
 export interface AuditContext {
   userId?: string;
-  workspaceId?: string;
+  OrganizationId?: string;
   deviceId?: string;
   requestId?: string;
   endpoint?: string;
@@ -13,7 +13,7 @@ export interface AuditContext {
 export type AuditRequest = Request & {
   user?: any;
   auditContext?: AuditContext;
-  workspaceId?: string;
+  OrganizationId?: string;
   deviceId?: string;
   requestId?: string;
 };
@@ -27,8 +27,8 @@ export class AuditContextMiddleware implements NestMiddleware {
 
     const context: AuditContext = {
       userId: user?.id || user?._id || (req.headers['x-user-id'] as string | undefined),
-      workspaceId:
-        req.workspaceId || (req as any).workspaceId || (req.headers['x-workspace-id'] as string | undefined),
+      OrganizationId:
+        req.OrganizationId || (req as any).OrganizationId || (req.headers['x-Organization-id'] as string | undefined),
       deviceId: req.deviceId || (req as any).deviceId || (req.headers['x-device-id'] as string | undefined),
       requestId: req.requestId || (req as any).requestId || (req.headers['x-request-id'] as string | undefined),
       endpoint: `${req.method} ${req.originalUrl}`,

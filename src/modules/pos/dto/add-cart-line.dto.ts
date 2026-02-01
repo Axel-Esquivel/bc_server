@@ -3,7 +3,7 @@ import { IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString } from 'class-va
 export class AddCartLineDto {
   @IsString()
   @IsNotEmpty()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   @IsNotEmpty()

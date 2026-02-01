@@ -17,7 +17,7 @@ interface ReserveStockDto {
   locationId?: string;
   batchId?: string;
   quantity: number;
-  workspaceId: string;
+  OrganizationId: string;
   companyId: string;
 }
 
@@ -73,13 +73,13 @@ export class InventoryService implements OnModuleInit {
   recordMovement(dto: CreateInventoryMovementDto): { movement: InventoryMovementRecord; projection: StockProjectionRecord } {
     const duplicated = this.operationIndex.get(dto.operationId);
     if (duplicated) {
-      const existingProjection = this.findProjection(dto.variantId, dto.warehouseId, dto.locationId, dto.batchId, dto.workspaceId, dto.companyId);
+      const existingProjection = this.findProjection(dto.variantId, dto.warehouseId, dto.locationId, dto.batchId, dto.OrganizationId, dto.companyId);
       return { movement: duplicated, projection: existingProjection };
     }
 
     const warehouse = this.warehousesService.findOne(dto.warehouseId);
-    if (warehouse.workspaceId !== dto.workspaceId || warehouse.companyId !== dto.companyId) {
-      throw new BadRequestException('Warehouse does not belong to the provided workspace/company');
+    if (warehouse.OrganizationId !== dto.OrganizationId || warehouse.companyId !== dto.companyId) {
+      throw new BadRequestException('Warehouse does not belong to the provided Organization/company');
     }
 
     const projection = this.findOrCreateProjection(
@@ -87,7 +87,7 @@ export class InventoryService implements OnModuleInit {
       dto.warehouseId,
       dto.locationId,
       dto.batchId,
-      dto.workspaceId,
+      dto.OrganizationId,
       dto.companyId,
     );
 
@@ -111,7 +111,7 @@ export class InventoryService implements OnModuleInit {
       quantity: dto.quantity,
       operationId: dto.operationId,
       references: dto.references,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
     };
 
@@ -127,12 +127,12 @@ export class InventoryService implements OnModuleInit {
 
   reserveStock(reservationId: string, dto: ReserveStockDto): StockProjectionRecord {
     if (this.reservations.has(reservationId)) {
-      return this.findProjection(dto.variantId, dto.warehouseId, dto.locationId, dto.batchId, dto.workspaceId, dto.companyId);
+      return this.findProjection(dto.variantId, dto.warehouseId, dto.locationId, dto.batchId, dto.OrganizationId, dto.companyId);
     }
 
     const warehouse = this.warehousesService.findOne(dto.warehouseId);
-    if (warehouse.workspaceId !== dto.workspaceId || warehouse.companyId !== dto.companyId) {
-      throw new BadRequestException('Warehouse does not belong to the provided workspace/company');
+    if (warehouse.OrganizationId !== dto.OrganizationId || warehouse.companyId !== dto.companyId) {
+      throw new BadRequestException('Warehouse does not belong to the provided Organization/company');
     }
 
     const projection = this.findOrCreateProjection(
@@ -140,7 +140,7 @@ export class InventoryService implements OnModuleInit {
       dto.warehouseId,
       dto.locationId,
       dto.batchId,
-      dto.workspaceId,
+      dto.OrganizationId,
       dto.companyId,
     );
 
@@ -172,7 +172,7 @@ export class InventoryService implements OnModuleInit {
       reservation.warehouseId,
       reservation.locationId,
       reservation.batchId,
-      reservation.workspaceId,
+      reservation.OrganizationId,
       reservation.companyId,
     );
 
@@ -210,7 +210,7 @@ export class InventoryService implements OnModuleInit {
     warehouseId: string,
     locationId: string | undefined,
     batchId: string | undefined,
-    workspaceId: string,
+    OrganizationId: string,
     companyId: string,
   ): StockProjectionRecord {
     const keyMatcher = (projection: StockProjectionRecord) =>
@@ -218,7 +218,7 @@ export class InventoryService implements OnModuleInit {
       projection.warehouseId === warehouseId &&
       projection.locationId === locationId &&
       projection.batchId === batchId &&
-      projection.workspaceId === workspaceId &&
+      projection.OrganizationId === OrganizationId &&
       projection.companyId === companyId;
 
     const found = this.projections.find(keyMatcher);
@@ -233,7 +233,7 @@ export class InventoryService implements OnModuleInit {
     warehouseId: string,
     locationId: string | undefined,
     batchId: string | undefined,
-    workspaceId: string,
+    OrganizationId: string,
     companyId: string,
   ): StockProjectionRecord {
     const existing = this.projections.find(
@@ -242,7 +242,7 @@ export class InventoryService implements OnModuleInit {
         projection.warehouseId === warehouseId &&
         projection.locationId === locationId &&
         projection.batchId === batchId &&
-        projection.workspaceId === workspaceId &&
+        projection.OrganizationId === OrganizationId &&
         projection.companyId === companyId,
     );
 
@@ -260,7 +260,7 @@ export class InventoryService implements OnModuleInit {
       reserved: 0,
       available: 0,
       version: 0,
-      workspaceId,
+      OrganizationId,
       companyId,
     };
 

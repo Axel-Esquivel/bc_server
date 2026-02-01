@@ -21,7 +21,7 @@ export class UpdateLocationDto {
 
   @IsString()
   @IsOptional()
-  workspaceId?: string;
+  OrganizationId?: string;
 
   @IsString()
   @IsOptional()

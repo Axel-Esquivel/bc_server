@@ -18,7 +18,7 @@ Define cómo se maneja el inventario y los costos en Business Control.
   - `operationId` (idempotencia)
   - referencias:
     - `saleId?`, `purchaseOrderId?`, `grnId?`, `inventoryCountId?`, etc.
-  - `workspaceId`, `companyId`
+  - `OrganizationId`, `companyId`
   - `createdAt`
 
 ### 1.2. StockProjection

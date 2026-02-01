@@ -1,7 +1,7 @@
 # Roadmap (Sprints)
 
 ## Principios base
-Hexagonal + CQRS + Event Bus (Redis de inicio). Event Sourcing opcional en Inventario/Ventas. Multi-empresa por `workspaceId`, `companyId`. Concurrencia en inventario con reservas + optimistic locking. UoM y conversión. Socket.IO realtime. RBAC. Auditoría global.
+Hexagonal + CQRS + Event Bus (Redis de inicio). Event Sourcing opcional en Inventario/Ventas. Multi-empresa por `OrganizationId`, `companyId`. Concurrencia en inventario con reservas + optimistic locking. UoM y conversión. Socket.IO realtime. RBAC. Auditoría global.
 
 ---
 
@@ -11,11 +11,11 @@ Hexagonal + CQRS + Event Bus (Redis de inicio). Event Sourcing opcional en Inven
 - AuditInterceptor global
 - Configuración env
 
-## Sprint 1 — Auth, Users, Roles, Workspaces, Devices
+## Sprint 1 — Auth, Users, Roles, Organizations, Devices
 - Users (modelo, service, controller)
 - Auth (login JWT, hash/compare)
 - Roles/Permissions (decorador + guard básico)
-- Workspaces (miembros/roles)
+- Organizations (miembros/roles)
 - Devices (ping / lastSeen)
 
 ## Sprint 2 — Catálogo

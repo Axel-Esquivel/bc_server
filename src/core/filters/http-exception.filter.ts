@@ -73,7 +73,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const auditContext = request.auditContext || {};
 
     this.logger.error(
-      `${request.method} ${request.url} -> ${status} | message=${message} requestId=${request.requestId ?? auditContext.requestId ?? 'n/a'} userId=${auditContext.userId ?? 'anonymous'} workspaceId=${auditContext.workspaceId ?? 'n/a'} deviceId=${auditContext.deviceId ?? 'n/a'} ip=${auditContext.ip ?? request.ip}`,
+      `${request.method} ${request.url} -> ${status} | message=${message} requestId=${request.requestId ?? auditContext.requestId ?? 'n/a'} userId=${auditContext.userId ?? 'anonymous'} OrganizationId=${auditContext.OrganizationId ?? 'n/a'} deviceId=${auditContext.deviceId ?? 'n/a'} ip=${auditContext.ip ?? request.ip}`,
       exception instanceof Error ? exception.stack : undefined,
     );
 

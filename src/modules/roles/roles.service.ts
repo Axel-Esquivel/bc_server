@@ -7,7 +7,7 @@ export interface RoleEntity {
   id: string;
   name: string;
   permissions: string[];
-  workspaceId?: string;
+  OrganizationId?: string;
 }
 
 interface RolesState {
@@ -32,7 +32,7 @@ export class RolesService implements OnModuleInit {
       id: uuid(),
       name: dto.name,
       permissions: dto.permissions,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
     };
 
     this.roles.push(role);
@@ -52,9 +52,9 @@ export class RolesService implements OnModuleInit {
     return role;
   }
 
-  getRoleByName(name: string, workspaceId?: string): RoleEntity | undefined {
+  getRoleByName(name: string, OrganizationId?: string): RoleEntity | undefined {
     return this.roles.find(
-      (role) => role.name === name && (!workspaceId || role.workspaceId === workspaceId),
+      (role) => role.name === name && (!OrganizationId || role.OrganizationId === OrganizationId),
     );
   }
 

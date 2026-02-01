@@ -23,7 +23,7 @@ export enum InventoryCountStatus {
 @modelOptions({ schemaOptions: { timestamps: true } })
 export class InventoryCountSession {
   @prop({ required: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true })
   companyId!: string;

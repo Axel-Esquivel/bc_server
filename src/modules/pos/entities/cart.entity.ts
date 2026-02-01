@@ -11,7 +11,7 @@ export enum CartStatus {
 @modelOptions({ schemaOptions: { timestamps: true } })
 export class Cart {
   @prop({ required: true, index: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true, index: true })
   companyId!: string;

@@ -17,7 +17,7 @@ export class ExpiryProjectionQueryDto {
 
   @IsOptional()
   @IsString()
-  workspaceId?: string;
+  OrganizationId?: string;
 
   @IsOptional()
   @IsString()

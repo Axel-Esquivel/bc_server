@@ -23,7 +23,7 @@ export class GoodsReceiptLine {
   currency?: string;
 
   @prop({ required: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true })
   companyId!: string;
@@ -44,7 +44,7 @@ export class GoodsReceiptNote {
   lines!: GoodsReceiptLine[];
 
   @prop({ required: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true })
   companyId!: string;

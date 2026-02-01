@@ -19,7 +19,7 @@ export class UpdateCustomerDto {
 
   @IsString()
   @IsOptional()
-  workspaceId?: string;
+  OrganizationId?: string;
 
   @IsString()
   @IsOptional()

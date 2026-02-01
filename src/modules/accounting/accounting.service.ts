@@ -44,10 +44,10 @@ export class AccountingService implements OnModuleInit {
 
   createAccount(dto: CreateAccountDto): Account {
     const duplicate = this.accounts.find(
-      (acc) => acc.code === dto.code && acc.workspaceId === dto.workspaceId && acc.companyId === dto.companyId,
+      (acc) => acc.code === dto.code && acc.OrganizationId === dto.OrganizationId && acc.companyId === dto.companyId,
     );
     if (duplicate) {
-      throw new BadRequestException('Account code already exists for this workspace/company');
+      throw new BadRequestException('Account code already exists for this Organization/company');
     }
 
     const account: Account = {
@@ -57,7 +57,7 @@ export class AccountingService implements OnModuleInit {
       type: dto.type,
       description: dto.description,
       active: dto.active ?? true,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
     };
     this.accounts.push(account);
@@ -65,9 +65,9 @@ export class AccountingService implements OnModuleInit {
     return account;
   }
 
-  listAccounts(workspaceId?: string, companyId?: string): Account[] {
+  listAccounts(OrganizationId?: string, companyId?: string): Account[] {
     return this.accounts.filter((acc) => {
-      if (workspaceId && acc.workspaceId !== workspaceId) return false;
+      if (OrganizationId && acc.OrganizationId !== OrganizationId) return false;
       if (companyId && acc.companyId !== companyId) return false;
       return true;
     });
@@ -80,7 +80,7 @@ export class AccountingService implements OnModuleInit {
       rate: dto.rate,
       regime: dto.regime,
       active: dto.active ?? true,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
     };
     this.taxRules.push(rule);
@@ -88,9 +88,9 @@ export class AccountingService implements OnModuleInit {
     return rule;
   }
 
-  listTaxRules(workspaceId?: string, companyId?: string): TaxRule[] {
+  listTaxRules(OrganizationId?: string, companyId?: string): TaxRule[] {
     return this.taxRules.filter((rule) => {
-      if (workspaceId && rule.workspaceId !== workspaceId) return false;
+      if (OrganizationId && rule.OrganizationId !== OrganizationId) return false;
       if (companyId && rule.companyId !== companyId) return false;
       return true;
     });
@@ -120,7 +120,7 @@ export class AccountingService implements OnModuleInit {
       sourceId: dto.sourceId,
       status: dto.status ?? JournalEntryStatus.POSTED,
       lines,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
       period,
     };
@@ -138,15 +138,15 @@ export class AccountingService implements OnModuleInit {
       sourceId: dto.sourceId,
       status: JournalEntryStatus.POSTED,
       lines: dto.lines,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
     };
     return this.recordJournalEntry(entryDto);
   }
 
-  listJournalEntries(workspaceId?: string, companyId?: string): JournalEntry[] {
+  listJournalEntries(OrganizationId?: string, companyId?: string): JournalEntry[] {
     return this.journalEntries.filter((entry) => {
-      if (workspaceId && entry.workspaceId !== workspaceId) return false;
+      if (OrganizationId && entry.OrganizationId !== OrganizationId) return false;
       if (companyId && entry.companyId !== companyId) return false;
       return true;
     });
@@ -182,7 +182,7 @@ export class AccountingService implements OnModuleInit {
       credit: line.credit ?? 0,
       description: line.description,
       taxRuleId: line.taxRuleId,
-      workspaceId: line.workspaceId,
+      OrganizationId: line.OrganizationId,
       companyId: line.companyId,
     };
   }

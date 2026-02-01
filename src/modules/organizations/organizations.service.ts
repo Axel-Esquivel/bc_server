@@ -49,7 +49,7 @@ import {
   OrganizationCoreSettings,
   OrganizationCoreSettingsUpdate,
 } from './types/core-settings.types';
-import { OrganizationWorkspaceSnapshot } from './types/organization-workspace-snapshot.types';
+import { OrganizationOrganizationsnapshot } from './types/organization-Organization-snapshot.types';
 import {
   OrganizationModuleKey,
   OrganizationModuleState,
@@ -66,8 +66,8 @@ import type { ModuleDescriptor } from '../module-loader/module-loader.service';
 import { Organization, OrganizationDocument } from './schemas/organization.schema';
 import { OrgModule, OrgModuleDocument } from './schemas/org-module.schema';
 
-interface WorkspacesState {
-  workspaces: OrganizationWorkspaceSnapshot[];
+interface OrganizationsState {
+  Organizations: OrganizationOrganizationsnapshot[];
 }
 
 @Injectable()
@@ -446,33 +446,33 @@ export class OrganizationsService {
       : null;
   }
 
-  async listWorkspaces(organizationId: string): Promise<OrganizationWorkspaceSnapshot[]> {
+  async listOrganizations(organizationId: string): Promise<OrganizationOrganizationsnapshot[]> {
     await this.getOrganization(organizationId);
-    const state = await this.moduleState.loadState<WorkspacesState>('module:workspaces', {
-      workspaces: [],
+    const state = await this.moduleState.loadState<OrganizationsState>('module:Organizations', {
+      Organizations: [],
     });
-    return (state.workspaces ?? []).filter((workspace) => workspace.organizationId === organizationId);
+    return (state.Organizations ?? []).filter((Organization) => Organization.organizationId === organizationId);
   }
 
   async getOverview(organizationId: string): Promise<{
-    totalWorkspaces: number;
+    totalOrganizations: number;
     totalCompanies: number;
     totalBranches: number;
     totalWarehouses: number;
-    workspaces: Array<{
+    Organizations: Array<{
       id: string;
       name?: string;
       activeModules: Array<{ key: string; status: string }>;
     }>;
   }> {
-    const workspaces = await this.listWorkspaces(organizationId);
+    const Organizations = await this.listOrganizations(organizationId);
     const structure = await this.getStructureSettings(organizationId);
     const totalCompanies = structure.companies.length;
     const totalBranches = structure.branches.length;
     const totalWarehouses = structure.warehouses.length;
 
-    const workspaceSummaries = workspaces.map((workspace) => {
-      const activeModules = (workspace.enabledModules ?? [])
+    const Organizationsummaries = Organizations.map((Organization) => {
+      const activeModules = (Organization.enabledModules ?? [])
         .filter((module) => module.enabled)
         .map((module) => ({
           key: module.key,
@@ -480,18 +480,18 @@ export class OrganizationsService {
         }));
 
       return {
-        id: workspace.id,
-        name: workspace.name,
+        id: Organization.id,
+        name: Organization.name,
         activeModules,
       };
     });
 
     return {
-      totalWorkspaces: workspaces.length,
+      totalOrganizations: Organizations.length,
       totalCompanies,
       totalBranches,
       totalWarehouses,
-      workspaces: workspaceSummaries,
+      Organizations: Organizationsummaries,
     };
   }
 

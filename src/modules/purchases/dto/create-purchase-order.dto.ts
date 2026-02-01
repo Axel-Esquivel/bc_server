@@ -22,7 +22,7 @@ export class PurchaseOrderLineDto {
 
 export class CreatePurchaseOrderDto {
   @IsString()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   companyId!: string;

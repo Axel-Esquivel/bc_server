@@ -17,7 +17,7 @@ export class JournalEntryLineDto {
 
   @IsString()
   @IsNotEmpty()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   @IsNotEmpty()
@@ -56,7 +56,7 @@ export class CreateJournalEntryDto {
   lines!: JournalEntryLineDto[];
 
   @IsString()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   companyId!: string;

@@ -1,4 +1,4 @@
-import { SettingsSchema, SetupWizardConfig } from '../../core/types/workspace-setup-settings.types';
+import { SettingsSchema, SetupWizardConfig } from '../../core/types/Organization-setup-settings.types';
 
 export interface ModuleConfig {
   /**

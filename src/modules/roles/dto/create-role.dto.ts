@@ -11,5 +11,5 @@ export class CreateRoleDto {
 
   @IsOptional()
   @IsString()
-  workspaceId?: string;
+  OrganizationId?: string;
 }

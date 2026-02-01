@@ -21,7 +21,7 @@ export class JournalEntryLine {
   taxRuleId?: string;
 
   @prop({ required: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true })
   companyId!: string;

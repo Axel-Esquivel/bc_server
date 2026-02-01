@@ -35,7 +35,7 @@ export class InventoryMovement {
   references?: Record<string, any>;
 
   @prop({ required: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true })
   companyId!: string;

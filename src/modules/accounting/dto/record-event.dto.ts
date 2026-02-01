@@ -24,7 +24,7 @@ export class RecordAccountingEventDto {
   lines!: JournalEntryLineDto[];
 
   @IsString()
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @IsString()
   companyId!: string;

@@ -57,7 +57,7 @@ export class InventoryCountsService implements OnModuleInit {
       createdAt: new Date(),
       warehouseId: dto.warehouseId,
       companyId: dto.companyId,
-      workspaceId: dto.workspaceId,
+      OrganizationId: dto.OrganizationId,
       scope: dto.scope ?? InventoryCountScope.FULL,
       mode: dto.mode ?? InventoryCountMode.BLIND,
       roundsPlanned: dto.roundsPlanned,
@@ -78,7 +78,7 @@ export class InventoryCountsService implements OnModuleInit {
         line.warehouseId,
         line.locationId,
         line.batchId,
-        dto.workspaceId,
+        dto.OrganizationId,
         dto.companyId,
       );
 
@@ -92,7 +92,7 @@ export class InventoryCountsService implements OnModuleInit {
         batchId: line.batchId,
         systemQtyAtStart,
         status: InventoryCountLineStatus.PENDING,
-        workspaceId: dto.workspaceId,
+        OrganizationId: dto.OrganizationId,
         companyId: dto.companyId,
       };
 
@@ -131,7 +131,7 @@ export class InventoryCountsService implements OnModuleInit {
         countedBy: result.countedBy,
         countedAt: result.countedAt ? new Date(result.countedAt) : new Date(),
         source: result.source,
-        workspaceId: line.workspaceId,
+        OrganizationId: line.OrganizationId,
         companyId: line.companyId,
       };
 
@@ -213,7 +213,7 @@ export class InventoryCountsService implements OnModuleInit {
           sessionId: session.id,
           lineId: line.id,
         },
-        workspaceId: line.workspaceId,
+        OrganizationId: line.OrganizationId,
         companyId: line.companyId,
       };
 
@@ -269,13 +269,13 @@ export class InventoryCountsService implements OnModuleInit {
     warehouseId: string,
     locationId: string | undefined,
     batchId: string | undefined,
-    workspaceId: string,
+    OrganizationId: string,
     companyId: string,
   ): number {
     const projections = this.inventoryService.listStock({ variantId, warehouseId, locationId }) as StockProjectionRecord[];
     const matching = projections.find(
       (projection) =>
-        projection.workspaceId === workspaceId &&
+        projection.OrganizationId === OrganizationId &&
         projection.companyId === companyId &&
         projection.batchId === batchId,
     );

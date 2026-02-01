@@ -4,15 +4,15 @@ import { Document } from 'mongoose';
 export type UserDocument = User & Document;
 
 @Schema({ _id: false })
-class UserWorkspaceMembership {
+class UserOrganizationMembership {
   @Prop({ required: true })
-  workspaceId: string;
+  OrganizationId: string;
 
   @Prop({ type: [String], default: [] })
   roles: string[];
 }
 
-const UserWorkspaceMembershipSchema = SchemaFactory.createForClass(UserWorkspaceMembership);
+const UserOrganizationMembershipSchema = SchemaFactory.createForClass(UserOrganizationMembership);
 
 @Schema({ _id: false })
 class UserOrganizationMembership {
@@ -48,8 +48,8 @@ export class User {
   @Prop({ required: true })
   passwordHash: string;
 
-  @Prop({ type: [UserWorkspaceMembershipSchema], default: [] })
-  workspaces: UserWorkspaceMembership[];
+  @Prop({ type: [UserOrganizationMembershipSchema], default: [] })
+  Organizations: UserOrganizationMembership[];
 
   @Prop({ type: [UserOrganizationMembershipSchema], default: [] })
   organizations: UserOrganizationMembership[];
@@ -58,7 +58,7 @@ export class User {
   devices: string[];
 
   @Prop()
-  defaultWorkspaceId?: string;
+  defaultOrganizationId?: string;
 
   @Prop()
   defaultOrganizationId?: string;

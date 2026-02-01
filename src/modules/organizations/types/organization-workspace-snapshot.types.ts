@@ -1,14 +1,14 @@
-export interface OrganizationWorkspaceModuleSnapshot {
+export interface OrganizationOrganizationModuleSnapshot {
   key: string;
   enabled?: boolean;
   configured?: boolean;
   status?: string;
 }
 
-export interface OrganizationWorkspaceSnapshot {
+export interface OrganizationOrganizationsnapshot {
   id: string;
   name?: string;
   organizationId?: string;
-  enabledModules?: OrganizationWorkspaceModuleSnapshot[];
+  enabledModules?: OrganizationOrganizationModuleSnapshot[];
   moduleSettings?: Record<string, unknown>;
 }

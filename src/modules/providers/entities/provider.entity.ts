@@ -40,7 +40,7 @@ export class Provider {
   variants!: ProviderVariant[];
 
   @prop({ required: true, index: true })
-  workspaceId!: string;
+  OrganizationId!: string;
 
   @prop({ required: true, index: true })
   companyId!: string;
