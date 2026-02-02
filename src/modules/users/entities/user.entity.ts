@@ -3,14 +3,6 @@ export interface OrganizationMembership {
   roles: string[];
 }
 
-export type OrganizationMembershipStatus = 'active' | 'pending' | 'rejected';
-
-export interface OrganizationMembership {
-  organizationId: string;
-  role: 'owner' | 'member';
-  status: OrganizationMembershipStatus;
-}
-
 export interface UserEntity {
   id: string;
   email: string;
@@ -19,9 +11,7 @@ export interface UserEntity {
   phone: string;
   passwordHash: string;
   Organizations: OrganizationMembership[];
-  organizations: OrganizationMembership[];
   devices: string[];
-  defaultOrganizationId?: string;
   defaultOrganizationId?: string;
   defaultCompanyId?: string;
   createdAt: Date;

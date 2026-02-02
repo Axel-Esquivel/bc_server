@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { InventoryModule } from '../inventory/inventory.module';
 import { RealtimeModule } from '../../realtime/realtime.module';
-import { OrganizationsModule } from '../Organizations/Organizations.module';
+import { OrganizationsModule } from '../organizations/organizations.module';
 import { PosController } from './pos.controller';
 import { PosService } from './pos.service';
 

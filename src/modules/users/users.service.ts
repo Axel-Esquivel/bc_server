@@ -4,7 +4,7 @@ import * as bcrypt from 'bcrypt';
 import { v4 as uuid } from 'uuid';
 import { Model } from 'mongoose';
 import { CreateUserDto } from './dto/create-user.dto';
-import { OrganizationMembership, SafeUser, UserEntity, OrganizationMembership } from './entities/user.entity';
+import { OrganizationMembership, SafeUser, UserEntity } from './entities/user.entity';
 import { User, UserDocument } from './schemas/user.schema';
 
 @Injectable()
@@ -30,10 +30,8 @@ export class UsersService {
       phone: dto.phone,
       passwordHash,
       Organizations: dto.OrganizationId ? [{ OrganizationId: dto.OrganizationId, roles: [] }] : [],
-      organizations: [],
       devices: [],
       defaultOrganizationId: dto.defaultOrganizationId ?? dto.OrganizationId,
-      defaultOrganizationId: dto.defaultOrganizationId,
       defaultCompanyId: dto.defaultCompanyId ?? dto.defaultOrganizationId ?? dto.OrganizationId,
       createdAt: new Date(),
     };
@@ -87,24 +85,6 @@ export class UsersService {
     return this.toSafeUser(user.toObject() as UserEntity);
   }
 
-  async addOrganizationMembership(userId: string, membership: OrganizationMembership): Promise<SafeUser> {
-    const user = await this.userModel.findOne({ id: userId }).exec();
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    const existing = user.organizations?.find((item) => item.organizationId === membership.organizationId);
-    if (existing) {
-      existing.role = membership.role;
-      existing.status = membership.status;
-    } else {
-      user.organizations = [...(user.organizations ?? []), { ...membership }];
-    }
-
-    await user.save();
-    return this.toSafeUser(user.toObject() as UserEntity);
-  }
-
   async registerDevice(userId: string, deviceId: string): Promise<SafeUser> {
     const user = await this.userModel.findOne({ id: userId }).exec();
     if (!user) {
@@ -132,26 +112,15 @@ export class UsersService {
       }));
   }
 
-  async setDefaultOrganization(userId: string, OrganizationId: string): Promise<SafeUser> {
-    const user = await this.userModel.findOne({ id: userId }).exec();
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    const belongs = user.Organizations?.some((membership) => membership.OrganizationId === OrganizationId);
-    if (!belongs) {
-      throw new NotFoundException('Organization membership not found');
-    }
-
-    user.defaultOrganizationId = OrganizationId;
-    await user.save();
-    return this.toSafeUser(user.toObject() as UserEntity);
-  }
-
   async setDefaultOrganization(userId: string, organizationId: string): Promise<SafeUser> {
     const user = await this.userModel.findOne({ id: userId }).exec();
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+
+    const belongs = user.Organizations?.some((membership) => membership.OrganizationId === organizationId);
+    if (!belongs) {
+      throw new NotFoundException('Organization membership not found');
     }
 
     user.defaultOrganizationId = organizationId;

@@ -14,20 +14,6 @@ class UserOrganizationMembership {
 
 const UserOrganizationMembershipSchema = SchemaFactory.createForClass(UserOrganizationMembership);
 
-@Schema({ _id: false })
-class UserOrganizationMembership {
-  @Prop({ required: true })
-  organizationId: string;
-
-  @Prop({ required: true })
-  role: 'owner' | 'member';
-
-  @Prop({ required: true })
-  status: 'active' | 'pending' | 'rejected';
-}
-
-const UserOrganizationMembershipSchema = SchemaFactory.createForClass(UserOrganizationMembership);
-
 @Schema({ collection: 'users', timestamps: true })
 export class User {
   @Prop({ required: true, unique: true, index: true })
@@ -51,14 +37,8 @@ export class User {
   @Prop({ type: [UserOrganizationMembershipSchema], default: [] })
   Organizations: UserOrganizationMembership[];
 
-  @Prop({ type: [UserOrganizationMembershipSchema], default: [] })
-  organizations: UserOrganizationMembership[];
-
   @Prop({ type: [String], default: [] })
   devices: string[];
-
-  @Prop()
-  defaultOrganizationId?: string;
 
   @Prop()
   defaultOrganizationId?: string;

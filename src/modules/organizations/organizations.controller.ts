@@ -40,7 +40,7 @@ import type { ApiResponse } from '../../core/types/api-response.types';
 import type { OrganizationCoreSettings as LegacyOrganizationCoreSettings } from '../../core/types/organization-core-settings.types';
 import type { OrganizationStructureSettings } from '../../core/types/organization-structure-settings.types';
 import type { CoreCompany, CoreCountry, CoreCurrency, OrganizationCoreSettings } from './types/core-settings.types';
-import type { OrganizationOrganizationsnapshot } from './types/organization-Organization-snapshot.types';
+import type { OrganizationOrganizationsnapshot } from './types/organization-snapshot.types';
 import type { OrganizationModuleState } from './types/module-state.types';
 import type { OrganizationModulesOverviewResponse } from './types/organization-modules-overview.types';
 import type { SafeUser } from '../users/entities/user.entity';

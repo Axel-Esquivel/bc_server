@@ -49,7 +49,7 @@ import {
   OrganizationCoreSettings,
   OrganizationCoreSettingsUpdate,
 } from './types/core-settings.types';
-import { OrganizationOrganizationsnapshot } from './types/organization-Organization-snapshot.types';
+import { OrganizationOrganizationsnapshot } from './types/organization-snapshot.types';
 import {
   OrganizationModuleKey,
   OrganizationModuleState,
@@ -62,6 +62,7 @@ import {
   OrganizationModuleOverviewItem,
   OrganizationModulesOverviewResponse,
 } from './types/organization-modules-overview.types';
+import type { PosTerminal } from './types/pos-terminal.types';
 import type { ModuleDescriptor } from '../module-loader/module-loader.service';
 import { Organization, OrganizationDocument } from './schemas/organization.schema';
 import { OrgModule, OrgModuleDocument } from './schemas/org-module.schema';
@@ -124,9 +125,8 @@ export class OrganizationsService {
 
     await this.organizationModel.create(organization);
     await this.usersService.addOrganizationMembership(ownerUserId, {
-      organizationId: organization.id,
-      role: 'owner',
-      status: 'active',
+      OrganizationId: organization.id,
+      roles: [OWNER_ROLE_KEY],
     });
     await this.syncOrgModulesFromOrganization(organization);
     return organization;
@@ -425,6 +425,13 @@ export class OrganizationsService {
       ],
     }));
     return [...catalog, { moduleKey: 'modules', permissions: ['modules.configure'] }];
+  }
+
+  listPosTerminals(organizationId: string): { terminals: PosTerminal[] } {
+    if (!organizationId) {
+      return { terminals: [] };
+    }
+    return { terminals: [] };
   }
 
   async getOrganization(organizationId: string): Promise<OrganizationEntity> {

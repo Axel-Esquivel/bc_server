@@ -2,7 +2,7 @@ import { Body, Controller, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ResolveUsersDto } from './dto/resolve-users.dto';
 import { SetDefaultCompanyDto } from './dto/set-default-company.dto';
-import { SetDefaultOrganizationDto } from './dto/set-default-Organization.dto';
+import { SetDefaultOrganizationDto } from './dto/set-default-organization.dto';
 import { UsersService } from './users.service';
 
 @Controller('users')

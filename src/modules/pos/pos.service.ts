@@ -14,8 +14,8 @@ import { PaymentRecord } from './entities/payment.entity';
 import { Promotion, ComboRule } from './entities/promotion.entity';
 import { SaleLineRecord } from './entities/sale-line.entity';
 import { SaleRecord, SaleStatus } from './entities/sale.entity';
-import { OrganizationsService } from '../Organizations/Organizations.service';
-import { PosTerminal } from '../Organizations/dto/pos-terminal.dto';
+import { OrganizationsService } from '../organizations/organizations.service';
+import { PosTerminal } from '../organizations/types/pos-terminal.types';
 
 interface PosState {
   carts: CartRecord[];

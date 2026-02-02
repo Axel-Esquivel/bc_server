@@ -30,9 +30,5 @@ export class CreateUserDto {
 
   @IsOptional()
   @IsString()
-  defaultOrganizationId?: string;
-
-  @IsOptional()
-  @IsString()
   defaultCompanyId?: string;
 }
