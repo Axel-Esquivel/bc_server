@@ -15,10 +15,6 @@ class BootstrapBranchDto {
   @IsOptional()
   countryId?: string;
 
-  @IsString()
-  @IsOptional()
-  type?: 'retail' | 'wholesale';
-
   @IsArray()
   @IsString({ each: true })
   @IsOptional()

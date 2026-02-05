@@ -1,5 +1,4 @@
-import { IsArray, IsIn, IsObject, IsOptional, IsString } from 'class-validator';
-import type { BranchType } from '../entities/branch.entity';
+import { IsArray, IsObject, IsOptional, IsString } from 'class-validator';
 
 export class UpdateBranchDto {
   @IsString()
@@ -9,10 +8,6 @@ export class UpdateBranchDto {
   @IsString()
   @IsOptional()
   countryId?: string;
-
-  @IsIn(['retail', 'wholesale'])
-  @IsOptional()
-  type?: BranchType;
 
   @IsArray()
   @IsString({ each: true })

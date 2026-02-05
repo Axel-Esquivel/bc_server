@@ -45,7 +45,6 @@ export class BranchesService implements OnModuleInit {
       companyId,
       countryId: dto.countryId,
       name,
-      type: dto.type,
       currencyIds: dto.currencyIds ? Array.from(new Set(dto.currencyIds)) : undefined,
       settings: dto.settings ?? undefined,
       createdAt: new Date(),
@@ -81,9 +80,6 @@ export class BranchesService implements OnModuleInit {
     if (dto.countryId !== undefined) {
       branch.countryId = dto.countryId;
     }
-    if (dto.type !== undefined) {
-      branch.type = dto.type;
-    }
     if (dto.currencyIds !== undefined) {
       branch.currencyIds = Array.from(new Set(dto.currencyIds));
     }
@@ -97,13 +93,11 @@ export class BranchesService implements OnModuleInit {
 
   private normalizeBranch(raw: any): BranchEntity {
     const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : 'Branch';
-    const type = raw.type === 'wholesale' ? 'wholesale' : 'retail';
     return {
       id: raw.id || uuid(),
       companyId: raw.companyId || 'unknown',
       countryId: raw.countryId || 'unknown',
       name,
-      type,
       currencyIds: Array.isArray(raw.currencyIds) ? raw.currencyIds : undefined,
       settings: raw.settings ?? undefined,
       createdAt: raw.createdAt ? new Date(raw.createdAt) : new Date(),

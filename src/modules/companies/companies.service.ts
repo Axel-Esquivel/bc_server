@@ -42,7 +42,7 @@ interface CompanyCoreSettings {
   baseCurrencyId?: string;
   currencyIds: string[];
   companies: Array<{ id: string; name: string }>;
-  branches: Array<{ id: string; companyId: string; name: string; type?: string }>;
+  branches: Array<{ id: string; companyId: string; name: string }>;
   warehouses: Array<{ id: string; branchId: string; name: string }>;
 }
 
@@ -438,7 +438,6 @@ export class CompaniesService implements OnModuleInit {
         id: item.id ?? uuid(),
         companyId: item.companyId,
         name: item.name,
-        type: item.type,
       }));
     const warehouses = (dto.warehouses ?? current.warehouses)
       .filter((item) => Boolean(item.branchId))

@@ -188,7 +188,6 @@ export class OrganizationsService {
         const branch = await this.branchesService.create(company.id, {
           name: branchPayload.name,
           countryId: branchPayload.countryId ?? companyPayload.countryId,
-          type: branchPayload.type ?? 'retail',
           currencyIds: branchPayload.currencyIds,
           settings: undefined,
         });
