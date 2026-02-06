@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
   OnModuleInit,
+  forwardRef,
 } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { ModuleStateService } from '../../core/database/module-state.service';
@@ -24,6 +26,7 @@ export class BranchesService implements OnModuleInit {
 
   constructor(
     private readonly moduleState: ModuleStateService,
+    @Inject(forwardRef(() => CompaniesService))
     private readonly companiesService: CompaniesService,
   ) {}
 

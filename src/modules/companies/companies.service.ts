@@ -79,6 +79,7 @@ export class CompaniesService implements OnModuleInit {
 
   constructor(
     private readonly moduleState: ModuleStateService,
+    @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
     @Inject(forwardRef(() => OrganizationsService))
     private readonly organizationsService: OrganizationsService,

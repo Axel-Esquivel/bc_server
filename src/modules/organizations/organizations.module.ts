@@ -15,7 +15,7 @@ import { OrgModule, OrgModuleSchema } from './schemas/org-module.schema';
 
 @Module({
   imports: [
-    UsersModule,
+    forwardRef(() => UsersModule),
     forwardRef(() => AuthModule),
     forwardRef(() => CompaniesModule),
     forwardRef(() => BranchesModule),

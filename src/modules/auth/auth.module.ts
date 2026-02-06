@@ -16,7 +16,7 @@ import { RefreshToken, RefreshTokenSchema } from './schemas/refresh-token.schema
 
 @Module({
   imports: [
-    UsersModule,
+    forwardRef(() => UsersModule),
     forwardRef(() => DevicesModule),
     forwardRef(() => OrganizationsModule),
     forwardRef(() => CompaniesModule),
