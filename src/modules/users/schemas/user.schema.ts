@@ -47,6 +47,12 @@ export class User {
   defaultCompanyId?: string;
 
   @Prop()
+  defaultEnterpriseId?: string;
+
+  @Prop()
+  defaultCurrencyId?: string;
+
+  @Prop()
   createdAt?: Date;
 
   @Prop()

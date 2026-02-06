@@ -11,7 +11,7 @@ import { CompanyPermissionGuard } from './guards/company-permission.guard';
 
 @Module({
   imports: [
-    UsersModule,
+    forwardRef(() => UsersModule),
     forwardRef(() => OrganizationsModule),
     ModuleLoaderModule,
     CountriesModule,

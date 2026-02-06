@@ -31,4 +31,12 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   defaultCompanyId?: string;
+
+  @IsOptional()
+  @IsString()
+  defaultEnterpriseId?: string;
+
+  @IsOptional()
+  @IsString()
+  defaultCurrencyId?: string;
 }

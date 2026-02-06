@@ -218,15 +218,19 @@ export class AuthService {
     const companies = (await this.companiesService.listByUser(userId)).filter(
       (company) => company.organizationId === organizationId,
     );
-    const preferredCompanyId = user.defaultCompanyId ?? user.defaultOrganizationId;
+    const preferredCompanyId = user.defaultCompanyId ?? null;
     const company =
       preferredCompanyId && companies.some((item) => item.id === preferredCompanyId)
         ? companies.find((item) => item.id === preferredCompanyId) ?? null
         : null;
-    const enterpriseId = company?.defaultEnterpriseId ?? company?.enterprises?.[0]?.id ?? null;
+    const preferredEnterpriseId = user.defaultEnterpriseId ?? null;
+    const enterpriseId =
+      preferredEnterpriseId && company?.enterprises?.some((item) => item.id === preferredEnterpriseId)
+        ? preferredEnterpriseId
+        : company?.defaultEnterpriseId ?? company?.enterprises?.[0]?.id ?? null;
     const enterprise = company?.enterprises?.find((item) => item.id === enterpriseId) ?? null;
     const currencyId = company
-      ? await this.resolveCompanyCurrency(organizationId, company, enterprise)
+      ? await this.resolveCompanyCurrency(organizationId, company, enterprise, user.defaultCurrencyId ?? null)
       : null;
 
     return {
@@ -246,9 +250,13 @@ export class AuthService {
     organizationId: string,
     company: { baseCurrencyId?: string | null; defaultCurrencyId?: string | null } | null,
     enterprise: { currencyIds: string[]; defaultCurrencyId?: string | null } | null,
+    userDefaultCurrencyId: string | null,
   ): Promise<string | null> {
     if (!company) {
       return this.resolveOrganizationCurrency(organizationId);
+    }
+    if (userDefaultCurrencyId && enterprise?.currencyIds.includes(userDefaultCurrencyId)) {
+      return userDefaultCurrencyId;
     }
     const enterpriseDefault = enterprise?.defaultCurrencyId ?? null;
     if (enterpriseDefault && enterprise?.currencyIds.includes(enterpriseDefault)) {

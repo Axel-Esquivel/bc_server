@@ -1,4 +1,12 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  forwardRef,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuid } from 'uuid';
@@ -6,12 +14,17 @@ import { Model } from 'mongoose';
 import { CreateUserDto } from './dto/create-user.dto';
 import { OrganizationMembership, SafeUser, UserEntity } from './entities/user.entity';
 import { User, UserDocument } from './schemas/user.schema';
+import { CompaniesService } from '../companies/companies.service';
 
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
 
-  constructor(@InjectModel(User.name) private readonly userModel: Model<UserDocument>) {}
+  constructor(
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    @Inject(forwardRef(() => CompaniesService))
+    private readonly companiesService: CompaniesService,
+  ) {}
 
   async createUser(dto: CreateUserDto): Promise<SafeUser> {
     const normalizedEmail = dto.email.toLowerCase();
@@ -32,7 +45,9 @@ export class UsersService {
       Organizations: dto.OrganizationId ? [{ OrganizationId: dto.OrganizationId, roles: [] }] : [],
       devices: [],
       defaultOrganizationId: dto.defaultOrganizationId ?? dto.OrganizationId,
-      defaultCompanyId: dto.defaultCompanyId ?? dto.defaultOrganizationId ?? dto.OrganizationId,
+      defaultCompanyId: dto.defaultCompanyId,
+      defaultEnterpriseId: dto.defaultEnterpriseId,
+      defaultCurrencyId: dto.defaultCurrencyId,
       createdAt: new Date(),
     };
 
@@ -139,6 +154,57 @@ export class UsersService {
     return this.toSafeUser(user.toObject() as UserEntity);
   }
 
+  async setDefaultEnterprise(userId: string, enterpriseId: string): Promise<SafeUser> {
+    const user = await this.userModel.findOne({ id: userId }).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (!enterpriseId?.trim()) {
+      throw new BadRequestException('Enterprise is required');
+    }
+
+    const company = this.resolveUserCompany(userId, user.defaultCompanyId);
+    const enterprise = company.enterprises?.find((item) => item.id === enterpriseId) ?? null;
+    if (!enterprise) {
+      throw new BadRequestException('Enterprise not found for company');
+    }
+
+    user.defaultEnterpriseId = enterpriseId;
+    if (user.defaultCurrencyId && !enterprise.currencyIds?.includes(user.defaultCurrencyId)) {
+      user.defaultCurrencyId = undefined;
+    }
+    await user.save();
+    return this.toSafeUser(user.toObject() as UserEntity);
+  }
+
+  async setDefaultCurrency(userId: string, currencyId: string): Promise<SafeUser> {
+    const user = await this.userModel.findOne({ id: userId }).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (!currencyId?.trim()) {
+      throw new BadRequestException('Currency is required');
+    }
+
+    const company = this.resolveUserCompany(userId, user.defaultCompanyId);
+    const enterpriseId =
+      (user.defaultEnterpriseId &&
+      company.enterprises?.some((item) => item.id === user.defaultEnterpriseId))
+        ? user.defaultEnterpriseId
+        : company.defaultEnterpriseId ?? company.enterprises?.[0]?.id;
+    const enterprise = company.enterprises?.find((item) => item.id === enterpriseId) ?? null;
+    if (!enterprise) {
+      throw new BadRequestException('Enterprise not found for company');
+    }
+    if (!enterprise.currencyIds?.includes(currencyId)) {
+      throw new BadRequestException('Currency not allowed for enterprise');
+    }
+
+    user.defaultCurrencyId = currencyId;
+    await user.save();
+    return this.toSafeUser(user.toObject() as UserEntity);
+  }
+
   async clearDefaultOrganization(userId: string, organizationId: string): Promise<SafeUser> {
     const user = await this.userModel.findOne({ id: userId }).exec();
     if (!user) {
@@ -155,5 +221,17 @@ export class UsersService {
   private toSafeUser(user: UserEntity): SafeUser {
     const { passwordHash, ...safe } = user;
     return safe;
+  }
+
+  private resolveUserCompany(userId: string, companyId?: string | null) {
+    if (!companyId) {
+      throw new BadRequestException('Default company is not set');
+    }
+    const companies = this.companiesService.listByUser(userId);
+    const company = companies.find((item) => item.id === companyId);
+    if (!company) {
+      throw new BadRequestException('Default company not found');
+    }
+    return company;
   }
 }
