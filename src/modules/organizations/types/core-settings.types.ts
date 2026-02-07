@@ -49,11 +49,17 @@ export interface CoreCompanyInput {
 export interface CoreEnterprise {
   id: string;
   name: string;
+  countryId?: string;
+  allowedCurrencyIds?: string[];
+  baseCurrencyId?: string;
 }
 
 export interface CoreEnterpriseInput {
   id?: string;
   name: string;
+  countryId?: string;
+  allowedCurrencyIds?: string[];
+  baseCurrencyId?: string;
 }
 
 export interface CoreCompany {

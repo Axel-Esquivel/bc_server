@@ -48,6 +48,20 @@ export class CoreEnterpriseUpdateDto {
   @IsString()
   @IsNotEmpty()
   name!: string;
+
+  @IsString()
+  @IsOptional()
+  countryId?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayNotEmpty()
+  @IsOptional()
+  allowedCurrencyIds?: string[];
+
+  @IsString()
+  @IsOptional()
+  baseCurrencyId?: string;
 }
 
 export class CoreCompanyConfigUpdateDto {
