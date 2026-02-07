@@ -2,6 +2,7 @@ export interface CoreCountry {
   id: string;
   name: string;
   code: string;
+  companies?: CoreCompanyConfig[];
 }
 
 export interface CoreCurrency {
@@ -11,16 +12,18 @@ export interface CoreCurrency {
   symbol?: string;
 }
 
-export interface CoreCompany {
+export interface CoreCompanyConfig {
   id: string;
   name: string;
-  countryId: string;
+  currencyIds: string[];
+  enterprises: CoreEnterprise[];
 }
 
 export interface CoreCountryInput {
   id?: string;
   name: string;
   code: string;
+  companies?: CoreCompanyConfigInput[];
 }
 
 export interface CoreCurrencyInput {
@@ -30,8 +33,31 @@ export interface CoreCurrencyInput {
   symbol?: string;
 }
 
+export interface CoreCompanyConfigInput {
+  id?: string;
+  name: string;
+  currencyIds?: string[];
+  enterprises?: CoreEnterpriseInput[];
+}
+
 export interface CoreCompanyInput {
   id?: string;
+  name: string;
+  countryId: string;
+}
+
+export interface CoreEnterprise {
+  id: string;
+  name: string;
+}
+
+export interface CoreEnterpriseInput {
+  id?: string;
+  name: string;
+}
+
+export interface CoreCompany {
+  id: string;
   name: string;
   countryId: string;
 }
@@ -39,11 +65,9 @@ export interface CoreCompanyInput {
 export interface OrganizationCoreSettings {
   countries: CoreCountry[];
   currencies: CoreCurrency[];
-  companies: CoreCompany[];
 }
 
 export interface OrganizationCoreSettingsUpdate {
   countries?: CoreCountryInput[];
   currencies?: CoreCurrencyInput[];
-  companies?: CoreCompanyInput[];
 }

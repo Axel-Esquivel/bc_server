@@ -41,11 +41,15 @@ import {
 import { OrganizationRoleKey, OWNER_ROLE_KEY } from './types/organization-role.types';
 import {
   CoreCompany,
+  CoreCompanyConfig,
+  CoreCompanyConfigInput,
   CoreCompanyInput,
   CoreCountry,
   CoreCountryInput,
   CoreCurrency,
   CoreCurrencyInput,
+  CoreEnterprise,
+  CoreEnterpriseInput,
   OrganizationCoreSettings,
   OrganizationCoreSettingsUpdate,
 } from './types/core-settings.types';
@@ -154,7 +158,7 @@ export class OrganizationsService {
     }
 
     const createdCompanies: Array<{ id: string; name: string }> = [];
-    const coreCompanies: CoreCompany[] = [];
+    const companiesByCountryMap = new Map<string, CoreCompanyConfig[]>();
     const createdBranches: Array<{ id: string; name: string; companyId: string }> = [];
     const createdWarehouses: Array<{ id: string; name: string; companyId: string; branchId: string }> = [];
 
@@ -181,7 +185,18 @@ export class OrganizationsService {
         currencies: companyCurrencyIds,
       });
       createdCompanies.push({ id: company.id, name: company.name });
-      coreCompanies.push({ id: company.id, name: company.name, countryId: companyPayload.countryId });
+      const companyConfig: CoreCompanyConfig = {
+        id: company.id,
+        name: company.name,
+        currencyIds: company.currencies ?? companyCurrencyIds,
+        enterprises: (company.enterprises ?? []).map((enterprise) => ({
+          id: enterprise.id,
+          name: enterprise.name,
+        })),
+      };
+      const bucket = companiesByCountryMap.get(companyPayload.countryId) ?? [];
+      bucket.push(companyConfig);
+      companiesByCountryMap.set(companyPayload.countryId, bucket);
 
       const branchMap = new Map<string, string>();
       for (const branchPayload of companyPayload.branches ?? []) {
@@ -225,7 +240,11 @@ export class OrganizationsService {
       }
     }
 
-    organization.coreSettings = this.buildCoreSettingsFromBootstrap(countryIds, currencyIds, coreCompanies);
+    const companiesByCountry = Array.from(companiesByCountryMap.entries()).map(([countryId, companies]) => ({
+      countryId,
+      companies,
+    }));
+    organization.coreSettings = this.buildCoreSettingsFromBootstrap(countryIds, currencyIds, companiesByCountry);
     organization.countryIds = countryIds;
     organization.currencyIds = currencyIds;
     organization.structureSettings = {
@@ -263,8 +282,20 @@ export class OrganizationsService {
     const organization = await this.getOrganization(organizationId);
     const current = this.normalizeCoreSettings(organization.coreSettings);
     const next = this.mergeCoreSettings(current, update);
+    const nextCountryIds = this.buildCoreCountryIds(next);
+    const nextCurrencyIds = this.buildCoreCurrencyIds(next);
     organization.coreSettings = next;
-    await this.updateOrganizationFields(organizationId, { coreSettings: next });
+    await this.updateOrganizationFields(organizationId, {
+      coreSettings: next,
+      countryIds: nextCountryIds,
+      currencyIds: nextCurrencyIds,
+    });
+
+    if (this.countCompanies(next) === 0) {
+      await this.ensureDefaultCompany(organization, next);
+      const refreshed = await this.getCoreSettings(organizationId);
+      return this.cloneCoreSettings(refreshed);
+    }
     return this.cloneCoreSettings(next);
   }
 
@@ -279,7 +310,13 @@ export class OrganizationsService {
     };
     this.validateCoreSettings(next);
     organization.coreSettings = next;
-    await this.updateOrganizationFields(organizationId, { coreSettings: next });
+    await this.updateOrganizationFields(organizationId, {
+      coreSettings: next,
+      countryIds: this.buildCoreCountryIds(next),
+    });
+    if (this.countCompanies(next) === 0) {
+      await this.ensureDefaultCompany(organization, next);
+    }
     return country;
   }
 
@@ -297,7 +334,13 @@ export class OrganizationsService {
     };
     this.validateCoreSettings(next);
     organization.coreSettings = next;
-    await this.updateOrganizationFields(organizationId, { coreSettings: next });
+    await this.updateOrganizationFields(organizationId, {
+      coreSettings: next,
+      currencyIds: this.buildCoreCurrencyIds(next),
+    });
+    if (this.countCompanies(next) === 0) {
+      await this.ensureDefaultCompany(organization, next);
+    }
     return currency;
   }
 
@@ -306,11 +349,8 @@ export class OrganizationsService {
     const current = this.normalizeCoreSettings(organization.coreSettings);
     const company = this.buildCoreCompany(payload);
     this.assertCountryExists(current.countries, company.countryId);
-    this.assertUniqueCompanyName(current.companies, company.name);
-    const next: OrganizationCoreSettings = {
-      ...current,
-      companies: [...current.companies, company],
-    };
+    this.assertUniqueCompanyName(this.flattenCompanyConfigs(current), company.name);
+    const next = this.addCompanyToCountry(current, company);
     this.validateCoreSettings(next);
     organization.coreSettings = next;
     await this.updateOrganizationFields(organizationId, { coreSettings: next });
@@ -330,7 +370,11 @@ export class OrganizationsService {
     const current = this.normalizeCoreSettings(organization.coreSettings);
     const next = this.applyLegacyCoreSettingsUpdate(current, update);
     organization.coreSettings = next;
-    await this.updateOrganizationFields(organizationId, { coreSettings: next });
+    await this.updateOrganizationFields(organizationId, {
+      coreSettings: next,
+      countryIds: this.buildCoreCountryIds(next),
+      currencyIds: this.buildCoreCurrencyIds(next),
+    });
     return this.toLegacyCoreSettings(next);
   }
 
@@ -1577,15 +1621,22 @@ export class OrganizationsService {
     return {
       countries: [],
       currencies: [],
-      companies: [],
     };
   }
 
   private cloneCoreSettings(settings: OrganizationCoreSettings): OrganizationCoreSettings {
     return {
-      countries: settings.countries.map((country) => ({ ...country })),
+      countries: settings.countries.map((country) => ({
+        ...country,
+        companies: Array.isArray(country.companies)
+          ? country.companies.map((company) => ({
+              ...company,
+              currencyIds: Array.isArray(company.currencyIds) ? [...company.currencyIds] : [],
+              enterprises: Array.isArray(company.enterprises) ? company.enterprises.map((enterprise) => ({ ...enterprise })) : [],
+            }))
+          : [],
+      })),
       currencies: settings.currencies.map((currency) => ({ ...currency })),
-      companies: settings.companies.map((company) => ({ ...company })),
     };
   }
 
@@ -1595,17 +1646,24 @@ export class OrganizationsService {
       return fallback;
     }
 
-    const candidate = raw as Partial<OrganizationCoreSettings> & LegacyOrganizationCoreSettings;
+    const candidate = raw as Partial<OrganizationCoreSettings> & LegacyOrganizationCoreSettings & {
+      companies?: CoreCompanyInput[];
+    };
     const hasNewShape =
       Array.isArray(candidate.countries) ||
       Array.isArray(candidate.currencies) ||
       Array.isArray(candidate.companies);
 
     if (hasNewShape) {
+      const currencies = this.normalizeStoredCurrencies(candidate.currencies);
+      const countries = this.normalizeStoredCountries(candidate.countries, currencies);
+      const flatCompanies = this.normalizeStoredCompanies(candidate.companies);
+      const packedCountries = flatCompanies.length > 0
+        ? this.packFlatCompaniesIntoCountries(countries, flatCompanies, currencies)
+        : this.reconcileCountryCompanies(countries, currencies);
       return {
-        countries: this.normalizeStoredCountries(candidate.countries),
-        currencies: this.normalizeStoredCurrencies(candidate.currencies),
-        companies: this.normalizeStoredCompanies(candidate.companies),
+        countries: packedCountries,
+        currencies,
       };
     }
 
@@ -1623,22 +1681,37 @@ export class OrganizationsService {
     return {
       countries: countryId ? this.buildCoreCountriesFromIds([countryId]) : [],
       currencies: this.buildCoreCurrenciesFromIds(orderedCurrencyIds),
-      companies: [],
     };
   }
 
   private buildCoreSettingsFromBootstrap(
     countryIds: string[],
     currencyIds: string[],
-    companies: CoreCompany[],
+    companiesByCountry: Array<{ countryId: string; companies: CoreCompanyConfig[] }>,
   ): OrganizationCoreSettings {
     const countries = this.buildCoreCountriesFromIds(this.normalizeIds(countryIds));
     const currencies = this.buildCoreCurrenciesFromIds(this.normalizeIds(currencyIds));
-    const normalizedCompanies = this.normalizeCoreCompanies(companies);
+    const countryMap = new Map(countries.map((country) => [country.id, { ...country, companies: [] as CoreCompanyConfig[] }]));
+    companiesByCountry.forEach((group) => {
+      const countryId = group.countryId;
+      if (!countryMap.has(countryId)) {
+        countryMap.set(countryId, {
+          id: countryId,
+          name: countryId,
+          code: countryId,
+          companies: [],
+        });
+      }
+      const target = countryMap.get(countryId);
+      if (!target) {
+        return;
+      }
+      const normalizedCompanies = this.normalizeCoreCompanyConfigs(group.companies, currencies);
+      target.companies = normalizedCompanies;
+    });
     const next: OrganizationCoreSettings = {
-      countries,
+      countries: Array.from(countryMap.values()),
       currencies,
-      companies: normalizedCompanies,
     };
     this.validateCoreSettings(next);
     return next;
@@ -1648,19 +1721,17 @@ export class OrganizationsService {
     current: OrganizationCoreSettings,
     update: OrganizationCoreSettingsUpdate,
   ): OrganizationCoreSettings {
+    const currencies =
+      update.currencies !== undefined
+        ? this.normalizeCoreCurrencies(update.currencies)
+        : current.currencies;
+    const countries =
+      update.countries !== undefined
+        ? this.mergeCoreCountries(current.countries, update.countries, currencies)
+        : this.reconcileCountryCompanies(current.countries, currencies);
     const next: OrganizationCoreSettings = {
-      countries:
-        update.countries !== undefined
-          ? this.normalizeCoreCountries(update.countries)
-          : current.countries,
-      currencies:
-        update.currencies !== undefined
-          ? this.normalizeCoreCurrencies(update.currencies)
-          : current.currencies,
-      companies:
-        update.companies !== undefined
-          ? this.normalizeCoreCompanies(update.companies)
-          : current.companies,
+      countries,
+      currencies,
     };
     this.validateCoreSettings(next);
     return next;
@@ -1688,10 +1759,18 @@ export class OrganizationsService {
     const orderedCurrencyIds = this.applyBaseCurrencyOrder(normalizedCurrencyIds, baseCurrencyId);
     const nextCurrencies = this.buildCoreCurrenciesFromIds(orderedCurrencyIds, current.currencies);
 
+    const nextCountriesWithCompanies = nextCountries.map((country) => {
+      const existing = current.countries.find((item) => item.id === country.id);
+      const companies = existing?.companies ?? [];
+      return {
+        ...country,
+        companies: this.reconcileCompanyConfigs(companies, nextCurrencies),
+      };
+    });
+
     const next: OrganizationCoreSettings = {
-      countries: nextCountries,
+      countries: nextCountriesWithCompanies,
       currencies: nextCurrencies,
-      companies: current.companies,
     };
     this.validateCoreSettings(next);
     return next;
@@ -1722,7 +1801,272 @@ export class OrganizationsService {
     return [normalized, ...filtered];
   }
 
-  private normalizeStoredCountries(values: CoreCountryInput[] | undefined): CoreCountry[] {
+  private buildCoreCountryIds(settings: OrganizationCoreSettings): string[] {
+    const ids = settings.countries.map((country) => country.id).filter((id) => id.trim().length > 0);
+    return Array.from(new Set(ids));
+  }
+
+  private buildCoreCurrencyIds(settings: OrganizationCoreSettings): string[] {
+    const ids = settings.currencies.map((currency) => currency.id).filter((id) => id.trim().length > 0);
+    return Array.from(new Set(ids));
+  }
+
+  private countCompanies(settings: OrganizationCoreSettings): number {
+    return settings.countries.reduce((total, country) => total + (country.companies?.length ?? 0), 0);
+  }
+
+  private flattenCompanyConfigs(settings: OrganizationCoreSettings): CoreCompanyConfig[] {
+    const companies: CoreCompanyConfig[] = [];
+    settings.countries.forEach((country) => {
+      (country.companies ?? []).forEach((company) => {
+        companies.push(company);
+      });
+    });
+    return companies;
+  }
+
+  private addCompanyToCountry(settings: OrganizationCoreSettings, company: CoreCompany): OrganizationCoreSettings {
+    const currencyIds = settings.currencies.map((currency) => currency.id);
+    const newCompany: CoreCompanyConfig = {
+      id: company.id,
+      name: company.name,
+      currencyIds,
+      enterprises: [{ id: uuid(), name: 'Principal' }],
+    };
+    const countries = settings.countries.map((country) => {
+      if (country.id !== company.countryId) {
+        return country;
+      }
+      const companies = Array.isArray(country.companies) ? country.companies : [];
+      return { ...country, companies: [...companies, newCompany] };
+    });
+    return {
+      ...settings,
+      countries: this.reconcileCountryCompanies(countries, settings.currencies),
+    };
+  }
+
+  private packFlatCompaniesIntoCountries(
+    countries: CoreCountry[],
+    flatCompanies: CoreCompany[],
+    currencies: CoreCurrency[],
+  ): CoreCountry[] {
+    const countryMap = new Map(
+      countries.map((country) => [country.id, { ...country, companies: country.companies ?? [] }]),
+    );
+    flatCompanies.forEach((company) => {
+      if (!company.countryId) {
+        return;
+      }
+      if (!countryMap.has(company.countryId)) {
+        countryMap.set(company.countryId, {
+          id: company.countryId,
+          name: company.countryId,
+          code: company.countryId,
+          companies: [],
+        });
+      }
+      const target = countryMap.get(company.countryId);
+      if (!target) {
+        return;
+      }
+      const existing = (target.companies ?? []).some((item) => item.id === company.id);
+      if (existing) {
+        return;
+      }
+      target.companies = [
+        ...(target.companies ?? []),
+        {
+          id: company.id,
+          name: company.name,
+          currencyIds: currencies.map((currency) => currency.id),
+          enterprises: [{ id: uuid(), name: 'Principal' }],
+        },
+      ];
+    });
+    return this.reconcileCountryCompanies(Array.from(countryMap.values()), currencies);
+  }
+
+  private mergeCoreCountries(
+    current: CoreCountry[],
+    updates: CoreCountryInput[],
+    currencies: CoreCurrency[],
+  ): CoreCountry[] {
+    const currentMap = new Map(current.map((country) => [country.id, country]));
+    return updates.map((value) => {
+      const base = this.buildCoreCountry(value);
+      const existing = currentMap.get(base.id);
+      const companies = Array.isArray(value.companies)
+        ? this.normalizeCoreCompanyConfigs(value.companies, currencies)
+        : this.reconcileCompanyConfigs(existing?.companies ?? [], currencies);
+      return { ...base, companies };
+    });
+  }
+
+  private reconcileCountryCompanies(countries: CoreCountry[], currencies: CoreCurrency[]): CoreCountry[] {
+    return countries.map((country) => ({
+      ...country,
+      companies: this.reconcileCompanyConfigs(country.companies ?? [], currencies),
+    }));
+  }
+
+  private reconcileCompanyConfigs(companies: CoreCompanyConfig[], currencies: CoreCurrency[]): CoreCompanyConfig[] {
+    const availableCurrencyIds = currencies.map((currency) => currency.id);
+    return companies.map((company) => {
+      const requestedCurrencyIds = this.normalizeIds(company.currencyIds);
+      const filtered = requestedCurrencyIds.filter((id) => availableCurrencyIds.includes(id));
+      const currencyIds = filtered.length > 0 ? filtered : availableCurrencyIds;
+      const enterprises = Array.isArray(company.enterprises) ? company.enterprises : [];
+      const normalizedEnterprises = enterprises.filter((enterprise) => enterprise.id && enterprise.name);
+      const ensuredEnterprises =
+        normalizedEnterprises.length > 0 ? normalizedEnterprises : [{ id: uuid(), name: 'Principal' }];
+      return {
+        ...company,
+        currencyIds,
+        enterprises: ensuredEnterprises,
+      };
+    });
+  }
+
+  private async ensureDefaultCompany(
+    organization: OrganizationEntity,
+    settings: OrganizationCoreSettings,
+  ): Promise<void> {
+    const firstCountry = settings.countries[0];
+    const firstCurrency = settings.currencies[0];
+    if (!firstCountry || !firstCurrency) {
+      return;
+    }
+    const existingCompanies = await this.companiesService.listByOrganization(
+      organization.id,
+      organization.ownerUserId,
+    );
+      if (existingCompanies.length > 0) {
+        if (this.countCompanies(settings) === 0) {
+          await this.syncCoreCompaniesFromCompanies(organization.id, existingCompanies);
+        }
+        return;
+      }
+
+    const companyName = `${organization.name} ${firstCountry.name}`.trim() || 'Default';
+    const currencyIds = settings.currencies.map((currency) => currency.id);
+    const baseCurrencyId = firstCurrency.id;
+      const company = await this.companiesService.createCompany(organization.id, organization.ownerUserId, {
+      name: companyName,
+      baseCountryId: firstCountry.id,
+      baseCurrencyId,
+      currencies: currencyIds,
+      operatingCountryIds: [firstCountry.id],
+      enterprises: [
+        {
+          name: 'Principal',
+          countryId: firstCountry.id,
+          currencyIds,
+          defaultCurrencyId: baseCurrencyId,
+        },
+      ],
+      defaultEnterpriseId: undefined,
+      defaultCurrencyId: baseCurrencyId,
+      });
+
+      await this.upsertCoreCompany(organization.id, {
+        id: company.id,
+        name: company.name,
+        countryId: company.baseCountryId,
+        currencyIds: company.currencies ?? [],
+        enterprises: (company.enterprises ?? []).map((enterprise) => ({
+          id: enterprise.id,
+          name: enterprise.name,
+        })),
+      });
+    }
+
+    private async syncCoreCompaniesFromCompanies(
+      organizationId: string,
+      companies: Array<{ id: string; name: string; baseCountryId: string; currencies?: string[]; enterprises?: Array<{ id: string; name: string }> }>,
+    ): Promise<void> {
+      const organization = await this.getOrganization(organizationId);
+      const current = this.normalizeCoreSettings(organization.coreSettings);
+      const countryMap = new Map(current.countries.map((country) => [country.id, { ...country, companies: country.companies ?? [] }]));
+      companies.forEach((company) => {
+        const countryId = company.baseCountryId;
+        if (!countryId) {
+          return;
+        }
+        if (!countryMap.has(countryId)) {
+          countryMap.set(countryId, { id: countryId, name: countryId, code: countryId, companies: [] });
+        }
+        const target = countryMap.get(countryId);
+        if (!target) {
+          return;
+        }
+        const currencyIds = Array.isArray(company.currencies) && company.currencies.length > 0
+          ? company.currencies
+          : current.currencies.map((currency) => currency.id);
+        const enterprises = Array.isArray(company.enterprises) && company.enterprises.length > 0
+          ? company.enterprises.map((enterprise) => ({ id: enterprise.id, name: enterprise.name }))
+          : [{ id: uuid(), name: 'Principal' }];
+        const nextCompany: CoreCompanyConfig = {
+          id: company.id,
+          name: company.name,
+          currencyIds,
+          enterprises,
+        };
+        const existingIndex = (target.companies ?? []).findIndex((item) => item.id === company.id);
+        if (existingIndex >= 0) {
+          target.companies = (target.companies ?? []).map((item, index) => index === existingIndex ? nextCompany : item);
+        } else {
+          target.companies = [...(target.companies ?? []), nextCompany];
+        }
+      });
+      const next: OrganizationCoreSettings = {
+        ...current,
+        countries: this.reconcileCountryCompanies(Array.from(countryMap.values()), current.currencies),
+      };
+      this.validateCoreSettings(next);
+      organization.coreSettings = next;
+      await this.updateOrganizationFields(organizationId, { coreSettings: next });
+    }
+
+    async upsertCoreCompany(organizationId: string, payload: CoreCompanyInput & CoreCompanyConfigInput): Promise<void> {
+      const organization = await this.getOrganization(organizationId);
+      const current = this.normalizeCoreSettings(organization.coreSettings);
+      const company = this.coerceCoreCompany(payload);
+      if (!company) {
+        return;
+      }
+      if (!current.countries.some((country) => country.id === company.countryId)) {
+        return;
+      }
+      const targetCountry = current.countries.find((country) => country.id === company.countryId);
+      if (!targetCountry) {
+        return;
+      }
+      const nextCompanyConfig = this.coerceCoreCompanyConfig(payload, current.currencies);
+      if (!nextCompanyConfig) {
+        return;
+      }
+      const countries = current.countries.map((country) => {
+        if (country.id !== company.countryId) {
+          return country;
+        }
+        const companies = Array.isArray(country.companies) ? country.companies : [];
+        const existingIndex = companies.findIndex((item) => item.id === nextCompanyConfig.id);
+        const nextCompanies = existingIndex >= 0
+          ? companies.map((item, index) => (index === existingIndex ? nextCompanyConfig : item))
+          : [...companies, nextCompanyConfig];
+        return { ...country, companies: nextCompanies };
+      });
+      const next: OrganizationCoreSettings = {
+        ...current,
+        countries: this.reconcileCountryCompanies(countries, current.currencies),
+      };
+      this.validateCoreSettings(next);
+      organization.coreSettings = next;
+      await this.updateOrganizationFields(organizationId, { coreSettings: next });
+    }
+
+  private normalizeStoredCountries(values: CoreCountryInput[] | undefined, currencies: CoreCurrency[]): CoreCountry[] {
     if (!Array.isArray(values)) {
       return [];
     }
@@ -1738,7 +2082,8 @@ export class OrganizationsService {
         return;
       }
       usedCodes.add(codeKey);
-      result.push(country);
+      const companies = this.normalizeStoredCompanyConfigs(value.companies, currencies);
+      result.push({ ...country, companies });
     });
     return result;
   }
@@ -1785,8 +2130,11 @@ export class OrganizationsService {
     return result;
   }
 
-  private normalizeCoreCountries(values: CoreCountryInput[]): CoreCountry[] {
-    return values.map((value) => this.buildCoreCountry(value));
+  private normalizeCoreCountries(values: CoreCountryInput[], currencies: CoreCurrency[]): CoreCountry[] {
+    return values.map((value) => ({
+      ...this.buildCoreCountry(value),
+      companies: this.normalizeCoreCompanyConfigs(value.companies, currencies),
+    }));
   }
 
   private normalizeCoreCurrencies(values: CoreCurrencyInput[]): CoreCurrency[] {
@@ -1795,6 +2143,34 @@ export class OrganizationsService {
 
   private normalizeCoreCompanies(values: CoreCompanyInput[]): CoreCompany[] {
     return values.map((value) => this.buildCoreCompany(value));
+  }
+
+  private normalizeStoredCompanyConfigs(values: CoreCompanyConfigInput[] | undefined, currencies: CoreCurrency[]): CoreCompanyConfig[] {
+    if (!Array.isArray(values)) {
+      return [];
+    }
+    return this.normalizeCoreCompanyConfigs(values, currencies);
+  }
+
+  private normalizeCoreCompanyConfigs(values: CoreCompanyConfigInput[] | undefined, currencies: CoreCurrency[]): CoreCompanyConfig[] {
+    if (!Array.isArray(values)) {
+      return [];
+    }
+    const result: CoreCompanyConfig[] = [];
+    const usedNames = new Set<string>();
+    values.forEach((value) => {
+      const company = this.coerceCoreCompanyConfig(value, currencies);
+      if (!company) {
+        return;
+      }
+      const nameKey = company.name.toLowerCase();
+      if (usedNames.has(nameKey)) {
+        return;
+      }
+      usedNames.add(nameKey);
+      result.push(company);
+    });
+    return result;
   }
 
   private coerceCoreCountry(value: CoreCountryInput): CoreCountry | null {
@@ -1816,6 +2192,38 @@ export class OrganizationsService {
     const id = typeof value.id === 'string' && value.id.trim() ? value.id.trim() : uuid();
     const symbol = typeof value.symbol === 'string' && value.symbol.trim() ? value.symbol.trim() : undefined;
     return { id, name, code, symbol };
+  }
+
+  private coerceCoreEnterprise(value: CoreEnterpriseInput): CoreEnterprise | null {
+    const name = typeof value.name === 'string' ? value.name.trim() : '';
+    if (!name) {
+      return null;
+    }
+    const id = typeof value.id === 'string' && value.id.trim() ? value.id.trim() : uuid();
+    return { id, name };
+  }
+
+  private coerceCoreCompanyConfig(
+    value: CoreCompanyConfigInput,
+    currencies: CoreCurrency[],
+  ): CoreCompanyConfig | null {
+    const name = typeof value.name === 'string' ? value.name.trim() : '';
+    if (!name) {
+      return null;
+    }
+    const id = typeof value.id === 'string' && value.id.trim() ? value.id.trim() : uuid();
+    const availableCurrencyIds = currencies.map((currency) => currency.id);
+    const requestedCurrencyIds = this.normalizeIds(value.currencyIds);
+    const filteredCurrencyIds = requestedCurrencyIds.filter((currencyId) => availableCurrencyIds.includes(currencyId));
+    const currencyIds = filteredCurrencyIds.length > 0 ? filteredCurrencyIds : availableCurrencyIds;
+    const enterprisesInput = Array.isArray(value.enterprises) ? value.enterprises : [];
+    const enterprises = enterprisesInput
+      .map((enterprise) => this.coerceCoreEnterprise(enterprise))
+      .filter((enterprise): enterprise is CoreEnterprise => Boolean(enterprise));
+    if (enterprises.length === 0) {
+      enterprises.push({ id: uuid(), name: 'Principal' });
+    }
+    return { id, name, currencyIds, enterprises };
   }
 
   private coerceCoreCompany(value: CoreCompanyInput): CoreCompany | null {
@@ -1866,7 +2274,7 @@ export class OrganizationsService {
     }
   }
 
-  private assertUniqueCompanyName(companies: CoreCompany[], name: string): void {
+  private assertUniqueCompanyName(companies: CoreCompanyConfig[], name: string): void {
     const nameKey = name.trim().toLowerCase();
     if (companies.some((company) => company.name.trim().toLowerCase() === nameKey)) {
       throw new BadRequestException('Company name already exists');
@@ -1909,15 +2317,25 @@ export class OrganizationsService {
     });
 
     const companyNames = new Set<string>();
-    settings.companies.forEach((company) => {
-      const nameKey = company.name.trim().toLowerCase();
-      if (companyNames.has(nameKey)) {
-        throw new BadRequestException('Company name already exists');
-      }
-      companyNames.add(nameKey);
-      if (!countryIds.has(company.countryId)) {
-        throw new BadRequestException('Company country not found');
-      }
+    settings.countries.forEach((country) => {
+      (country.companies ?? []).forEach((company) => {
+        const nameKey = company.name.trim().toLowerCase();
+        if (companyNames.has(nameKey)) {
+          throw new BadRequestException('Company name already exists');
+        }
+        companyNames.add(nameKey);
+        if (company.currencyIds.length === 0) {
+          throw new BadRequestException('Company currencies are required');
+        }
+        company.currencyIds.forEach((currencyId) => {
+          if (!currencyIds.has(currencyId)) {
+            throw new BadRequestException('Company currency not found');
+          }
+        });
+        if (!company.enterprises || company.enterprises.length === 0) {
+          throw new BadRequestException('Company enterprises are required');
+        }
+      });
     });
   }
 

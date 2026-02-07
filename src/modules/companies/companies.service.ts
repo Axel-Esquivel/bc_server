@@ -32,6 +32,7 @@ import {
   CompanyEnterpriseInput,
   CompanyHierarchySettings,
 } from './types/company-hierarchy.types';
+import type { CoreCountry, CoreCurrency } from '../organizations/types/core-settings.types';
 
 interface CompaniesState {
   companies: CompanyEntity[];
@@ -61,6 +62,13 @@ interface NormalizedCompanyHierarchy extends CompanyHierarchySettings {
   baseCountryId: string;
   baseCurrencyId: string;
   currencyIds: string[];
+}
+
+interface CoreLookup {
+  countriesById: Map<string, CoreCountry>;
+  countriesByCode: Map<string, CoreCountry>;
+  currenciesById: Map<string, CoreCurrency>;
+  currenciesByCode: Map<string, CoreCurrency>;
 }
 
 @Injectable()
@@ -152,6 +160,16 @@ export class CompaniesService implements OnModuleInit {
 
     this.companies.push(company);
     this.persistState();
+    await this.organizationsService.upsertCoreCompany(organizationId, {
+      id: company.id,
+      name: company.name,
+      countryId: company.baseCountryId,
+      currencyIds: company.currencies ?? [],
+      enterprises: (company.enterprises ?? []).map((enterprise) => ({
+        id: enterprise.id,
+        name: enterprise.name,
+      })),
+    });
     return company;
   }
 
@@ -170,7 +188,8 @@ export class CompaniesService implements OnModuleInit {
     if (!normalizedCountryId) {
       return scoped;
     }
-    return scoped.filter((company) => this.companyMatchesCountry(company, normalizedCountryId));
+    const lookup = await this.getCoreLookup(organizationId);
+    return scoped.filter((company) => this.companyMatchesCountry(company, normalizedCountryId, lookup));
   }
 
   removeByOrganization(organizationId: string): void {
@@ -791,12 +810,17 @@ export class CompaniesService implements OnModuleInit {
     name: string,
     dto: CreateCompanyDto,
   ): Promise<NormalizedCompanyHierarchy> {
-    const operatingCountryIds = this.normalizeIdList(dto.operatingCountryIds);
+    const lookup = await this.getCoreLookup(organizationId);
+    const operatingCountryIds = this.normalizeIdList(dto.operatingCountryIds)
+      .map((id) => this.resolveCoreCountryId(lookup, id))
+      .filter((id) => id.length > 0);
     if (operatingCountryIds.length === 0) {
       throw new BadRequestException('Operating countries are required');
     }
 
-    const currencyIds = this.normalizeIdList(dto.currencyIds);
+    const currencyIds = this.normalizeIdList(dto.currencyIds)
+      .map((id) => this.resolveCoreCurrencyId(lookup, id))
+      .filter((id) => id.length > 0);
     if (currencyIds.length === 0) {
       throw new BadRequestException('Currencies are required');
     }
@@ -809,7 +833,7 @@ export class CompaniesService implements OnModuleInit {
     const enterprises: CompanyEnterpriseInput[] = [];
     let defaultEnterpriseId: string | undefined;
     groups.forEach((group) => {
-      const countryId = group.countryId?.trim();
+      const countryId = this.resolveCoreCountryId(lookup, group.countryId);
       if (!countryId) {
         throw new BadRequestException('Enterprise country is required');
       }
@@ -825,7 +849,9 @@ export class CompaniesService implements OnModuleInit {
         if (!unitName) {
           throw new BadRequestException('Enterprise name is required');
         }
-        const allowedCurrencyIds = this.normalizeIdList(unit.allowedCurrencyIds);
+        const allowedCurrencyIds = this.normalizeIdList(unit.allowedCurrencyIds)
+          .map((id) => this.resolveCoreCurrencyId(lookup, id))
+          .filter((id) => id.length > 0);
         if (allowedCurrencyIds.length === 0) {
           throw new BadRequestException('Enterprise currencies are required');
         }
@@ -834,7 +860,7 @@ export class CompaniesService implements OnModuleInit {
             throw new BadRequestException('Enterprise currencies must be within company currencies');
           }
         });
-        const baseCurrencyId = unit.baseCurrencyId?.trim();
+        const baseCurrencyId = this.resolveCoreCurrencyId(lookup, unit.baseCurrencyId);
         if (!baseCurrencyId) {
           throw new BadRequestException('Enterprise base currency is required');
         }
@@ -861,10 +887,11 @@ export class CompaniesService implements OnModuleInit {
       });
     });
 
-    const defaultCurrencyId =
+    const defaultCurrencyIdRaw =
       typeof dto.defaultCurrencyId === 'string' && dto.defaultCurrencyId.trim()
         ? dto.defaultCurrencyId.trim()
         : currencyIds[0];
+    const defaultCurrencyId = this.resolveCoreCurrencyId(lookup, defaultCurrencyIdRaw);
     if (!currencyIds.includes(defaultCurrencyId)) {
       throw new BadRequestException('Default currency must be within company currencies');
     }
@@ -885,22 +912,28 @@ export class CompaniesService implements OnModuleInit {
       enterprises,
       defaultEnterpriseId,
       defaultCurrencyId,
-    });
+    }, lookup);
   }
 
   private async normalizeHierarchyForInput(
     organizationId: string,
     input: CompanyHierarchyInput,
+    lookup?: CoreLookup,
   ): Promise<NormalizedCompanyHierarchy> {
-    await this.assertBaseCountry(organizationId, input.baseCountryId);
-    await this.assertBaseCurrency(organizationId, input.baseCurrencyId);
+    const coreLookup = lookup ?? (await this.getCoreLookup(organizationId));
+    const baseCountryId = this.resolveCoreCountryId(coreLookup, input.baseCountryId);
+    const baseCurrencyId = this.resolveCoreCurrencyId(coreLookup, input.baseCurrencyId);
+    await this.assertBaseCountry(organizationId, baseCountryId);
+    await this.assertBaseCurrency(organizationId, baseCurrencyId);
 
-    const operatingCountryIds = this.normalizeIdList(input.operatingCountryIds);
+    const operatingCountryIds = this.normalizeIdList(input.operatingCountryIds)
+      .map((id) => this.resolveCoreCountryId(coreLookup, id))
+      .filter((id) => id.length > 0);
     if (operatingCountryIds.length === 0) {
-      operatingCountryIds.push(input.baseCountryId);
+      operatingCountryIds.push(baseCountryId);
     }
-    if (!operatingCountryIds.includes(input.baseCountryId)) {
-      operatingCountryIds.push(input.baseCountryId);
+    if (!operatingCountryIds.includes(baseCountryId)) {
+      operatingCountryIds.push(baseCountryId);
     }
 
     for (const countryId of operatingCountryIds) {
@@ -909,8 +942,13 @@ export class CompaniesService implements OnModuleInit {
 
     const enterprises = await this.normalizeEnterprisesForInput(
       organizationId,
-      input,
+      {
+        ...input,
+        baseCountryId,
+        baseCurrencyId,
+      },
       operatingCountryIds,
+      coreLookup,
     );
 
     const defaultEnterpriseId = this.resolveDefaultEnterpriseId(
@@ -932,7 +970,7 @@ export class CompaniesService implements OnModuleInit {
 
     const currencyIds = this.normalizeIdList(
       enterprises.flatMap((enterprise) => enterprise.currencyIds),
-    );
+    ).map((id) => this.resolveCoreCurrencyId(coreLookup, id));
     for (const currencyId of currencyIds) {
       await this.assertBaseCurrency(organizationId, currencyId);
     }
@@ -1029,19 +1067,25 @@ export class CompaniesService implements OnModuleInit {
     organizationId: string,
     input: CompanyHierarchyInput,
     operatingCountryIds: string[],
+    lookup: CoreLookup,
   ): Promise<CompanyEnterprise[]> {
     const enterprisesInput = Array.isArray(input.enterprises) ? input.enterprises : [];
     if (enterprisesInput.length === 0) {
       const fallbackCurrencies = this.normalizeIdList(input.currencies);
       const normalizedCurrencies =
         fallbackCurrencies.length > 0 ? fallbackCurrencies : [input.baseCurrencyId];
+      const canonicalCurrencies = normalizedCurrencies
+        .map((id) => this.resolveCoreCurrencyId(lookup, id))
+        .filter((id) => id.length > 0);
       return [
         {
           id: uuid(),
           name: input.name,
-          countryId: input.baseCountryId,
-          currencyIds: this.normalizeIdList([...normalizedCurrencies, input.baseCurrencyId]),
-          defaultCurrencyId: input.baseCurrencyId,
+          countryId: this.resolveCoreCountryId(lookup, input.baseCountryId),
+          currencyIds: this.normalizeIdList([...canonicalCurrencies, input.baseCurrencyId]).map((id) =>
+            this.resolveCoreCurrencyId(lookup, id),
+          ),
+          defaultCurrencyId: this.resolveCoreCurrencyId(lookup, input.baseCurrencyId),
         },
       ];
     }
@@ -1052,7 +1096,7 @@ export class CompaniesService implements OnModuleInit {
       if (!name) {
         throw new BadRequestException('Enterprise name is required');
       }
-      const countryId = enterprise.countryId?.trim();
+      const countryId = this.resolveCoreCountryId(lookup, enterprise.countryId);
       if (!countryId) {
         throw new BadRequestException('Enterprise country is required');
       }
@@ -1062,17 +1106,20 @@ export class CompaniesService implements OnModuleInit {
         operatingCountryIds.push(countryId);
       }
 
-      const currencyIds = this.normalizeIdList(enterprise.currencyIds);
+      const currencyIds = this.normalizeIdList(enterprise.currencyIds)
+        .map((id) => this.resolveCoreCurrencyId(lookup, id))
+        .filter((id) => id.length > 0);
       const normalizedCurrencies =
         currencyIds.length > 0 ? currencyIds : [input.baseCurrencyId];
       for (const currencyId of normalizedCurrencies) {
         await this.assertBaseCurrency(organizationId, currencyId);
       }
 
-      const defaultCurrencyId =
+      const defaultCurrencyIdRaw =
         typeof enterprise.defaultCurrencyId === 'string' && enterprise.defaultCurrencyId.trim()
           ? enterprise.defaultCurrencyId.trim()
           : normalizedCurrencies[0] ?? input.baseCurrencyId;
+      const defaultCurrencyId = this.resolveCoreCurrencyId(lookup, defaultCurrencyIdRaw);
       const normalizedCurrencyIds = this.normalizeIdList([
         ...normalizedCurrencies,
         defaultCurrencyId,
@@ -1082,7 +1129,7 @@ export class CompaniesService implements OnModuleInit {
         id: enterprise.id ?? uuid(),
         name,
         countryId,
-        currencyIds: normalizedCurrencyIds,
+        currencyIds: normalizedCurrencyIds.map((id) => this.resolveCoreCurrencyId(lookup, id)),
         defaultCurrencyId,
       });
     }
@@ -1239,16 +1286,84 @@ export class CompaniesService implements OnModuleInit {
       });
   }
 
-  private companyMatchesCountry(company: CompanyEntity, countryId: string): boolean {
-    if (company.baseCountryId === countryId) {
+  private companyMatchesCountry(company: CompanyEntity, countryId: string, lookup: CoreLookup): boolean {
+    const normalizedCountryId = this.resolveCoreCountryId(lookup, countryId);
+    const baseCountryId = this.resolveCoreCountryId(lookup, company.baseCountryId);
+    if (baseCountryId === normalizedCountryId) {
       return true;
     }
-    if (Array.isArray(company.operatingCountryIds) && company.operatingCountryIds.includes(countryId)) {
-      return true;
+    if (Array.isArray(company.operatingCountryIds)) {
+      const matchesOperating = company.operatingCountryIds.some((id) =>
+        this.resolveCoreCountryId(lookup, id) === normalizedCountryId,
+      );
+      if (matchesOperating) {
+        return true;
+      }
     }
-    if (Array.isArray(company.enterprises) && company.enterprises.some((enterprise) => enterprise.countryId === countryId)) {
-      return true;
+    if (Array.isArray(company.enterprises)) {
+      const matchesEnterprise = company.enterprises.some(
+        (enterprise) => this.resolveCoreCountryId(lookup, enterprise.countryId) === normalizedCountryId,
+      );
+      if (matchesEnterprise) {
+        return true;
+      }
     }
     return false;
+  }
+
+  private async getCoreLookup(organizationId: string): Promise<CoreLookup> {
+    const coreSettings = await this.organizationsService.getCoreSettings(organizationId);
+    const countriesById = new Map<string, CoreCountry>();
+    const countriesByCode = new Map<string, CoreCountry>();
+    coreSettings.countries.forEach((country) => {
+      countriesById.set(country.id, country);
+      if (country.code) {
+        countriesByCode.set(country.code.toUpperCase(), country);
+      }
+    });
+    const currenciesById = new Map<string, CoreCurrency>();
+    const currenciesByCode = new Map<string, CoreCurrency>();
+    coreSettings.currencies.forEach((currency) => {
+      currenciesById.set(currency.id, currency);
+      if (currency.code) {
+        currenciesByCode.set(currency.code.toUpperCase(), currency);
+      }
+    });
+    return {
+      countriesById,
+      countriesByCode,
+      currenciesById,
+      currenciesByCode,
+    };
+  }
+
+  private resolveCoreCountryId(lookup: CoreLookup, value: string | null | undefined): string {
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    if (!trimmed) {
+      return '';
+    }
+    if (lookup.countriesById.has(trimmed)) {
+      return trimmed;
+    }
+    const codeMatch = lookup.countriesByCode.get(trimmed.toUpperCase());
+    if (codeMatch) {
+      return codeMatch.id;
+    }
+    return trimmed;
+  }
+
+  private resolveCoreCurrencyId(lookup: CoreLookup, value: string | null | undefined): string {
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    if (!trimmed) {
+      return '';
+    }
+    if (lookup.currenciesById.has(trimmed)) {
+      return trimmed;
+    }
+    const codeMatch = lookup.currenciesByCode.get(trimmed.toUpperCase());
+    if (codeMatch) {
+      return codeMatch.id;
+    }
+    return trimmed;
   }
 }

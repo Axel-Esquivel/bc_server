@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
 import type { OrganizationCoreSettingsUpdate } from '../types/core-settings.types';
 
 export class CoreCountryUpdateDto {
@@ -14,6 +14,12 @@ export class CoreCountryUpdateDto {
   @IsString()
   @IsNotEmpty()
   code!: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CoreCompanyConfigUpdateDto)
+  @IsOptional()
+  companies?: CoreCompanyConfigUpdateDto[];
 }
 
 export class CoreCurrencyUpdateDto {
@@ -34,7 +40,17 @@ export class CoreCurrencyUpdateDto {
   symbol?: string;
 }
 
-export class CoreCompanyUpdateDto {
+export class CoreEnterpriseUpdateDto {
+  @IsString()
+  @IsOptional()
+  id?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+}
+
+export class CoreCompanyConfigUpdateDto {
   @IsString()
   @IsOptional()
   id?: string;
@@ -43,9 +59,17 @@ export class CoreCompanyUpdateDto {
   @IsNotEmpty()
   name!: string;
 
-  @IsString()
-  @IsNotEmpty()
-  countryId!: string;
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayNotEmpty()
+  @IsOptional()
+  currencyIds?: string[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CoreEnterpriseUpdateDto)
+  @IsOptional()
+  enterprises?: CoreEnterpriseUpdateDto[];
 }
 
 export class UpdateCoreSettingsDto implements OrganizationCoreSettingsUpdate {
@@ -60,10 +84,4 @@ export class UpdateCoreSettingsDto implements OrganizationCoreSettingsUpdate {
   @Type(() => CoreCurrencyUpdateDto)
   @IsOptional()
   currencies?: CoreCurrencyUpdateDto[];
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => CoreCompanyUpdateDto)
-  @IsOptional()
-  companies?: CoreCompanyUpdateDto[];
 }
