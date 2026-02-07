@@ -271,8 +271,16 @@ export class OrganizationsService {
 
   async getCoreSettings(organizationId: string): Promise<OrganizationCoreSettings> {
     const organization = await this.getOrganization(organizationId);
-    const normalized = this.normalizeCoreSettings(organization.coreSettings);
+    const raw = organization.coreSettings;
+    const normalized = this.normalizeCoreSettings(raw);
     organization.coreSettings = normalized;
+    if (this.coreSettingsNeedsPersist(raw, normalized)) {
+      await this.updateOrganizationFields(organizationId, {
+        coreSettings: normalized,
+        countryIds: this.buildCoreCountryIds(normalized),
+        currencyIds: this.buildCoreCurrencyIds(normalized),
+      });
+    }
     return this.cloneCoreSettings(normalized);
   }
 
@@ -1669,6 +1677,65 @@ export class OrganizationsService {
     }
 
     return this.buildCoreSettingsFromLegacy(candidate);
+  }
+
+  private coreSettingsNeedsPersist(
+    raw: unknown,
+    normalized: OrganizationCoreSettings,
+  ): boolean {
+    if (!raw || typeof raw !== 'object') {
+      return false;
+    }
+    const candidate = raw as Partial<OrganizationCoreSettings> & { companies?: CoreCompanyInput[] };
+    if (Array.isArray(candidate.companies)) {
+      return true;
+    }
+    const rawCountries = Array.isArray(candidate.countries) ? candidate.countries : [];
+    const companyMap = new Map<string, Map<string, Partial<CoreCompanyConfig>>>();
+    rawCountries.forEach((country) => {
+      if (!country || typeof country !== 'object') {
+        return;
+      }
+      const countryId = typeof country.id === 'string' ? country.id : '';
+      const companies = Array.isArray(country.companies) ? country.companies : [];
+      const companyById = new Map<string, Partial<CoreCompanyConfig>>();
+      companies.forEach((company) => {
+        if (!company || typeof company !== 'object') {
+          return;
+        }
+        const companyId = typeof company.id === 'string' ? company.id : '';
+        if (companyId) {
+          companyById.set(companyId, company);
+        }
+      });
+      if (countryId) {
+        companyMap.set(countryId, companyById);
+      }
+    });
+
+    for (const country of normalized.countries) {
+      const companies = country.companies ?? [];
+      if (companies.length === 0) {
+        continue;
+      }
+      const byCompanyId = companyMap.get(country.id);
+      for (const company of companies) {
+        const rawCompany = byCompanyId?.get(company.id);
+        if (!rawCompany) {
+          return true;
+        }
+        const rawCurrencyIds = Array.isArray(rawCompany.currencyIds) ? rawCompany.currencyIds : null;
+        const rawEnterprises = Array.isArray(rawCompany.enterprises) ? rawCompany.enterprises : null;
+        if (!rawCurrencyIds || !rawEnterprises) {
+          return true;
+        }
+        if (rawCurrencyIds.length === 0 && company.currencyIds.length > 0) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   private buildCoreSettingsFromLegacy(
