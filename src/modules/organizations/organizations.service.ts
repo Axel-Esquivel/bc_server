@@ -1832,12 +1832,7 @@ export class OrganizationsService {
       id: company.id,
       name: company.name,
       currencyIds,
-      enterprises: [{
-        id: uuid(),
-        name: 'Principal',
-        allowedCurrencyIds: currencyIds,
-        baseCurrencyId: currencyIds[0],
-      }],
+      enterprises: [],
     };
     const countries = settings.countries.map((country) => {
       if (country.id !== company.countryId) {
@@ -1886,7 +1881,7 @@ export class OrganizationsService {
           id: company.id,
           name: company.name,
           currencyIds: currencies.map((currency) => currency.id),
-          enterprises: [{ id: uuid(), name: 'Principal' }],
+          enterprises: [],
         },
       ];
     });
@@ -1926,19 +1921,10 @@ export class OrganizationsService {
       const normalizedEnterprises = enterprises
         .map((enterprise) => this.coerceCoreEnterprise(enterprise, currencyIds))
         .filter((enterprise): enterprise is CoreEnterprise => Boolean(enterprise));
-      const ensuredEnterprises =
-        normalizedEnterprises.length > 0
-          ? normalizedEnterprises
-          : [{
-              id: uuid(),
-              name: 'Principal',
-              allowedCurrencyIds: currencyIds,
-              baseCurrencyId: currencyIds[0],
-            }];
       return {
         ...company,
         currencyIds,
-        enterprises: ensuredEnterprises,
+        enterprises: normalizedEnterprises,
       };
     });
   }
@@ -1966,23 +1952,16 @@ export class OrganizationsService {
     const companyName = `${organization.name} ${firstCountry.name}`.trim() || 'Default';
     const currencyIds = settings.currencies.map((currency) => currency.id);
     const baseCurrencyId = firstCurrency.id;
-      const company = await this.companiesService.createCompany(organization.id, organization.ownerUserId, {
+    const company = await this.companiesService.createCompany(organization.id, organization.ownerUserId, {
       name: companyName,
       baseCountryId: firstCountry.id,
       baseCurrencyId,
       currencies: currencyIds,
       operatingCountryIds: [firstCountry.id],
-      enterprises: [
-        {
-          name: 'Principal',
-          countryId: firstCountry.id,
-          currencyIds,
-          defaultCurrencyId: baseCurrencyId,
-        },
-      ],
+      enterprises: [],
       defaultEnterpriseId: undefined,
       defaultCurrencyId: baseCurrencyId,
-      });
+    });
 
       await this.upsertCoreCompany(organization.id, {
         id: company.id,
@@ -2018,7 +1997,7 @@ export class OrganizationsService {
         const currencyIds = Array.isArray(company.currencies) && company.currencies.length > 0
           ? company.currencies
           : current.currencies.map((currency) => currency.id);
-        const enterprises = Array.isArray(company.enterprises) && company.enterprises.length > 0
+        const enterprises = Array.isArray(company.enterprises)
           ? company.enterprises.map((enterprise) => ({
               id: enterprise.id,
               name: enterprise.name,
@@ -2026,12 +2005,7 @@ export class OrganizationsService {
               baseCurrencyId: enterprise.defaultCurrencyId ?? (enterprise.currencyIds?.[0] ?? currencyIds[0]),
               countryId: enterprise.countryId,
             }))
-          : [{
-              id: uuid(),
-              name: 'Principal',
-              allowedCurrencyIds: currencyIds,
-              baseCurrencyId: currencyIds[0],
-            }];
+          : [];
         const nextCompany: CoreCompanyConfig = {
           id: company.id,
           name: company.name,
@@ -2267,14 +2241,6 @@ export class OrganizationsService {
     const enterprises = enterprisesInput
       .map((enterprise) => this.coerceCoreEnterprise(enterprise, currencyIds))
       .filter((enterprise): enterprise is CoreEnterprise => Boolean(enterprise));
-    if (enterprises.length === 0) {
-      enterprises.push({
-        id: uuid(),
-        name: 'Principal',
-        allowedCurrencyIds: currencyIds,
-        baseCurrencyId: currencyIds[0],
-      });
-    }
     return { id, name, currencyIds, enterprises };
   }
 
@@ -2384,10 +2350,8 @@ export class OrganizationsService {
             throw new BadRequestException('Company currency not found');
           }
         });
-        if (!company.enterprises || company.enterprises.length === 0) {
-          throw new BadRequestException('Company enterprises are required');
-        }
-        company.enterprises.forEach((enterprise) => {
+        const enterprises = Array.isArray(company.enterprises) ? company.enterprises : [];
+        enterprises.forEach((enterprise) => {
           if (!enterprise.name.trim()) {
             throw new BadRequestException('Enterprise name is required');
           }

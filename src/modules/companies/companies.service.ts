@@ -951,16 +951,42 @@ export class CompaniesService implements OnModuleInit {
       coreLookup,
     );
 
-    const defaultEnterpriseId = this.resolveDefaultEnterpriseId(
-      input.defaultEnterpriseId,
-      enterprises,
-    );
+    if (enterprises.length === 0) {
+      const requestedCurrencyIds = this.normalizeIdList(input.currencies);
+      const resolvedCurrencyIds = requestedCurrencyIds
+        .map((id) => this.resolveCoreCurrencyId(coreLookup, id))
+        .filter((id) => id.length > 0);
+      const baseCurrencyResolved = this.resolveCoreCurrencyId(coreLookup, baseCurrencyId);
+      const currencyIds = this.normalizeIdList(
+        resolvedCurrencyIds.length > 0 ? resolvedCurrencyIds : [baseCurrencyResolved],
+      );
+      if (!currencyIds.includes(baseCurrencyResolved)) {
+        currencyIds.push(baseCurrencyResolved);
+      }
+      for (const currencyId of currencyIds) {
+        await this.assertBaseCurrency(organizationId, currencyId);
+      }
+      const requestedDefaultRaw =
+        typeof input.defaultCurrencyId === 'string' && input.defaultCurrencyId.trim()
+          ? input.defaultCurrencyId.trim()
+          : baseCurrencyResolved;
+      const requestedDefault = this.resolveCoreCurrencyId(coreLookup, requestedDefaultRaw);
+      const defaultCurrencyId = currencyIds.includes(requestedDefault) ? requestedDefault : currencyIds[0];
+      return {
+        baseCountryId,
+        baseCurrencyId: baseCurrencyResolved,
+        currencyIds,
+        operatingCountryIds: this.normalizeIdList(operatingCountryIds),
+        enterprises,
+        defaultEnterpriseId: null,
+        defaultCurrencyId,
+      };
+    }
+
+    const defaultEnterpriseId = this.resolveDefaultEnterpriseId(input.defaultEnterpriseId, enterprises);
     const defaultEnterprise =
       enterprises.find((enterprise) => enterprise.id === defaultEnterpriseId) ?? enterprises[0];
-    const defaultCurrencyId = this.resolveDefaultCurrencyId(
-      input.defaultCurrencyId,
-      defaultEnterprise,
-    );
+    const defaultCurrencyId = this.resolveDefaultCurrencyId(input.defaultCurrencyId, defaultEnterprise);
     if (!defaultEnterprise.currencyIds.includes(defaultCurrencyId)) {
       defaultEnterprise.currencyIds = this.normalizeIdList([
         ...defaultEnterprise.currencyIds,
@@ -996,48 +1022,56 @@ export class CompaniesService implements OnModuleInit {
     }
 
     const enterprisesInput = Array.isArray(input.enterprises) ? input.enterprises : [];
-    const enterprises =
-      enterprisesInput.length > 0
-        ? enterprisesInput.map((enterprise) => {
-            const currencyIds = this.normalizeIdList(enterprise.currencyIds ?? input.currencies);
-            const normalizedCurrencies =
-              currencyIds.length > 0 ? currencyIds : [input.baseCurrencyId];
-            const defaultCurrencyId =
-              typeof enterprise.defaultCurrencyId === 'string' && enterprise.defaultCurrencyId.trim()
-                ? enterprise.defaultCurrencyId.trim()
-                : normalizedCurrencies[0] ?? input.baseCurrencyId;
-            const normalizedCurrencyIds = this.normalizeIdList([
-              ...normalizedCurrencies,
-              defaultCurrencyId,
-            ]);
-            return {
-              id: enterprise.id ?? uuid(),
-              name: enterprise.name?.trim() || input.name,
-              countryId: enterprise.countryId || input.baseCountryId,
-              currencyIds: normalizedCurrencyIds,
-              defaultCurrencyId,
-            };
-          })
-        : [
-            {
-              id: uuid(),
-              name: input.name,
-              countryId: input.baseCountryId,
-              currencyIds: this.normalizeIdList([input.baseCurrencyId]),
-              defaultCurrencyId: input.baseCurrencyId,
-            },
-          ];
+    const enterprises = enterprisesInput.length > 0
+      ? enterprisesInput.map((enterprise) => {
+          const currencyIds = this.normalizeIdList(enterprise.currencyIds ?? input.currencies);
+          const normalizedCurrencies =
+            currencyIds.length > 0 ? currencyIds : [input.baseCurrencyId];
+          const defaultCurrencyId =
+            typeof enterprise.defaultCurrencyId === 'string' && enterprise.defaultCurrencyId.trim()
+              ? enterprise.defaultCurrencyId.trim()
+              : normalizedCurrencies[0] ?? input.baseCurrencyId;
+          const normalizedCurrencyIds = this.normalizeIdList([
+            ...normalizedCurrencies,
+            defaultCurrencyId,
+          ]);
+          return {
+            id: enterprise.id ?? uuid(),
+            name: enterprise.name?.trim() || input.name,
+            countryId: enterprise.countryId || input.baseCountryId,
+            currencyIds: normalizedCurrencyIds,
+            defaultCurrencyId,
+          };
+        })
+      : [];
 
-    const defaultEnterpriseId = this.resolveDefaultEnterpriseId(
-      input.defaultEnterpriseId,
-      enterprises,
-    );
+    if (enterprises.length === 0) {
+      const fallbackCurrencyIds = this.normalizeIdList(input.currencies);
+      const currencyIds = this.normalizeIdList(
+        fallbackCurrencyIds.length > 0 ? fallbackCurrencyIds : [input.baseCurrencyId],
+      );
+      const requestedDefault =
+        typeof input.defaultCurrencyId === 'string' && input.defaultCurrencyId.trim()
+          ? input.defaultCurrencyId.trim()
+          : input.baseCurrencyId;
+      const defaultCurrencyId = currencyIds.includes(requestedDefault)
+        ? requestedDefault
+        : currencyIds[0] ?? input.baseCurrencyId;
+      return {
+        baseCountryId: input.baseCountryId,
+        baseCurrencyId: input.baseCurrencyId,
+        currencyIds: this.normalizeIdList([...currencyIds, input.baseCurrencyId]),
+        operatingCountryIds: this.normalizeIdList([...operatingCountryIds, input.baseCountryId]),
+        enterprises,
+        defaultEnterpriseId: null,
+        defaultCurrencyId,
+      };
+    }
+
+    const defaultEnterpriseId = this.resolveDefaultEnterpriseId(input.defaultEnterpriseId, enterprises);
     const defaultEnterprise =
       enterprises.find((enterprise) => enterprise.id === defaultEnterpriseId) ?? enterprises[0];
-    const defaultCurrencyId = this.resolveDefaultCurrencyId(
-      input.defaultCurrencyId,
-      defaultEnterprise,
-    );
+    const defaultCurrencyId = this.resolveDefaultCurrencyId(input.defaultCurrencyId, defaultEnterprise);
     if (!defaultEnterprise.currencyIds.includes(defaultCurrencyId)) {
       defaultEnterprise.currencyIds = this.normalizeIdList([
         ...defaultEnterprise.currencyIds,
@@ -1071,23 +1105,7 @@ export class CompaniesService implements OnModuleInit {
   ): Promise<CompanyEnterprise[]> {
     const enterprisesInput = Array.isArray(input.enterprises) ? input.enterprises : [];
     if (enterprisesInput.length === 0) {
-      const fallbackCurrencies = this.normalizeIdList(input.currencies);
-      const normalizedCurrencies =
-        fallbackCurrencies.length > 0 ? fallbackCurrencies : [input.baseCurrencyId];
-      const canonicalCurrencies = normalizedCurrencies
-        .map((id) => this.resolveCoreCurrencyId(lookup, id))
-        .filter((id) => id.length > 0);
-      return [
-        {
-          id: uuid(),
-          name: input.name,
-          countryId: this.resolveCoreCountryId(lookup, input.baseCountryId),
-          currencyIds: this.normalizeIdList([...canonicalCurrencies, input.baseCurrencyId]).map((id) =>
-            this.resolveCoreCurrencyId(lookup, id),
-          ),
-          defaultCurrencyId: this.resolveCoreCurrencyId(lookup, input.baseCurrencyId),
-        },
-      ];
+      return [];
     }
 
     const normalized: CompanyEnterprise[] = [];
