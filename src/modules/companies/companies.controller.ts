@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CompanyPermission } from './decorators/company-permission.decorator';
 import { AddCompanyMemberDto } from './dto/add-company-member.dto';
 import { CreateCompanyDto } from './dto/create-company.dto';
+import { ListOrganizationCompaniesDto } from './dto/list-organization-companies.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { UpdateCompanyMemberRoleDto } from './dto/update-company-member-role.dto';
 import { CompaniesService } from './companies.service';
@@ -29,8 +30,12 @@ export class CompaniesController {
 
   @UseGuards(JwtAuthGuard)
   @Get('organizations/:orgId/companies')
-  async list(@Req() req: any, @Param('orgId') orgId: string) {
-    const companies = await this.companiesService.listByOrganization(orgId, req.user.sub);
+  async list(
+    @Req() req: any,
+    @Param('orgId') orgId: string,
+    @Query() query: ListOrganizationCompaniesDto,
+  ) {
+    const companies = await this.companiesService.listByOrganization(orgId, req.user.sub, query.countryId);
     return {
       message: 'Companies loaded',
       result: companies,

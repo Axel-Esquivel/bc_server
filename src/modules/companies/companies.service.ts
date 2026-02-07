@@ -155,13 +155,22 @@ export class CompaniesService implements OnModuleInit {
     return company;
   }
 
-  async listByOrganization(organizationId: string, userId: string): Promise<CompanyEntity[]> {
+  async listByOrganization(
+    organizationId: string,
+    userId: string,
+    countryId?: string,
+  ): Promise<CompanyEntity[]> {
     const orgRole = await this.organizationsService.getMemberRole(organizationId, userId);
     if (!orgRole) {
       throw new ForbiddenException('Organization membership not found');
     }
 
-    return this.companies.filter((company) => company.organizationId === organizationId);
+    const scoped = this.companies.filter((company) => company.organizationId === organizationId);
+    const normalizedCountryId = typeof countryId === 'string' ? countryId.trim() : '';
+    if (!normalizedCountryId) {
+      return scoped;
+    }
+    return scoped.filter((company) => this.companyMatchesCountry(company, normalizedCountryId));
   }
 
   removeByOrganization(organizationId: string): void {
@@ -1228,5 +1237,18 @@ export class CompaniesService implements OnModuleInit {
         const message = error instanceof Error ? error.stack ?? error.message : String(error);
         this.logger.error(`Failed to persist companies: ${message}`);
       });
+  }
+
+  private companyMatchesCountry(company: CompanyEntity, countryId: string): boolean {
+    if (company.baseCountryId === countryId) {
+      return true;
+    }
+    if (Array.isArray(company.operatingCountryIds) && company.operatingCountryIds.includes(countryId)) {
+      return true;
+    }
+    if (Array.isArray(company.enterprises) && company.enterprises.some((enterprise) => enterprise.countryId === countryId)) {
+      return true;
+    }
+    return false;
   }
 }

@@ -210,8 +210,17 @@ export class UsersService {
     if (!enterprise) {
       throw new BadRequestException('Enterprise not found for company');
     }
-    if (!enterprise.currencyIds?.includes(currencyId)) {
-      throw new BadRequestException('Currency not allowed for enterprise');
+    const allowedCurrencyIds = new Set<string>();
+    (enterprise.currencyIds ?? []).forEach((id) => allowedCurrencyIds.add(id));
+    if (enterprise.defaultCurrencyId) {
+      allowedCurrencyIds.add(enterprise.defaultCurrencyId);
+    }
+    (company.currencies ?? []).forEach((id) => allowedCurrencyIds.add(id));
+    if (company.baseCurrencyId) {
+      allowedCurrencyIds.add(company.baseCurrencyId);
+    }
+    if (!allowedCurrencyIds.has(currencyId)) {
+      throw new BadRequestException('Currency not allowed for company');
     }
 
     user.defaultCurrencyId = currencyId;
