@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { CompaniesModule } from '../companies/companies.module';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
+import { ContextController } from './context.controller';
 import { User, UserSchema } from './schemas/user.schema';
 
 @Module({
@@ -12,7 +13,7 @@ import { User, UserSchema } from './schemas/user.schema';
     forwardRef(() => CompaniesModule),
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
   ],
-  controllers: [UsersController],
+  controllers: [UsersController, ContextController],
   providers: [UsersService],
   exports: [UsersService],
 })

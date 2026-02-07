@@ -14,6 +14,26 @@ class UserOrganizationMembership {
 
 const UserOrganizationMembershipSchema = SchemaFactory.createForClass(UserOrganizationMembership);
 
+@Schema({ _id: false })
+class UserDefaults {
+  @Prop()
+  organizationId?: string;
+
+  @Prop()
+  companyId?: string;
+
+  @Prop()
+  enterpriseId?: string;
+
+  @Prop()
+  countryId?: string;
+
+  @Prop()
+  currencyId?: string;
+}
+
+const UserDefaultsSchema = SchemaFactory.createForClass(UserDefaults);
+
 @Schema({ collection: 'users', timestamps: true })
 export class User {
   @Prop({ required: true, unique: true, index: true })
@@ -51,6 +71,9 @@ export class User {
 
   @Prop()
   defaultCurrencyId?: string;
+
+  @Prop({ type: UserDefaultsSchema, default: {} })
+  defaults?: UserDefaults;
 
   @Prop()
   createdAt?: Date;

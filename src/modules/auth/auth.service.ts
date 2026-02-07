@@ -202,10 +202,11 @@ export class AuthService {
 
   private async resolveActiveContext(userId: string): Promise<ActiveContext> {
     const user = await this.usersService.findById(userId);
+    const defaults = user.defaults ?? {};
     const memberships = (await this.organizationsService.listMembershipsByUser(userId)).filter(
       (member) => member.status === OrganizationMemberStatus.Active,
     );
-    const preferredOrgId = user.defaultOrganizationId;
+    const preferredOrgId = defaults.organizationId ?? user.defaultOrganizationId;
     const resolvedMembership =
       preferredOrgId && memberships.some((member) => member.organizationId === preferredOrgId)
         ? memberships.find((member) => member.organizationId === preferredOrgId) ?? null
@@ -218,24 +219,31 @@ export class AuthService {
     const companies = (await this.companiesService.listByUser(userId)).filter(
       (company) => company.organizationId === organizationId,
     );
-    const preferredCompanyId = user.defaultCompanyId ?? null;
+    const preferredCompanyId = defaults.companyId ?? user.defaultCompanyId ?? null;
     const company =
       preferredCompanyId && companies.some((item) => item.id === preferredCompanyId)
         ? companies.find((item) => item.id === preferredCompanyId) ?? null
         : null;
-    const preferredEnterpriseId = user.defaultEnterpriseId ?? null;
+    const preferredEnterpriseId = defaults.enterpriseId ?? user.defaultEnterpriseId ?? null;
     const enterpriseId =
       preferredEnterpriseId && company?.enterprises?.some((item) => item.id === preferredEnterpriseId)
         ? preferredEnterpriseId
         : company?.defaultEnterpriseId ?? company?.enterprises?.[0]?.id ?? null;
     const enterprise = company?.enterprises?.find((item) => item.id === enterpriseId) ?? null;
+    const countryId = defaults.countryId ?? enterprise?.countryId ?? company?.baseCountryId ?? null;
     const currencyId = company
-      ? await this.resolveCompanyCurrency(organizationId, company, enterprise, user.defaultCurrencyId ?? null)
+      ? await this.resolveCompanyCurrency(
+        organizationId,
+        company,
+        enterprise,
+        defaults.currencyId ?? user.defaultCurrencyId ?? null,
+      )
       : null;
 
     return {
       organizationId,
       companyId: company?.id ?? null,
+      countryId,
       enterpriseId,
       currencyId,
     };
@@ -277,6 +285,7 @@ export class AuthService {
     return {
       organizationId: null,
       companyId: null,
+      countryId: null,
       enterpriseId: null,
       currencyId: null,
     };

@@ -12,7 +12,7 @@ import * as bcrypt from 'bcrypt';
 import { v4 as uuid } from 'uuid';
 import { Model } from 'mongoose';
 import { CreateUserDto } from './dto/create-user.dto';
-import { OrganizationMembership, SafeUser, UserEntity } from './entities/user.entity';
+import { OrganizationMembership, SafeUser, UserDefaults, UserEntity } from './entities/user.entity';
 import { User, UserDocument } from './schemas/user.schema';
 import { CompaniesService } from '../companies/companies.service';
 
@@ -35,6 +35,13 @@ export class UsersService {
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
+    const defaults: UserDefaults = {
+      organizationId: dto.defaultOrganizationId ?? dto.OrganizationId,
+      companyId: dto.defaultCompanyId,
+      enterpriseId: dto.defaultEnterpriseId,
+      currencyId: dto.defaultCurrencyId,
+    };
+
     const newUser: UserEntity = {
       id: uuid(),
       email: normalizedEmail,
@@ -44,10 +51,11 @@ export class UsersService {
       passwordHash,
       Organizations: dto.OrganizationId ? [{ OrganizationId: dto.OrganizationId, roles: [] }] : [],
       devices: [],
-      defaultOrganizationId: dto.defaultOrganizationId ?? dto.OrganizationId,
-      defaultCompanyId: dto.defaultCompanyId,
-      defaultEnterpriseId: dto.defaultEnterpriseId,
-      defaultCurrencyId: dto.defaultCurrencyId,
+      defaultOrganizationId: defaults.organizationId,
+      defaultCompanyId: defaults.companyId,
+      defaultEnterpriseId: defaults.enterpriseId,
+      defaultCurrencyId: defaults.currencyId,
+      defaults,
       createdAt: new Date(),
     };
 
@@ -139,6 +147,7 @@ export class UsersService {
     }
 
     user.defaultOrganizationId = organizationId;
+    user.defaults = this.mergeDefaults(user, { organizationId });
     await user.save();
     return this.toSafeUser(user.toObject() as UserEntity);
   }
@@ -150,6 +159,7 @@ export class UsersService {
     }
 
     user.defaultCompanyId = companyId;
+    user.defaults = this.mergeDefaults(user, { companyId });
     await user.save();
     return this.toSafeUser(user.toObject() as UserEntity);
   }
@@ -163,13 +173,17 @@ export class UsersService {
       throw new BadRequestException('Enterprise is required');
     }
 
-    const company = this.resolveUserCompany(userId, user.defaultCompanyId);
+    const company = this.resolveUserCompany(userId, user.defaults?.companyId ?? user.defaultCompanyId);
     const enterprise = company.enterprises?.find((item) => item.id === enterpriseId) ?? null;
     if (!enterprise) {
       throw new BadRequestException('Enterprise not found for company');
     }
 
     user.defaultEnterpriseId = enterpriseId;
+    user.defaults = this.mergeDefaults(user, {
+      enterpriseId,
+      countryId: enterprise.countryId,
+    });
     if (user.defaultCurrencyId && !enterprise.currencyIds?.includes(user.defaultCurrencyId)) {
       user.defaultCurrencyId = undefined;
     }
@@ -186,7 +200,7 @@ export class UsersService {
       throw new BadRequestException('Currency is required');
     }
 
-    const company = this.resolveUserCompany(userId, user.defaultCompanyId);
+    const company = this.resolveUserCompany(userId, user.defaults?.companyId ?? user.defaultCompanyId);
     const enterpriseId =
       (user.defaultEnterpriseId &&
       company.enterprises?.some((item) => item.id === user.defaultEnterpriseId))
@@ -201,6 +215,114 @@ export class UsersService {
     }
 
     user.defaultCurrencyId = currencyId;
+    user.defaults = this.mergeDefaults(user, { currencyId });
+    await user.save();
+    return this.toSafeUser(user.toObject() as UserEntity);
+  }
+
+  async setDefaultCountry(userId: string, countryId: string): Promise<SafeUser> {
+    const user = await this.userModel.findOne({ id: userId }).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (!countryId?.trim()) {
+      throw new BadRequestException('Country is required');
+    }
+
+    const company = this.resolveUserCompany(userId, user.defaults?.companyId ?? user.defaultCompanyId);
+    if (company.baseCountryId && company.baseCountryId !== countryId) {
+      throw new BadRequestException('Country must match company base country');
+    }
+    if (company.operatingCountryIds?.length) {
+      const allowed = company.operatingCountryIds.includes(countryId) || company.baseCountryId === countryId;
+      if (!allowed) {
+        throw new BadRequestException('Country not allowed for company');
+      }
+    }
+
+    user.defaults = this.mergeDefaults(user, { countryId });
+    await user.save();
+    return this.toSafeUser(user.toObject() as UserEntity);
+  }
+
+  async setContextDefaults(
+    userId: string,
+    payload: {
+      organizationId?: string;
+      companyId?: string;
+      enterpriseId?: string;
+      countryId?: string;
+      currencyId?: string;
+    },
+  ): Promise<SafeUser> {
+    const user = await this.userModel.findOne({ id: userId }).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const nextDefaults = this.mergeDefaults(user, payload);
+    if (!nextDefaults.organizationId) {
+      throw new BadRequestException('Organization is required');
+    }
+    const belongs = user.Organizations?.some(
+      (membership) => membership.OrganizationId === nextDefaults.organizationId,
+    );
+    if (!belongs) {
+      throw new NotFoundException('Organization membership not found');
+    }
+
+    const companyId = nextDefaults.companyId;
+    if (!companyId) {
+      throw new BadRequestException('Company is required');
+    }
+    const companies = this.companiesService.listByUser(userId);
+    const company = companies.find((item) => item.id === companyId);
+    if (!company || company.organizationId !== nextDefaults.organizationId) {
+      throw new BadRequestException('Company not found for organization');
+    }
+
+    const enterpriseId = nextDefaults.enterpriseId;
+    if (!enterpriseId) {
+      throw new BadRequestException('Enterprise is required');
+    }
+    const enterprise = company.enterprises?.find((item) => item.id === enterpriseId) ?? null;
+    if (!enterprise) {
+      throw new BadRequestException('Enterprise not found for company');
+    }
+
+    const countryId = nextDefaults.countryId ?? enterprise.countryId ?? company.baseCountryId ?? null;
+    if (!countryId) {
+      throw new BadRequestException('Country is required');
+    }
+    if (company.baseCountryId && company.baseCountryId !== countryId) {
+      throw new BadRequestException('Country must match company base country');
+    }
+    if (company.operatingCountryIds?.length) {
+      const allowed = company.operatingCountryIds.includes(countryId) || company.baseCountryId === countryId;
+      if (!allowed) {
+        throw new BadRequestException('Country not allowed for company');
+      }
+    }
+
+    const currencyId = nextDefaults.currencyId;
+    if (!currencyId) {
+      throw new BadRequestException('Currency is required');
+    }
+    if (!enterprise.currencyIds?.includes(currencyId)) {
+      throw new BadRequestException('Currency not allowed for enterprise');
+    }
+
+    user.defaultOrganizationId = nextDefaults.organizationId;
+    user.defaultCompanyId = nextDefaults.companyId;
+    user.defaultEnterpriseId = nextDefaults.enterpriseId;
+    user.defaultCurrencyId = nextDefaults.currencyId;
+    user.defaults = {
+      organizationId: nextDefaults.organizationId,
+      companyId: nextDefaults.companyId,
+      enterpriseId: nextDefaults.enterpriseId,
+      countryId,
+      currencyId: nextDefaults.currencyId,
+    };
     await user.save();
     return this.toSafeUser(user.toObject() as UserEntity);
   }
@@ -214,13 +336,24 @@ export class UsersService {
     if (user.defaultOrganizationId === organizationId) {
       user.defaultOrganizationId = undefined;
     }
+    if (user.defaults?.organizationId === organizationId) {
+      user.defaults = { ...(user.defaults ?? {}), organizationId: undefined };
+    }
     await user.save();
     return this.toSafeUser(user.toObject() as UserEntity);
   }
 
   private toSafeUser(user: UserEntity): SafeUser {
     const { passwordHash, ...safe } = user;
-    return safe;
+    const defaults = this.mergeDefaults(user, {});
+    return {
+      ...safe,
+      defaultOrganizationId: defaults.organizationId,
+      defaultCompanyId: defaults.companyId,
+      defaultEnterpriseId: defaults.enterpriseId,
+      defaultCurrencyId: defaults.currencyId,
+      defaults,
+    };
   }
 
   private resolveUserCompany(userId: string, companyId?: string | null) {
@@ -233,5 +366,19 @@ export class UsersService {
       throw new BadRequestException('Default company not found');
     }
     return company;
+  }
+
+  private mergeDefaults(
+    user: { defaults?: UserDefaults; defaultOrganizationId?: string; defaultCompanyId?: string; defaultEnterpriseId?: string; defaultCurrencyId?: string },
+    updates: Partial<UserDefaults>,
+  ): UserDefaults {
+    const defaults = user.defaults ?? {};
+    return {
+      organizationId: updates.organizationId ?? defaults.organizationId ?? user.defaultOrganizationId,
+      companyId: updates.companyId ?? defaults.companyId ?? user.defaultCompanyId,
+      enterpriseId: updates.enterpriseId ?? defaults.enterpriseId ?? user.defaultEnterpriseId,
+      countryId: updates.countryId ?? defaults.countryId,
+      currencyId: updates.currencyId ?? defaults.currencyId ?? user.defaultCurrencyId,
+    };
   }
 }

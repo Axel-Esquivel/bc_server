@@ -3,6 +3,14 @@ export interface OrganizationMembership {
   roles: string[];
 }
 
+export interface UserDefaults {
+  organizationId?: string;
+  companyId?: string;
+  enterpriseId?: string;
+  countryId?: string;
+  currencyId?: string;
+}
+
 export interface UserEntity {
   id: string;
   email: string;
@@ -16,6 +24,7 @@ export interface UserEntity {
   defaultCompanyId?: string;
   defaultEnterpriseId?: string;
   defaultCurrencyId?: string;
+  defaults?: UserDefaults;
   createdAt: Date;
 }
 
