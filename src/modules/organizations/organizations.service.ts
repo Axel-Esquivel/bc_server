@@ -300,11 +300,6 @@ export class OrganizationsService {
       currencyIds: nextCurrencyIds,
     });
 
-    if (this.countCompanies(next) === 0) {
-      await this.ensureDefaultCompany(organization, next);
-      const refreshed = await this.getCoreSettings(organizationId);
-      return this.cloneCoreSettings(refreshed);
-    }
     return this.cloneCoreSettings(next);
   }
 
@@ -323,9 +318,6 @@ export class OrganizationsService {
       coreSettings: next,
       countryIds: this.buildCoreCountryIds(next),
     });
-    if (this.countCompanies(next) === 0) {
-      await this.ensureDefaultCompany(organization, next);
-    }
     return country;
   }
 
@@ -347,9 +339,6 @@ export class OrganizationsService {
       coreSettings: next,
       currencyIds: this.buildCoreCurrencyIds(next),
     });
-    if (this.countCompanies(next) === 0) {
-      await this.ensureDefaultCompany(organization, next);
-    }
     return currency;
   }
 
