@@ -34,6 +34,34 @@ class UserDefaults {
 
 const UserDefaultsSchema = SchemaFactory.createForClass(UserDefaults);
 
+@Schema({ _id: false })
+class UserDefaultContext {
+  @Prop()
+  organizationId?: string;
+
+  @Prop()
+  companyId?: string;
+
+  @Prop()
+  enterpriseId?: string;
+
+  @Prop()
+  countryId?: string;
+
+  @Prop()
+  currencyId?: string;
+}
+
+const UserDefaultContextSchema = SchemaFactory.createForClass(UserDefaultContext);
+
+@Schema({ _id: false })
+class UserPreferences {
+  @Prop({ type: UserDefaultContextSchema, default: undefined })
+  defaultContext?: UserDefaultContext;
+}
+
+const UserPreferencesSchema = SchemaFactory.createForClass(UserPreferences);
+
 @Schema({ collection: 'users', timestamps: true })
 export class User {
   @Prop({ required: true, unique: true, index: true })
@@ -74,6 +102,9 @@ export class User {
 
   @Prop({ type: UserDefaultsSchema, default: {} })
   defaults?: UserDefaults;
+
+  @Prop({ type: UserPreferencesSchema, default: {} })
+  preferences?: UserPreferences;
 
   @Prop()
   createdAt?: Date;

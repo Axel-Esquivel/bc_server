@@ -73,6 +73,9 @@ export class Organization {
   @Prop({ required: true })
   createdBy: string;
 
+  @Prop({ required: true, enum: ['pending', 'completed'], default: 'pending' })
+  setupStatus: 'pending' | 'completed';
+
   @Prop({ type: [String], default: [] })
   countryIds: string[];
 

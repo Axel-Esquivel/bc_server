@@ -11,6 +11,18 @@ export interface UserDefaults {
   currencyId?: string;
 }
 
+export interface UserDefaultContext {
+  organizationId?: string;
+  companyId?: string;
+  enterpriseId?: string;
+  countryId?: string;
+  currencyId?: string;
+}
+
+export interface UserPreferences {
+  defaultContext?: UserDefaultContext;
+}
+
 export interface UserEntity {
   id: string;
   email: string;
@@ -25,6 +37,7 @@ export interface UserEntity {
   defaultEnterpriseId?: string;
   defaultCurrencyId?: string;
   defaults?: UserDefaults;
+  preferences?: UserPreferences;
   createdAt: Date;
 }
 

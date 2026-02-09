@@ -9,6 +9,8 @@ export enum OrganizationMemberStatus {
   Active = 'active',
 }
 
+export type OrganizationSetupStatus = 'pending' | 'completed';
+
 export type OrganizationRoleDefinition = OrganizationRole;
 
 export interface OrganizationMember {
@@ -30,6 +32,7 @@ export interface OrganizationEntity {
   code: string;
   ownerUserId: string;
   createdBy: string;
+  setupStatus: OrganizationSetupStatus;
   countryIds: string[];
   currencyIds: string[];
   members: OrganizationMember[];

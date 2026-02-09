@@ -109,6 +109,7 @@ export class OrganizationsService {
       code: await this.generateUniqueCode(),
       ownerUserId,
       createdBy: ownerUserId,
+      setupStatus: 'pending',
       countryIds: this.normalizeIds(dto.countryIds),
       currencyIds: this.normalizeIds(dto.currencyIds),
       moduleStates: this.createModuleStatesMap(),
@@ -621,6 +622,15 @@ export class OrganizationsService {
 
     const modules = this.buildModuleOverviewItems(organization.moduleStates, descriptors);
     return this.buildModulesOverviewResponse(modules);
+  }
+
+  async markSetupCompleted(organizationId: string): Promise<void> {
+    const organization = await this.getOrganization(organizationId);
+    if (organization.setupStatus === 'completed') {
+      return;
+    }
+    organization.setupStatus = 'completed';
+    await this.updateOrganizationFields(organizationId, { setupStatus: 'completed' });
   }
 
   async installModule(
@@ -1203,6 +1213,7 @@ export class OrganizationsService {
   private normalizeOrganizationEntity(raw: OrganizationEntity): OrganizationEntity {
     return {
       ...raw,
+      setupStatus: raw.setupStatus === 'completed' ? 'completed' : 'pending',
       countryIds: Array.isArray(raw.countryIds) ? raw.countryIds : [],
       currencyIds: Array.isArray(raw.currencyIds) ? raw.currencyIds : [],
       members: Array.isArray(raw.members) ? raw.members : [],

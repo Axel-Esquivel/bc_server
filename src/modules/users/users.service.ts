@@ -12,9 +12,18 @@ import * as bcrypt from 'bcrypt';
 import { v4 as uuid } from 'uuid';
 import { Model } from 'mongoose';
 import { CreateUserDto } from './dto/create-user.dto';
-import { OrganizationMembership, SafeUser, UserDefaults, UserEntity } from './entities/user.entity';
+import {
+  OrganizationMembership,
+  SafeUser,
+  UserDefaultContext,
+  UserDefaults,
+  UserEntity,
+} from './entities/user.entity';
 import { User, UserDocument } from './schemas/user.schema';
 import { CompaniesService } from '../companies/companies.service';
+import { OrganizationsService } from '../organizations/organizations.service';
+import { BranchesService } from '../branches/branches.service';
+import type { CoreCountry, CoreCurrency } from '../organizations/types/core-settings.types';
 
 @Injectable()
 export class UsersService {
@@ -24,6 +33,10 @@ export class UsersService {
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     @Inject(forwardRef(() => CompaniesService))
     private readonly companiesService: CompaniesService,
+    @Inject(forwardRef(() => OrganizationsService))
+    private readonly organizationsService: OrganizationsService,
+    @Inject(forwardRef(() => BranchesService))
+    private readonly branchesService: BranchesService,
   ) {}
 
   async createUser(dto: CreateUserDto): Promise<SafeUser> {
@@ -294,12 +307,13 @@ export class UsersService {
     if (!enterpriseId) {
       throw new BadRequestException('Enterprise is required');
     }
-    const enterprise = company.enterprises?.find((item) => item.id === enterpriseId) ?? null;
-    if (!enterprise) {
+    const branches = this.branchesService.listByCompany(companyId);
+    const branch = branches.find((item) => item.id === enterpriseId) ?? null;
+    if (!branch) {
       throw new BadRequestException('Enterprise not found for company');
     }
 
-    const countryId = nextDefaults.countryId ?? enterprise.countryId ?? company.baseCountryId ?? null;
+    const countryId = nextDefaults.countryId ?? branch.countryId ?? company.baseCountryId ?? null;
     if (!countryId) {
       throw new BadRequestException('Country is required');
     }
@@ -317,7 +331,13 @@ export class UsersService {
     if (!currencyId) {
       throw new BadRequestException('Currency is required');
     }
-    if (!enterprise.currencyIds?.includes(currencyId)) {
+    const allowedCurrencyIds = new Set<string>();
+    (branch.currencyIds ?? []).forEach((id) => allowedCurrencyIds.add(id));
+    (company.currencies ?? []).forEach((id) => allowedCurrencyIds.add(id));
+    if (company.baseCurrencyId) {
+      allowedCurrencyIds.add(company.baseCurrencyId);
+    }
+    if (!allowedCurrencyIds.has(currencyId)) {
       throw new BadRequestException('Currency not allowed for enterprise');
     }
 
@@ -362,7 +382,147 @@ export class UsersService {
       defaultEnterpriseId: defaults.enterpriseId,
       defaultCurrencyId: defaults.currencyId,
       defaults,
+      preferences: user.preferences,
     };
+  }
+
+  async setDefaultContextPreferences(
+    userId: string,
+    payload: UserDefaultContext,
+  ): Promise<SafeUser> {
+    const user = await this.userModel.findOne({ id: userId }).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const defaultContext: UserDefaultContext = {
+      ...(user.preferences?.defaultContext ?? {}),
+      ...this.normalizeDefaultContext(payload),
+    };
+    user.preferences = {
+      ...(user.preferences ?? {}),
+      defaultContext,
+    };
+    await user.save();
+    return this.toSafeUser(user.toObject() as UserEntity);
+  }
+
+  async validateDefaultContext(
+    userId: string,
+    payload: UserDefaultContext,
+  ): Promise<{
+    isComplete: boolean;
+    isValid: boolean;
+    missing: string[];
+    sanitizedContext?: UserDefaultContext;
+  }> {
+    const sanitized = this.normalizeDefaultContext(payload);
+    const missing = this.getMissingDefaultContextFields(sanitized);
+    const isComplete = missing.length === 0;
+    let isValid = true;
+
+    try {
+      const user = await this.userModel.findOne({ id: userId }).lean().exec();
+      if (!user) {
+        return { isComplete, isValid: false, missing, sanitizedContext: sanitized };
+      }
+
+      const organizationId = sanitized.organizationId ?? '';
+      if (organizationId) {
+        const belongs = user.Organizations?.some((membership) => membership.OrganizationId === organizationId);
+        if (!belongs) {
+          isValid = false;
+        }
+      } else if (
+        sanitized.countryId ||
+        sanitized.companyId ||
+        sanitized.enterpriseId ||
+        sanitized.currencyId
+      ) {
+        isValid = false;
+      }
+
+      const organization = organizationId ? await this.organizationsService.getOrganization(organizationId) : null;
+      const countries = organization?.coreSettings?.countries ?? [];
+      const currencies = organization?.coreSettings?.currencies ?? [];
+      const countryId = sanitized.countryId ? this.resolveCountryId(countries, sanitized.countryId) : undefined;
+      if (sanitized.countryId && !countryId) {
+        isValid = false;
+      }
+
+      let companyId = sanitized.companyId ?? '';
+      let company = null as null | { id: string; currencies?: string[]; baseCurrencyId?: string };
+      if (sanitized.companyId) {
+        if (!organizationId) {
+          isValid = false;
+        } else {
+          const companies = await this.companiesService.listByOrganization(
+            organizationId,
+            userId,
+            countryId,
+          );
+          company = companies.find((item) => item.id === companyId) ?? null;
+          if (!company) {
+            isValid = false;
+          }
+        }
+      }
+
+      let enterpriseId = sanitized.enterpriseId ?? '';
+      let branch = null as null | { id: string; currencyIds?: string[] };
+      if (sanitized.enterpriseId) {
+        if (!companyId) {
+          isValid = false;
+        } else {
+          const branches = this.branchesService.listByCompany(companyId);
+          branch = branches.find((item) => item.id === enterpriseId) ?? null;
+          if (!branch) {
+            isValid = false;
+          }
+        }
+      }
+
+      const currencyId = sanitized.currencyId ? this.resolveCurrencyId(currencies, sanitized.currencyId) : undefined;
+      if (sanitized.currencyId && !currencyId) {
+        isValid = false;
+      }
+
+      if (sanitized.currencyId) {
+        const allowedCurrencyIds = new Set<string>();
+        if (branch?.currencyIds?.length) {
+          branch.currencyIds.forEach((id) => allowedCurrencyIds.add(id));
+        }
+        if (company?.currencies?.length) {
+          company.currencies.forEach((id) => allowedCurrencyIds.add(id));
+        }
+        if (company?.baseCurrencyId) {
+          allowedCurrencyIds.add(company.baseCurrencyId);
+        }
+        if (allowedCurrencyIds.size === 0) {
+          currencies.forEach((currency) => allowedCurrencyIds.add(currency.id));
+        }
+        if (!currencyId || !allowedCurrencyIds.has(currencyId)) {
+          isValid = false;
+        }
+      }
+
+      return {
+        isComplete,
+        isValid,
+        missing,
+        sanitizedContext: {
+          organizationId: organizationId || undefined,
+          countryId,
+          companyId: companyId || undefined,
+          enterpriseId: enterpriseId || undefined,
+          currencyId,
+        },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Default context validation failed: ${message}`);
+      return { isComplete, isValid: false, missing, sanitizedContext: sanitized };
+    }
   }
 
   private resolveUserCompany(userId: string, companyId?: string | null) {
@@ -389,5 +549,71 @@ export class UsersService {
       countryId: updates.countryId ?? defaults.countryId,
       currencyId: updates.currencyId ?? defaults.currencyId ?? user.defaultCurrencyId,
     };
+  }
+
+  private normalizeDefaultContext(input: UserDefaultContext): UserDefaultContext {
+    return {
+      organizationId: this.normalizeOptionalId(input.organizationId),
+      companyId: this.normalizeOptionalId(input.companyId),
+      enterpriseId: this.normalizeOptionalId(input.enterpriseId),
+      countryId: this.normalizeOptionalId(input.countryId),
+      currencyId: this.normalizeOptionalId(input.currencyId),
+    };
+  }
+
+  private normalizeOptionalId(value?: string): string | undefined {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
+  private getMissingDefaultContextFields(context: UserDefaultContext): string[] {
+    const missing: string[] = [];
+    if (!context.organizationId) {
+      missing.push('organizationId');
+    }
+    if (!context.countryId) {
+      missing.push('countryId');
+    }
+    if (!context.companyId) {
+      missing.push('companyId');
+    }
+    if (!context.enterpriseId) {
+      missing.push('enterpriseId');
+    }
+    if (!context.currencyId) {
+      missing.push('currencyId');
+    }
+    return missing;
+  }
+
+  private resolveCountryId(countries: CoreCountry[], candidate?: string): string | undefined {
+    const value = this.normalizeOptionalId(candidate);
+    if (!value) {
+      return undefined;
+    }
+    const direct = countries.find((country) => country.id === value);
+    if (direct) {
+      return direct.id;
+    }
+    const upper = value.toUpperCase();
+    const byCode = countries.find((country) => country.code?.toUpperCase() === upper);
+    return byCode?.id;
+  }
+
+  private resolveCurrencyId(currencies: CoreCurrency[], candidate?: string): string | undefined {
+    const value = this.normalizeOptionalId(candidate);
+    if (!value) {
+      return undefined;
+    }
+    const direct = currencies.find((currency) => currency.id === value);
+    if (direct) {
+      return direct.id;
+    }
+    const upper = value.toUpperCase();
+    const byCode = currencies.find((currency) => currency.code?.toUpperCase() === upper);
+    return byCode?.id;
   }
 }

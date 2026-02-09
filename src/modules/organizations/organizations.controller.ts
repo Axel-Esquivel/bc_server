@@ -224,6 +224,7 @@ export class OrganizationsController {
   ): Promise<ApiResponse<OrganizationModulesOverviewResponse>> {
     const userId = this.getUserId(req);
     const result = await this.organizationsService.enableModules(id, dto.modules ?? [], userId);
+    await this.organizationsService.markSetupCompleted(id);
     return {
       message: 'Organization modules updated',
       result,

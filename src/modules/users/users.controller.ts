@@ -1,10 +1,11 @@
-import { Body, Controller, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ResolveUsersDto } from './dto/resolve-users.dto';
 import { SetDefaultCompanyDto } from './dto/set-default-company.dto';
 import { SetDefaultOrganizationDto } from './dto/set-default-organization.dto';
 import { SetDefaultEnterpriseDto } from './dto/set-default-enterprise.dto';
 import { SetDefaultCurrencyDto } from './dto/set-default-currency.dto';
+import { DefaultContextDto } from './dto/default-context.dto';
 import { UsersService } from './users.service';
 
 @Controller('users')
@@ -58,6 +59,26 @@ export class UsersController {
     return {
       message: 'Users resolved',
       result: users,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('me/preferences/default-context')
+  async setDefaultContext(@Req() req: any, @Body() dto: DefaultContextDto) {
+    const user = await this.usersService.setDefaultContextPreferences(req.user.sub, dto);
+    return {
+      message: 'Default context preferences updated',
+      result: user,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('me/preferences/default-context/validate')
+  async validateDefaultContext(@Req() req: any, @Body() dto: DefaultContextDto) {
+    const result = await this.usersService.validateDefaultContext(req.user.sub, dto);
+    return {
+      message: 'Default context validation completed',
+      result,
     };
   }
 }
