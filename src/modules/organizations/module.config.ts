@@ -9,3 +9,5 @@ const moduleConfig = {
 };
 
 export default moduleConfig;
+
+

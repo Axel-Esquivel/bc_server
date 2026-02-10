@@ -1,8 +1,14 @@
-﻿const moduleConfig = {
+const moduleConfig = {
+  key: 'accounting',
   name: 'accounting',
   version: '1.0.0',
   enabled: true,
   dependencies: [],
+  description: 'Contabilidad y configuracion fiscal.',
+  category: 'finanzas',
+  icon: 'pi pi-calculator',
+  isSystem: false,
+  isInstallable: true,
   setupWizard: {
     steps: [
       {
@@ -57,3 +63,5 @@
 };
 
 export default moduleConfig;
+
+

@@ -9,6 +9,10 @@ export class ModuleRegistryService {
     return MODULE_REGISTRY_CONFIGS.map((config) => this.toRegistryEntry(config)).filter(Boolean);
   }
 
+  listInstallableModules(): ModuleRegistryEntry[] {
+    return this.listModules().filter((module) => !module.isSystem && module.isInstallable !== false);
+  }
+
   getModuleMap(): Map<string, ModuleRegistryEntry> {
     return new Map(this.listModules().map((module) => [module.key, module]));
   }

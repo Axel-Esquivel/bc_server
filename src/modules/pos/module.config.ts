@@ -1,8 +1,14 @@
 const moduleConfig = {
+  key: 'pos',
   name: 'pos',
   version: '1.0.0',
   enabled: true,
   dependencies: ['inventory', 'Organizations'],
+  description: 'Punto de venta.',
+  category: 'ventas',
+  icon: 'pi pi-shopping-cart',
+  isSystem: false,
+  isInstallable: true,
   setupWizard: {
     steps: [
       {
@@ -49,3 +55,5 @@ const moduleConfig = {
 };
 
 export default moduleConfig;
+
+

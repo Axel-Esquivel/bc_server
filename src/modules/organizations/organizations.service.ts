@@ -596,10 +596,9 @@ export class OrganizationsService {
     const organization = await this.getOrganization(organizationId);
     await this.assertPermission(organization, userId, 'modules.configure');
 
-    const registry = this.moduleRegistry.listModules();
+    const registry = this.moduleRegistry.listInstallableModules();
     const installedKeys = new Set(organization.installedModules.map((module) => module.key));
     const available: OrganizationModuleStoreItem[] = registry
-      .filter((module) => !module.isSystem && module.isInstallable !== false)
       .map((module) => ({
         key: module.key,
         name: module.name,
