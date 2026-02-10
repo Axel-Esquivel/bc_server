@@ -43,7 +43,11 @@ import type { CoreCompany, CoreCountry, CoreCurrency, OrganizationCoreSettings }
 import type { OrganizationOrganizationsnapshot } from './types/organization-snapshot.types';
 import type { OrganizationModuleState } from './types/module-state.types';
 import type { OrganizationModulesOverviewResponse } from './types/organization-modules-overview.types';
-import type { OrganizationModuleInstallResponse, OrganizationModuleStoreResponse } from './types/organization-module-store.types';
+import type {
+  OrganizationModuleInstallResponse,
+  OrganizationModuleStoreResponse,
+  OrganizationModuleUninstallResponse,
+} from './types/organization-module-store.types';
 import type { SafeUser } from '../users/entities/user.entity';
 import type { CompanyEntity } from '../companies/entities/company.entity';
 
@@ -206,9 +210,9 @@ export class OrganizationsController {
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('modules.configure')
   @Get(':id/modules')
-  async getModules(@Req() req: AuthenticatedRequest, @Param('id') id: string): Promise<ApiResponse<OrganizationModulesOverviewResponse>> {
-    this.getUserId(req);
-    const result = await this.organizationsService.getModulesOverview(id);
+  async getModules(@Req() req: AuthenticatedRequest, @Param('id') id: string): Promise<ApiResponse<OrganizationModuleStoreResponse>> {
+    const userId = this.getUserId(req);
+    const result = await this.organizationsService.getAvailableModules(id, userId);
     return {
       message: 'Organization modules loaded',
       result,
@@ -234,15 +238,15 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('modules.configure')
-  @Get(':id/modules/available')
-  async getAvailableModules(
+  @Get(':id/modules/overview')
+  async getModulesOverview(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
-  ): Promise<ApiResponse<OrganizationModuleStoreResponse>> {
-    const userId = this.getUserId(req);
-    const result = await this.organizationsService.getAvailableModules(id, userId);
+  ): Promise<ApiResponse<OrganizationModulesOverviewResponse>> {
+    this.getUserId(req);
+    const result = await this.organizationsService.getModulesOverview(id);
     return {
-      message: 'Organization available modules loaded',
+      message: 'Organization modules overview loaded',
       result,
     };
   }
@@ -260,6 +264,26 @@ export class OrganizationsController {
     const result = await this.organizationsService.installModule(id, moduleKey, userId);
     return {
       message: 'Organization module installed',
+      result,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('modules.configure')
+  @Post(':id/modules/uninstall')
+  async uninstallModule(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateOrganizationModuleKeyDto & { cascade?: boolean },
+  ): Promise<ApiResponse<OrganizationModuleUninstallResponse>> {
+    const userId = this.getUserId(req);
+    const moduleKey = dto.moduleKey ?? dto.key ?? '';
+    if (!moduleKey) {
+      throw new BadRequestException('Module key is required');
+    }
+    const result = await this.organizationsService.uninstallModule(id, moduleKey, userId, dto.cascade === true);
+    return {
+      message: 'Organization module uninstalled',
       result,
     };
   }
@@ -297,6 +321,18 @@ export class OrganizationsController {
     return {
       message: 'Organization module configured',
       result,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('modules.configure')
+  @Patch(':id/setup/completed')
+  async markSetupCompleted(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    this.getUserId(req);
+    await this.organizationsService.markSetupCompleted(id);
+    return {
+      message: 'Organization setup completed',
+      result: { setupStatus: 'completed' },
     };
   }
 

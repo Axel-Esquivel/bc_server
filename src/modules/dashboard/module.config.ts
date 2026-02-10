@@ -1,9 +1,9 @@
 const moduleConfig = {
-  key: 'organizations',
-  name: 'organizations',
+  key: 'dashboard',
+  name: 'dashboard',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['users', 'auth'],
+  dependencies: ['auth', 'organizations'],
   isSystem: true,
   isInstallable: false,
 };

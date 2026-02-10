@@ -123,7 +123,8 @@ export class ModuleLoaderService implements OnModuleInit {
         }
 
         const normalized: ModuleConfig = {
-          name: rawConfig.name || entry.name,
+          key: rawConfig.key ?? rawConfig.name ?? entry.name,
+          name: rawConfig.name || rawConfig.key || entry.name,
           version: rawConfig.version || '1.0.0',
           enabled: rawConfig.enabled ?? true,
           dependencies: rawConfig.dependencies ?? [],

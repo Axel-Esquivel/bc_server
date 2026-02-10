@@ -74,6 +74,7 @@ import {
   OrganizationModuleInstallResponse,
   OrganizationModuleStoreItem,
   OrganizationModuleStoreResponse,
+  OrganizationModuleUninstallResponse,
 } from './types/organization-module-store.types';
 import type { PosTerminal } from './types/pos-terminal.types';
 import type { ModuleDescriptor } from '../module-loader/module-loader.service';
@@ -597,7 +598,7 @@ export class OrganizationsService {
 
     const registry = this.moduleRegistry.listModules();
     const installedKeys = new Set(organization.installedModules.map((module) => module.key));
-    const modules: OrganizationModuleStoreItem[] = registry
+    const available: OrganizationModuleStoreItem[] = registry
       .filter((module) => !module.isSystem && module.isInstallable !== false)
       .map((module) => ({
         key: module.key,
@@ -610,8 +611,12 @@ export class OrganizationsService {
         icon: module.icon,
         installed: installedKeys.has(module.key),
       }));
+    const installed = available.filter((module) => module.installed);
 
-    return { modules };
+    return {
+      available,
+      installed,
+    };
   }
 
   async enableModules(
@@ -650,9 +655,19 @@ export class OrganizationsService {
     if (!organization.moduleSettings) {
       organization.moduleSettings = this.createModuleSettingsMap();
     }
+    const versionMap = this.getModuleVersionMap(descriptors);
+    const enabledKeys = Object.entries(nextStates)
+      .filter(([, state]) => state.status !== OrganizationModuleStatus.Disabled)
+      .map(([key]) => key);
+    organization.installedModules = enabledKeys.map((key) => ({
+      key,
+      version: versionMap.get(key) ?? '1.0.0',
+      installedAt: new Date(),
+    }));
     await this.updateOrganizationFields(organizationId, {
       moduleStates: organization.moduleStates,
       moduleSettings: organization.moduleSettings,
+      installedModules: organization.installedModules,
     });
     await this.syncOrgModulesFromOrganization(organization);
 
@@ -724,9 +739,70 @@ export class OrganizationsService {
     }
 
     return {
-      installed: newlyInstalled,
-      alreadyInstalled,
-      skippedSystem,
+      installedKeys: newlyInstalled,
+      alreadyInstalledKeys: alreadyInstalled,
+      skippedSystemKeys: skippedSystem,
+    };
+  }
+
+  async uninstallModule(
+    organizationId: string,
+    moduleKey: string,
+    userId: string,
+    cascade = false,
+  ): Promise<OrganizationModuleUninstallResponse> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertPermission(organization, userId, 'modules.configure');
+
+    const normalizedKey = moduleKey?.trim();
+    if (!normalizedKey) {
+      throw new BadRequestException('Module key is required');
+    }
+
+    const registryMap = this.moduleRegistry.getModuleMap();
+    if (!registryMap.has(normalizedKey)) {
+      throw new BadRequestException(`Module ${normalizedKey} not found`);
+    }
+
+    const installedKeys = new Set(organization.installedModules.map((module) => module.key));
+    if (!installedKeys.has(normalizedKey)) {
+      return { uninstalledKeys: [], alreadyUninstalledKeys: [normalizedKey] };
+    }
+
+    const dependencyMap = this.getRegistryDependencyMap(registryMap);
+    const dependentsMap = this.getReverseDependencyMap(dependencyMap);
+    const installedDependents = this.getInstalledDependents(normalizedKey, dependentsMap, installedKeys);
+
+    if (installedDependents.length > 0 && !cascade) {
+      throw new ConflictException({
+        message: 'Module has dependents installed',
+        dependents: installedDependents,
+      });
+    }
+
+    const uninstallOrder = cascade
+      ? this.buildUninstallOrder(normalizedKey, dependentsMap, installedKeys)
+      : [normalizedKey];
+
+    const remainingInstalled = organization.installedModules.filter(
+      (module) => !uninstallOrder.includes(module.key),
+    );
+    const nextStates = this.cloneModuleStates(organization.moduleStates);
+    uninstallOrder.forEach((key) => {
+      nextStates[key] = this.createModuleState(OrganizationModuleStatus.Disabled);
+    });
+
+    organization.installedModules = remainingInstalled;
+    organization.moduleStates = nextStates;
+    await this.updateOrganizationFields(organizationId, {
+      installedModules: remainingInstalled,
+      moduleStates: nextStates,
+    });
+    await this.syncOrgModulesFromOrganization(organization);
+
+    return {
+      uninstalledKeys: uninstallOrder,
+      alreadyUninstalledKeys: [],
     };
   }
 
@@ -1569,6 +1645,65 @@ export class OrganizationsService {
       ordered,
       skippedSystem: Array.from(skippedSystem),
     };
+  }
+
+  private getRegistryDependencyMap(
+    registry: Map<string, ModuleRegistryEntry>,
+  ): Map<string, string[]> {
+    const map = new Map<string, string[]>();
+    registry.forEach((entry, key) => {
+      map.set(key, Array.isArray(entry.dependencies) ? entry.dependencies : []);
+    });
+    return map;
+  }
+
+  private getReverseDependencyMap(
+    dependencyMap: Map<string, string[]>,
+  ): Map<string, string[]> {
+    const reverse = new Map<string, string[]>();
+    dependencyMap.forEach((dependencies, moduleKey) => {
+      dependencies.forEach((dependency) => {
+        const list = reverse.get(dependency) ?? [];
+        list.push(moduleKey);
+        reverse.set(dependency, list);
+      });
+    });
+    return reverse;
+  }
+
+  private getInstalledDependents(
+    moduleKey: string,
+    dependentsMap: Map<string, string[]>,
+    installedKeys: Set<string>,
+  ): string[] {
+    const dependents = dependentsMap.get(moduleKey) ?? [];
+    return dependents.filter((key) => installedKeys.has(key));
+  }
+
+  private buildUninstallOrder(
+    moduleKey: string,
+    dependentsMap: Map<string, string[]>,
+    installedKeys: Set<string>,
+  ): string[] {
+    const visited = new Set<string>();
+    const order: string[] = [];
+
+    const visit = (key: string) => {
+      if (visited.has(key)) {
+        return;
+      }
+      visited.add(key);
+      const dependents = dependentsMap.get(key) ?? [];
+      dependents.forEach((dependent) => {
+        if (installedKeys.has(dependent)) {
+          visit(dependent);
+        }
+      });
+      order.push(key);
+    };
+
+    visit(moduleKey);
+    return order;
   }
 
   private ensureModuleState(

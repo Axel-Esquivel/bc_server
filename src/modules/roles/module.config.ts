@@ -1,4 +1,5 @@
-﻿const moduleConfig = {
+const moduleConfig = {
+  key: 'roles',
   name: 'roles',
   version: '1.0.0',
   enabled: true,
@@ -8,3 +9,4 @@
 };
 
 export default moduleConfig;
+

@@ -11,12 +11,18 @@ export interface OrganizationModuleStoreItem {
 }
 
 export interface OrganizationModuleStoreResponse {
-  modules: OrganizationModuleStoreItem[];
+  available: OrganizationModuleStoreItem[];
+  installed: OrganizationModuleStoreItem[];
 }
 
 export interface OrganizationModuleInstallResponse {
-  installed: string[];
-  alreadyInstalled: string[];
-  skippedSystem: string[];
+  installedKeys: string[];
+  alreadyInstalledKeys: string[];
+  skippedSystemKeys: string[];
   errors?: string[];
+}
+
+export interface OrganizationModuleUninstallResponse {
+  uninstalledKeys: string[];
+  alreadyUninstalledKeys: string[];
 }

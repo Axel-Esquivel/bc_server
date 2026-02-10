@@ -1,4 +1,5 @@
-﻿const moduleConfig = {
+const moduleConfig = {
+  key: 'chat',
   name: 'chat',
   version: '1.0.0',
   enabled: true,
@@ -6,3 +7,4 @@
 };
 
 export default moduleConfig;
+

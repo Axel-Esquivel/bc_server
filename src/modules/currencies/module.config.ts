@@ -1,9 +1,9 @@
 const moduleConfig = {
-  key: 'organizations',
-  name: 'organizations',
+  key: 'currencies',
+  name: 'currencies',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['users', 'auth'],
+  dependencies: ['auth'],
   isSystem: true,
   isInstallable: false,
 };

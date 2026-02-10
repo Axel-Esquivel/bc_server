@@ -2,6 +2,10 @@ import { SettingsSchema, SetupWizardConfig } from '../../core/types/organization
 
 export interface ModuleConfig {
   /**
+   * Stable key used for dependencies and installation.
+   */
+  key?: string;
+  /**
    * Unique module name. This should be reused across the application when referencing dependencies.
    */
   name: string;
@@ -52,6 +56,7 @@ export interface ModuleConfig {
  * (real implementations can later be persisted in MongoDB or configuration service).
  */
 export const moduleTemplate: ModuleConfig = {
+  key: 'my-module',
   name: 'my-module',
   version: '0.0.1',
   enabled: false,
@@ -64,6 +69,7 @@ export const moduleTemplate: ModuleConfig = {
 };
 
 const moduleConfig: ModuleConfig = {
+  key: 'module-loader',
   name: 'module-loader',
   version: '1.0.0',
   enabled: true,
@@ -73,3 +79,4 @@ const moduleConfig: ModuleConfig = {
 };
 
 export default moduleConfig;
+
