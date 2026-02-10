@@ -43,6 +43,7 @@ import type { CoreCompany, CoreCountry, CoreCurrency, OrganizationCoreSettings }
 import type { OrganizationOrganizationsnapshot } from './types/organization-snapshot.types';
 import type { OrganizationModuleState } from './types/module-state.types';
 import type { OrganizationModulesOverviewResponse } from './types/organization-modules-overview.types';
+import type { OrganizationModuleInstallResponse, OrganizationModuleStoreResponse } from './types/organization-module-store.types';
 import type { SafeUser } from '../users/entities/user.entity';
 import type { CompanyEntity } from '../companies/entities/company.entity';
 
@@ -233,14 +234,30 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('modules.configure')
+  @Get(':id/modules/available')
+  async getAvailableModules(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ): Promise<ApiResponse<OrganizationModuleStoreResponse>> {
+    const userId = this.getUserId(req);
+    const result = await this.organizationsService.getAvailableModules(id, userId);
+    return {
+      message: 'Organization available modules loaded',
+      result,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('modules.configure')
   @Post(':id/modules/install')
   async installModule(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Body() dto: UpdateOrganizationModuleKeyDto,
-  ): Promise<ApiResponse<OrganizationModulesOverviewResponse>> {
+  ): Promise<ApiResponse<OrganizationModuleInstallResponse>> {
     const userId = this.getUserId(req);
-    const result = await this.organizationsService.installModule(id, dto.key, userId);
+    const moduleKey = dto.moduleKey ?? dto.key ?? '';
+    const result = await this.organizationsService.installModule(id, moduleKey, userId);
     return {
       message: 'Organization module installed',
       result,
@@ -256,7 +273,11 @@ export class OrganizationsController {
     @Body() dto: UpdateOrganizationModuleKeyDto,
   ): Promise<ApiResponse<OrganizationModulesOverviewResponse>> {
     const userId = this.getUserId(req);
-    const result = await this.organizationsService.disableModule(id, dto.key, userId);
+    const moduleKey = dto.moduleKey ?? dto.key ?? '';
+    if (!moduleKey) {
+      throw new BadRequestException('Module key is required');
+    }
+    const result = await this.organizationsService.disableModule(id, moduleKey, userId);
     return {
       message: 'Organization module disabled',
       result,

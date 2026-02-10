@@ -56,6 +56,20 @@ class OrganizationRoleDefinition {
 
 const OrganizationRoleDefinitionSchema = SchemaFactory.createForClass(OrganizationRoleDefinition);
 
+@Schema({ _id: false })
+class OrganizationInstalledModule {
+  @Prop({ required: true })
+  key: string;
+
+  @Prop({ required: true })
+  version: string;
+
+  @Prop({ required: true })
+  installedAt: Date;
+}
+
+const OrganizationInstalledModuleSchema = SchemaFactory.createForClass(OrganizationInstalledModule);
+
 @Schema({ collection: 'organizations', timestamps: true })
 export class Organization {
   @Prop({ required: true, unique: true, index: true })
@@ -99,6 +113,9 @@ export class Organization {
 
   @Prop({ type: MongooseSchema.Types.Mixed, default: {} })
   moduleSettings: Record<string, unknown>;
+
+  @Prop({ type: [OrganizationInstalledModuleSchema], default: [] })
+  installedModules: OrganizationInstalledModule[];
 
   @Prop()
   createdAt?: Date;

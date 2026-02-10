@@ -13,6 +13,12 @@ export type OrganizationSetupStatus = 'pending' | 'completed';
 
 export type OrganizationRoleDefinition = OrganizationRole;
 
+export interface OrganizationInstalledModule {
+  key: string;
+  version: string;
+  installedAt: Date;
+}
+
 export interface OrganizationMember {
   userId: string;
   email?: string;
@@ -41,5 +47,6 @@ export interface OrganizationEntity {
   structureSettings?: OrganizationStructureSettings;
   moduleStates: OrganizationModuleStates;
   moduleSettings: OrganizationModuleSettingsMap;
+  installedModules: OrganizationInstalledModule[];
   createdAt: Date;
 }

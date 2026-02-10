@@ -131,6 +131,9 @@ export class ModuleLoaderService implements OnModuleInit {
           isInstallable: rawConfig.isInstallable ?? true,
           setupWizard: rawConfig.setupWizard,
           settingsSchema: rawConfig.settingsSchema,
+          description: rawConfig.description,
+          category: rawConfig.category,
+          icon: rawConfig.icon,
         };
 
         configs.push(normalized);

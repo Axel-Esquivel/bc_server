@@ -21,6 +21,8 @@ import { BranchesService } from '../branches/branches.service';
 import { WarehousesService } from '../warehouses/warehouses.service';
 import { WarehouseType } from '../warehouses/entities/warehouse.entity';
 import { ModuleLoaderService } from '../module-loader/module-loader.service';
+import { ModuleRegistryService } from '../module-loader/module-registry.service';
+import { ModuleRegistryEntry } from '../module-loader/module-registry.types';
 import { BootstrapOrganizationDto } from './dto/bootstrap-organization.dto';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
@@ -34,6 +36,7 @@ import {
 } from '../../core/types/organization-structure-settings.types';
 import {
   OrganizationEntity,
+  OrganizationInstalledModule,
   OrganizationMember,
   OrganizationMemberStatus,
   OrganizationRoleDefinition,
@@ -67,6 +70,11 @@ import {
   OrganizationModuleOverviewItem,
   OrganizationModulesOverviewResponse,
 } from './types/organization-modules-overview.types';
+import {
+  OrganizationModuleInstallResponse,
+  OrganizationModuleStoreItem,
+  OrganizationModuleStoreResponse,
+} from './types/organization-module-store.types';
 import type { PosTerminal } from './types/pos-terminal.types';
 import type { ModuleDescriptor } from '../module-loader/module-loader.service';
 import { Organization, OrganizationDocument } from './schemas/organization.schema';
@@ -94,6 +102,7 @@ export class OrganizationsService {
     @Inject(forwardRef(() => WarehousesService))
     private readonly warehousesService: WarehousesService,
     private readonly moduleLoader: ModuleLoaderService,
+    private readonly moduleRegistry: ModuleRegistryService,
   ) {}
 
   async createOrganization(dto: CreateOrganizationDto, ownerUserId: string): Promise<OrganizationEntity> {
@@ -114,6 +123,7 @@ export class OrganizationsService {
       currencyIds: this.normalizeIds(dto.currencyIds),
       moduleStates: this.createModuleStatesMap(),
       moduleSettings: this.createModuleSettingsMap(),
+      installedModules: [],
       members: [
         {
           userId: ownerUserId,
@@ -578,6 +588,32 @@ export class OrganizationsService {
     return this.buildModulesOverviewResponse(modules);
   }
 
+  async getAvailableModules(
+    organizationId: string,
+    userId: string,
+  ): Promise<OrganizationModuleStoreResponse> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertPermission(organization, userId, 'modules.configure');
+
+    const registry = this.moduleRegistry.listModules();
+    const installedKeys = new Set(organization.installedModules.map((module) => module.key));
+    const modules: OrganizationModuleStoreItem[] = registry
+      .filter((module) => !module.isSystem && module.isInstallable !== false)
+      .map((module) => ({
+        key: module.key,
+        name: module.name,
+        description: module.description,
+        version: module.version,
+        dependencies: [...module.dependencies],
+        isSystem: module.isSystem,
+        category: module.category,
+        icon: module.icon,
+        installed: installedKeys.has(module.key),
+      }));
+
+    return { modules };
+  }
+
   async enableModules(
     organizationId: string,
     moduleKeys: string[],
@@ -637,15 +673,61 @@ export class OrganizationsService {
     organizationId: string,
     moduleKey: string,
     userId: string,
-  ): Promise<OrganizationModulesOverviewResponse> {
+  ): Promise<OrganizationModuleInstallResponse> {
     const organization = await this.getOrganization(organizationId);
     await this.assertPermission(organization, userId, 'modules.configure');
 
-    const currentKeys = Object.entries(organization.moduleStates ?? {})
-      .filter(([, state]) => state?.status !== OrganizationModuleStatus.Disabled)
-      .map(([key]) => key);
-    const nextKeys = Array.from(new Set([...currentKeys, moduleKey]));
-    return this.enableModules(organizationId, nextKeys, userId);
+    const normalizedKey = moduleKey?.trim();
+    if (!normalizedKey) {
+      throw new BadRequestException('Module key is required');
+    }
+
+    const registryMap = this.moduleRegistry.getModuleMap();
+    const { ordered, skippedSystem } = this.resolveInstallPlan(normalizedKey, registryMap);
+
+    const installedModules = [...organization.installedModules];
+    const installedKeys = new Set(installedModules.map((module) => module.key));
+    const alreadyInstalled: string[] = [];
+    const newlyInstalled: string[] = [];
+    const installedAt = new Date();
+
+    ordered.forEach((key) => {
+      if (installedKeys.has(key)) {
+        alreadyInstalled.push(key);
+        return;
+      }
+      const entry = registryMap.get(key);
+      if (!entry) {
+        return;
+      }
+      installedModules.push({ key, version: entry.version, installedAt });
+      installedKeys.add(key);
+      newlyInstalled.push(key);
+    });
+
+    if (newlyInstalled.length > 0) {
+      const nextStates = this.cloneModuleStates(organization.moduleStates);
+      newlyInstalled.forEach((key) => {
+        const existing = this.ensureModuleState(nextStates, key);
+        if (existing.status === OrganizationModuleStatus.Disabled) {
+          nextStates[key] = this.createModuleState(OrganizationModuleStatus.EnabledUnconfigured);
+        }
+      });
+
+      organization.installedModules = installedModules;
+      organization.moduleStates = nextStates;
+      await this.updateOrganizationFields(organizationId, {
+        installedModules,
+        moduleStates: nextStates,
+      });
+      await this.syncOrgModulesFromOrganization(organization);
+    }
+
+    return {
+      installed: newlyInstalled,
+      alreadyInstalled,
+      skippedSystem,
+    };
   }
 
   async disableModule(
@@ -1211,6 +1293,8 @@ export class OrganizationsService {
   }
 
   private normalizeOrganizationEntity(raw: OrganizationEntity): OrganizationEntity {
+    const moduleStates = this.normalizeModuleStates(raw.moduleStates);
+    const moduleSettings = this.normalizeModuleSettings(raw.moduleSettings);
     return {
       ...raw,
       setupStatus: raw.setupStatus === 'completed' ? 'completed' : 'pending',
@@ -1219,8 +1303,9 @@ export class OrganizationsService {
       members: Array.isArray(raw.members) ? raw.members : [],
       roles: Array.isArray(raw.roles) ? raw.roles : [],
       coreSettings: this.normalizeCoreSettings(raw.coreSettings),
-      moduleStates: this.normalizeModuleStates(raw.moduleStates),
-      moduleSettings: this.normalizeModuleSettings(raw.moduleSettings),
+      moduleStates,
+      moduleSettings,
+      installedModules: this.normalizeInstalledModules(raw.installedModules, moduleStates),
     };
   }
 
@@ -1386,6 +1471,10 @@ export class OrganizationsService {
     return settings;
   }
 
+  private getModuleVersionMap(descriptors: ModuleDescriptor[]): Map<string, string> {
+    return new Map(descriptors.map((descriptor) => [descriptor.config.name, descriptor.config.version]));
+  }
+
   private buildModuleOverviewItems(
     states: OrganizationModuleStates,
     descriptors: ModuleDescriptor[],
@@ -1424,6 +1513,62 @@ export class OrganizationsService {
   ): OrganizationModulesOverviewResponse {
     const response: OrganizationModulesOverviewResponse = { modules };
     return response;
+  }
+
+  private resolveInstallPlan(
+    moduleKey: string,
+    registry: Map<string, ModuleRegistryEntry>,
+  ): { ordered: string[]; skippedSystem: string[] } {
+    const entry = registry.get(moduleKey);
+    if (!entry) {
+      throw new BadRequestException(`Module ${moduleKey} not found`);
+    }
+    if (entry.isSystem) {
+      throw new BadRequestException(`Module ${moduleKey} is system and cannot be installed`);
+    }
+    if (entry.isInstallable === false) {
+      throw new BadRequestException(`Module ${moduleKey} is not installable`);
+    }
+
+    const ordered: string[] = [];
+    const skippedSystem = new Set<string>();
+    const visiting = new Set<string>();
+    const visited = new Set<string>();
+
+    const visit = (key: string) => {
+      if (visited.has(key)) {
+        return;
+      }
+      if (visiting.has(key)) {
+        throw new BadRequestException('Circular module dependency detected');
+      }
+      const current = registry.get(key);
+      if (!current) {
+        throw new BadRequestException(`Module dependency not found: ${key}`);
+      }
+      if (current.isInstallable === false && !current.isSystem) {
+        throw new BadRequestException(`Module dependency ${key} is not installable`);
+      }
+
+      visiting.add(key);
+      const dependencies = Array.isArray(current.dependencies) ? current.dependencies : [];
+      dependencies.forEach((dependency) => visit(dependency));
+      visiting.delete(key);
+      visited.add(key);
+
+      if (current.isSystem) {
+        skippedSystem.add(current.key);
+        return;
+      }
+      ordered.push(current.key);
+    };
+
+    visit(moduleKey);
+
+    return {
+      ordered,
+      skippedSystem: Array.from(skippedSystem),
+    };
   }
 
   private ensureModuleState(
@@ -1473,6 +1618,44 @@ export class OrganizationsService {
     }
     const settings: OrganizationModuleSettingsMap = { ...(raw as OrganizationModuleSettingsMap) };
     return settings;
+  }
+
+  private normalizeInstalledModules(
+    raw: unknown,
+    moduleStates: OrganizationModuleStates,
+  ): OrganizationInstalledModule[] {
+    const normalized: OrganizationInstalledModule[] = [];
+    if (Array.isArray(raw)) {
+      raw.forEach((entry) => {
+        if (!entry || typeof entry !== 'object') {
+          return;
+        }
+        const record = entry as { key?: unknown; version?: unknown; installedAt?: unknown };
+        const key = typeof record.key === 'string' ? record.key.trim() : '';
+        if (!key) {
+          return;
+        }
+        const version = typeof record.version === 'string' && record.version.trim() ? record.version.trim() : '1.0.0';
+        const installedAt = record.installedAt instanceof Date
+          ? record.installedAt
+          : typeof record.installedAt === 'string'
+            ? new Date(record.installedAt)
+            : new Date();
+        normalized.push({ key, version, installedAt });
+      });
+      if (normalized.length > 0) {
+        return normalized;
+      }
+    }
+
+    const versionMap = this.getModuleVersionMap(this.moduleLoader.listModules());
+    return Object.entries(moduleStates)
+      .filter(([, state]) => state?.status !== OrganizationModuleStatus.Disabled)
+      .map(([key]) => ({
+        key,
+        version: versionMap.get(key) ?? '1.0.0',
+        installedAt: new Date(),
+      }));
   }
 
   private normalizeModuleStateValue(value: unknown): OrganizationModuleState | null {

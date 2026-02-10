@@ -33,6 +33,18 @@ export interface ModuleConfig {
    * Optional settings schema for module configuration.
    */
   settingsSchema?: SettingsSchema;
+  /**
+   * Optional human-friendly description for module catalogs.
+   */
+  description?: string;
+  /**
+   * Optional category/group for module catalogs.
+   */
+  category?: string;
+  /**
+   * Optional icon key for module catalogs.
+   */
+  icon?: string;
 }
 
 /**
@@ -46,6 +58,9 @@ export const moduleTemplate: ModuleConfig = {
   dependencies: [],
   isSystem: false,
   isInstallable: true,
+  description: 'Describe what the module provides.',
+  category: 'general',
+  icon: 'pi pi-box',
 };
 
 const moduleConfig: ModuleConfig = {
