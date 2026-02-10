@@ -3,7 +3,7 @@ const moduleConfig = {
   name: 'pos',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['inventory', 'Organizations'],
+  dependencies: ['inventory', 'organizations'],
   description: 'Punto de venta.',
   category: 'ventas',
   icon: 'pi pi-shopping-cart',

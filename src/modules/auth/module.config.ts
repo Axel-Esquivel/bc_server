@@ -3,7 +3,7 @@ const moduleConfig = {
   name: 'auth',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['users', 'devices', 'organizations', 'companies'],
+  dependencies: ['users'],
   isSystem: true,
   isInstallable: false,
 };

@@ -1609,13 +1609,18 @@ export class OrganizationsService {
     const skippedSystem = new Set<string>();
     const visiting = new Set<string>();
     const visited = new Set<string>();
+    const stack: string[] = [];
 
     const visit = (key: string) => {
       if (visited.has(key)) {
         return;
       }
       if (visiting.has(key)) {
-        throw new BadRequestException('Circular module dependency detected');
+        const cycleStartIndex = stack.indexOf(key);
+        const cyclePath = cycleStartIndex >= 0 ? [...stack.slice(cycleStartIndex), key] : [key];
+        const message = `Circular module dependency detected: ${cyclePath.join(' -> ')}`;
+        this.logger.error(message);
+        throw new BadRequestException(message);
       }
       const current = registry.get(key);
       if (!current) {
@@ -1626,16 +1631,22 @@ export class OrganizationsService {
       }
 
       visiting.add(key);
-      const dependencies = Array.isArray(current.dependencies) ? current.dependencies : [];
-      dependencies.forEach((dependency) => visit(dependency));
+      stack.push(key);
+
+      if (!current.isSystem) {
+        const dependencies = Array.isArray(current.dependencies) ? current.dependencies : [];
+        dependencies.forEach((dependency) => visit(dependency));
+      } else {
+        skippedSystem.add(current.key);
+      }
+
       visiting.delete(key);
+      stack.pop();
       visited.add(key);
 
-      if (current.isSystem) {
-        skippedSystem.add(current.key);
-        return;
+      if (!current.isSystem) {
+        ordered.push(current.key);
       }
-      ordered.push(current.key);
     };
 
     visit(moduleKey);
