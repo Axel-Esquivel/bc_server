@@ -1633,20 +1633,21 @@ export class OrganizationsService {
       visiting.add(key);
       stack.push(key);
 
-      if (!current.isSystem) {
-        const dependencies = Array.isArray(current.dependencies) ? current.dependencies : [];
-        dependencies.forEach((dependency) => visit(dependency));
-      } else {
+      if (current.isSystem) {
         skippedSystem.add(current.key);
+        visiting.delete(key);
+        stack.pop();
+        visited.add(key);
+        return;
       }
+
+      const dependencies = Array.isArray(current.dependencies) ? current.dependencies : [];
+      dependencies.forEach((dependency) => visit(dependency));
 
       visiting.delete(key);
       stack.pop();
       visited.add(key);
-
-      if (!current.isSystem) {
-        ordered.push(current.key);
-      }
+      ordered.push(current.key);
     };
 
     visit(moduleKey);
