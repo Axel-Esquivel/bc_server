@@ -12,6 +12,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { v4 as uuid } from 'uuid';
 import { Model } from 'mongoose';
+import type { AnyBulkWriteOperation } from 'mongoose';
 import { MODULE_CATALOG } from '../../core/constants/modules.catalog';
 import { ModuleStateService } from '../../core/database/module-state.service';
 import { UsersService } from '../users/users.service';
@@ -2812,9 +2813,14 @@ export class OrganizationsService {
       return;
     }
 
-    const operations = entries.map(([key, state]) => {
+    const operations: AnyBulkWriteOperation<OrgModuleDocument>[] = entries.map(([key, state]) => {
       const status =
         typeof state === 'string' ? this.mapLegacyModuleStatus(state) : state.status;
+      const rawConfig = (moduleSettings as Record<string, unknown>)[key];
+      const config =
+        rawConfig && typeof rawConfig === 'object'
+          ? (rawConfig as Record<string, unknown>)
+          : ({} as Record<string, unknown>);
       return {
       updateOne: {
         filter: { organizationId: organization.id, key },
@@ -2824,13 +2830,13 @@ export class OrganizationsService {
             key,
             status,
             version: versionMap.get(key),
-            config: (moduleSettings as Record<string, unknown>)[key] ?? undefined,
+            config,
           },
         },
         upsert: true,
       },
     };
-    });
+    }) as AnyBulkWriteOperation<OrgModuleDocument>[];
 
     try {
       await this.orgModuleModel.bulkWrite(operations, { ordered: false });
