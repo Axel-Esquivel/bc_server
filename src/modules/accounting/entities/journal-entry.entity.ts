@@ -4,6 +4,7 @@ import { JournalEntryLine } from './journal-entry-line.entity';
 export enum JournalEntryStatus {
   DRAFT = 'DRAFT',
   POSTED = 'POSTED',
+  VOIDED = 'VOIDED',
 }
 
 @modelOptions({ schemaOptions: { timestamps: true } })
@@ -31,10 +32,4 @@ export class JournalEntry {
 
   @prop({ required: true })
   OrganizationId!: string;
-
-  @prop({ required: true })
-  companyId!: string;
-
-  @prop({ required: true })
-  period!: string;
 }

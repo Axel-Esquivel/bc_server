@@ -4,6 +4,8 @@ import { InventoryDirection } from '../inventory/entities/inventory-movement.ent
 import { InventoryService } from '../inventory/inventory.service';
 import { RealtimeService } from '../../realtime/realtime.service';
 import { ModuleStateService } from '../../core/database/module-state.service';
+import { CoreEventsService } from '../../core/events/core-events.service';
+import { createBusinessEvent } from '../../core/events/business-event';
 import { AddCartLineDto } from './dto/add-cart-line.dto';
 import { AddPaymentDto } from './dto/add-payment.dto';
 import { ConfirmCartDto } from './dto/confirm-cart.dto';
@@ -15,6 +17,7 @@ import { Promotion, ComboRule } from './entities/promotion.entity';
 import { SaleLineRecord } from './entities/sale-line.entity';
 import { SaleRecord, SaleStatus } from './entities/sale.entity';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { CompaniesService } from '../companies/companies.service';
 import { PosTerminal } from '../organizations/types/pos-terminal.types';
 
 interface PosState {
@@ -22,6 +25,25 @@ interface PosState {
   sales: SaleRecord[];
   promotions: Promotion[];
   combos: ComboRule[];
+}
+
+interface PosSaleCompletedPayload {
+  totals: {
+    subtotal: number;
+    tax: number;
+    discount: number;
+    grandTotal: number;
+  };
+  payment: {
+    method: string;
+    amount: number;
+  } | null;
+  lines: Array<{
+    productId: string;
+    qty: number;
+    unitPrice: number;
+    total: number;
+  }>;
 }
 
 @Injectable()
@@ -39,6 +61,8 @@ export class PosService implements OnModuleInit {
     private readonly realtimeService: RealtimeService,
     private readonly moduleState: ModuleStateService,
     private readonly OrganizationsService: OrganizationsService,
+    private readonly companiesService: CompaniesService,
+    private readonly coreEventsService: CoreEventsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -229,6 +253,8 @@ export class PosService implements OnModuleInit {
     this.realtimeService.emitPosCartUpdated(cart);
     this.realtimeService.emitDashboardSalesTick(sale);
     this.persistState();
+
+    this.emitSaleCompletedEvent(sale);
     return sale;
   }
 
@@ -333,5 +359,56 @@ export class PosService implements OnModuleInit {
       throw new NotFoundException('POS terminal not found');
     }
     return terminal;
+  }
+
+  private emitSaleCompletedEvent(sale: SaleRecord): void {
+    try {
+      const company = this.companiesService.getCompany(sale.companyId);
+      const enterpriseId = company.defaultEnterpriseId ?? company.enterprises?.[0]?.id ?? '';
+      if (!enterpriseId) {
+        throw new BadRequestException('Enterprise not resolved for sale');
+      }
+
+      const totals = {
+        subtotal: sale.subtotal,
+        tax: 0,
+        discount: sale.discountTotal,
+        grandTotal: sale.total,
+      };
+      const payment = sale.payments[0]
+        ? { method: sale.payments[0].method, amount: sale.payments[0].amount }
+        : null;
+      const lines = sale.lines.map((line) => ({
+        productId: line.variantId,
+        qty: line.quantity,
+        unitPrice: line.unitPrice,
+        total: line.total,
+      }));
+
+      const occurredAt = sale.createdAt ?? new Date();
+      const event = createBusinessEvent<PosSaleCompletedPayload>({
+        type: 'pos.sale.completed',
+        organizationId: sale.OrganizationId,
+        occurredAt,
+        context: {
+          enterpriseId,
+          companyId: sale.companyId,
+          countryId: company.baseCountryId,
+          currencyId: sale.currency ?? company.defaultCurrencyId ?? company.baseCurrencyId,
+          year: occurredAt.getUTCFullYear(),
+          month: occurredAt.getUTCMonth() + 1,
+        },
+        ref: { entity: 'pos.sale', id: sale.id },
+        payload: { totals, payment, lines },
+      });
+
+      void this.coreEventsService.enqueue(event).catch((error) => {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to enqueue POS sale event ${sale.id}: ${message}`);
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.stack ?? error.message : String(error);
+      this.logger.error(`Failed to emit POS sale event ${sale.id}: ${message}`);
+    }
   }
 }

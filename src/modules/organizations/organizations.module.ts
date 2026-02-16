@@ -6,6 +6,7 @@ import { ModuleLoaderModule } from '../module-loader/module-loader.module';
 import { CompaniesModule } from '../companies/companies.module';
 import { BranchesModule } from '../branches/branches.module';
 import { WarehousesModule } from '../warehouses/warehouses.module';
+import { AccountingModule } from '../accounting/accounting.module';
 import { OrganizationsController } from './organizations.controller';
 import { OrganizationsService } from './organizations.service';
 import { OrganizationAdminGuard } from './guards/organization-admin.guard';
@@ -20,6 +21,7 @@ import { OrgModule, OrgModuleSchema } from './schemas/org-module.schema';
     forwardRef(() => CompaniesModule),
     forwardRef(() => BranchesModule),
     forwardRef(() => WarehousesModule),
+    AccountingModule,
     ModuleLoaderModule,
     MongooseModule.forFeature([
       { name: Organization.name, schema: OrganizationSchema },

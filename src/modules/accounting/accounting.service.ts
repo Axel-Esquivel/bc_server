@@ -1,4 +1,6 @@
-import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Schema as MongooseSchema } from 'mongoose';
 import { v4 as uuid } from 'uuid';
 import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateAccountDto } from './dto/create-account.dto';
@@ -6,71 +8,73 @@ import { CreateJournalEntryDto, JournalEntryLineDto } from './dto/create-journal
 import { CreateTaxRuleDto } from './dto/create-tax-rule.dto';
 import { ClosePeriodDto } from './dto/close-period.dto';
 import { RecordAccountingEventDto } from './dto/record-event.dto';
-import { Account } from './entities/account.entity';
-import { JournalEntry, JournalEntryStatus } from './entities/journal-entry.entity';
-import { JournalEntryLine } from './entities/journal-entry-line.entity';
 import { TaxRule } from './entities/tax-rule.entity';
+import { Account, AccountDocument } from './schemas/account.schema';
+import { JournalEntry, JournalEntryDocument } from './schemas/journal-entry.schema';
+import { JournalEntryStatus } from './entities/journal-entry.entity';
+import { JournalEntryLine, JournalEntryLineDocument } from './schemas/journal-entry-line.schema';
 
 interface AccountingState {
-  accounts: Account[];
   taxRules: TaxRule[];
-  journalEntries: JournalEntry[];
   closedPeriods: string[];
 }
 
 @Injectable()
 export class AccountingService implements OnModuleInit {
   private readonly logger = new Logger(AccountingService.name);
-  private readonly stateKey = 'module:accounting';
-  private accounts: Account[] = [];
+  private readonly stateKey = 'module:accounting:meta';
   private taxRules: TaxRule[] = [];
-  private journalEntries: JournalEntry[] = [];
   private closedPeriods = new Set<string>();
 
-  constructor(private readonly moduleState: ModuleStateService) {}
+  constructor(
+    private readonly moduleState: ModuleStateService,
+    @InjectModel(Account.name)
+    private readonly accountModel: Model<AccountDocument>,
+    @InjectModel(JournalEntry.name)
+    private readonly journalEntryModel: Model<JournalEntryDocument>,
+    @InjectModel(JournalEntryLine.name)
+    private readonly journalEntryLineModel: Model<JournalEntryLineDocument>,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     const state = await this.moduleState.loadState<AccountingState>(this.stateKey, {
-      accounts: [],
       taxRules: [],
-      journalEntries: [],
       closedPeriods: [],
     });
-    this.accounts = state.accounts ?? [];
     this.taxRules = state.taxRules ?? [];
-    this.journalEntries = state.journalEntries ?? [];
     this.closedPeriods = new Set(state.closedPeriods ?? []);
   }
 
-  createAccount(dto: CreateAccountDto): Account {
-    const duplicate = this.accounts.find(
-      (acc) => acc.code === dto.code && acc.OrganizationId === dto.OrganizationId && acc.companyId === dto.companyId,
-    );
-    if (duplicate) {
-      throw new BadRequestException('Account code already exists for this Organization/company');
+  async createAccount(dto: CreateAccountDto, organizationId?: string): Promise<Account> {
+    const resolvedOrgId = organizationId ?? dto.OrganizationId;
+    if (!resolvedOrgId) {
+      throw new BadRequestException('OrganizationId is required');
     }
 
-    const account: Account = {
-      id: uuid(),
+    const existing = await this.accountModel
+      .findOne({ organizationId: resolvedOrgId, code: dto.code })
+      .lean()
+      .exec();
+    if (existing) {
+      throw new BadRequestException('Account code already exists for this organization');
+    }
+
+    const created = await this.accountModel.create({
+      organizationId: resolvedOrgId,
       code: dto.code,
       name: dto.name,
-      type: dto.type,
-      description: dto.description,
-      active: dto.active ?? true,
-      OrganizationId: dto.OrganizationId,
-      companyId: dto.companyId,
-    };
-    this.accounts.push(account);
-    this.persistState();
-    return account;
+      type: dto.type as Account['type'],
+      parentAccountId: dto.parentAccountId ? new MongooseSchema.Types.ObjectId(dto.parentAccountId) : undefined,
+      isActive: dto.active ?? true,
+    });
+    return created.toObject();
   }
 
-  listAccounts(OrganizationId?: string, companyId?: string): Account[] {
-    return this.accounts.filter((acc) => {
-      if (OrganizationId && acc.OrganizationId !== OrganizationId) return false;
-      if (companyId && acc.companyId !== companyId) return false;
-      return true;
-    });
+  async listAccounts(organizationId?: string): Promise<Account[]> {
+    if (!organizationId) {
+      return [];
+    }
+    return this.accountModel.find({ organizationId }).sort({ code: 1 }).lean().exec();
   }
 
   createTaxRule(dto: CreateTaxRuleDto): TaxRule {
@@ -84,7 +88,7 @@ export class AccountingService implements OnModuleInit {
       companyId: dto.companyId,
     };
     this.taxRules.push(rule);
-    this.persistState();
+    this.persistMetaState();
     return rule;
   }
 
@@ -96,42 +100,57 @@ export class AccountingService implements OnModuleInit {
     });
   }
 
-  recordJournalEntry(dto: CreateJournalEntryDto): JournalEntry {
-    const period = this.getPeriod(dto.date);
+  async recordJournalEntry(dto: CreateJournalEntryDto): Promise<JournalEntry & { lines: JournalEntryLine[] }> {
+    const organizationId = dto.OrganizationId?.trim();
+    if (!organizationId) {
+      throw new BadRequestException('OrganizationId is required');
+    }
+    const companyId = dto.companyId?.trim();
+    const enterpriseId = (dto as { enterpriseId?: string }).enterpriseId?.trim();
+    if (!enterpriseId) {
+      throw new BadRequestException('enterpriseId is required');
+    }
+    const date = new Date(dto.date);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('Invalid date');
+    }
+    const period = this.getPeriod(date);
     this.ensurePeriodOpen(period);
-    const lines = dto.lines.map((line) => this.toJournalLine(line));
 
-    const totals = lines.reduce(
-      (acc, line) => {
-        return { debit: acc.debit + (line.debit ?? 0), credit: acc.credit + (line.credit ?? 0) };
+    const lines = dto.lines.map((line) => this.toJournalLine(line));
+    this.ensureBalanced(lines);
+
+    const entry = await this.journalEntryModel.create({
+      organizationId,
+      date,
+      period,
+      context: {
+        enterpriseId,
+        companyId,
       },
-      { debit: 0, credit: 0 },
+      source: {
+        type: dto.sourceModule ?? 'manual',
+        refId: dto.reference,
+      },
+      description: dto.reference,
+      status: dto.status ?? JournalEntryStatus.POSTED,
+    });
+
+    const entryLines = await this.journalEntryLineModel.insertMany(
+      lines.map((line) => ({
+        journalEntryId: entry._id,
+        accountId: new MongooseSchema.Types.ObjectId(line.accountId),
+        debit: line.debit ?? 0,
+        credit: line.credit ?? 0,
+        memo: line.description,
+      })),
     );
 
-    if (totals.debit !== totals.credit) {
-      throw new BadRequestException('Journal entry is not balanced');
-    }
-
-    const entry: JournalEntry = {
-      id: uuid(),
-      date: new Date(dto.date),
-      reference: dto.reference,
-      sourceModule: dto.sourceModule,
-      sourceId: dto.sourceId,
-      status: dto.status ?? JournalEntryStatus.POSTED,
-      lines,
-      OrganizationId: dto.OrganizationId,
-      companyId: dto.companyId,
-      period,
-    };
-
-    this.journalEntries.push(entry);
-    this.persistState();
-    return entry;
+    return { ...(entry.toObject() as JournalEntry), lines: entryLines.map((l) => l.toObject()) };
   }
 
-  recordEvent(dto: RecordAccountingEventDto): JournalEntry {
-    const entryDto: CreateJournalEntryDto = {
+  async recordEvent(dto: RecordAccountingEventDto): Promise<JournalEntry & { lines: JournalEntryLine[] }> {
+    const entryDto: CreateJournalEntryDto & { enterpriseId?: string } = {
       date: dto.date,
       reference: dto.reference,
       sourceModule: dto.eventType,
@@ -140,59 +159,114 @@ export class AccountingService implements OnModuleInit {
       lines: dto.lines,
       OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
+      enterpriseId: dto.enterpriseId,
     };
     return this.recordJournalEntry(entryDto);
   }
 
-  listJournalEntries(OrganizationId?: string, companyId?: string): JournalEntry[] {
-    return this.journalEntries.filter((entry) => {
-      if (OrganizationId && entry.OrganizationId !== OrganizationId) return false;
-      if (companyId && entry.companyId !== companyId) return false;
-      return true;
-    });
+  async listJournalEntries(params: {
+    organizationId?: string;
+    enterpriseId?: string;
+    companyId?: string;
+    countryId?: string;
+    year?: number;
+    month?: number;
+  }): Promise<JournalEntry[]> {
+    if (!params.organizationId) {
+      return [];
+    }
+    const query: Record<string, unknown> = { organizationId: params.organizationId };
+    if (params.enterpriseId) {
+      query['context.enterpriseId'] = params.enterpriseId;
+    }
+    if (params.companyId) {
+      query['context.companyId'] = params.companyId;
+    }
+    if (params.countryId) {
+      query['context.countryId'] = params.countryId;
+    }
+    if (params.year) {
+      query['period.year'] = params.year;
+    }
+    if (params.month) {
+      query['period.month'] = params.month;
+    }
+    return this.journalEntryModel.find(query).sort({ date: -1 }).lean().exec();
+  }
+
+  async getJournalEntry(organizationId: string, entryId: string): Promise<JournalEntry & { lines: JournalEntryLine[] }> {
+    const entry = await this.journalEntryModel
+      .findOne({ organizationId, _id: new MongooseSchema.Types.ObjectId(entryId) })
+      .lean()
+      .exec();
+    if (!entry) {
+      throw new NotFoundException('Journal entry not found');
+    }
+    const lines = await this.journalEntryLineModel
+      .find({ journalEntryId: new MongooseSchema.Types.ObjectId(entryId) })
+      .lean()
+      .exec();
+    return { ...entry, lines };
   }
 
   closePeriod(dto: ClosePeriodDto): { closed: string } {
     this.closedPeriods.add(dto.period);
-    this.persistState();
+    this.persistMetaState();
     return { closed: dto.period };
   }
 
-  private ensurePeriodOpen(period: string) {
-    if (this.closedPeriods.has(period)) {
+  async seedBaseAccountsIfMissing(organizationId: string): Promise<void> {
+    if (!organizationId?.trim()) {
+      return;
+    }
+    const existing = await this.accountModel.countDocuments({ organizationId }).exec();
+    if (existing > 0) {
+      return;
+    }
+
+    const baseAccounts: Array<Pick<Account, 'organizationId' | 'code' | 'name' | 'type' | 'isActive'>> = [
+      { organizationId, code: '101-CAJA', name: 'Caja', type: 'asset', isActive: true },
+      { organizationId, code: '401-VENTAS', name: 'Ventas', type: 'income', isActive: true },
+      { organizationId, code: '210-IVA-POR-PAGAR', name: 'IVA por pagar', type: 'liability', isActive: true },
+    ];
+
+    await this.accountModel.insertMany(baseAccounts, { ordered: false });
+  }
+
+  private ensureBalanced(lines: JournalEntryLineDto[]) {
+    const totals = lines.reduce(
+      (acc, line) => {
+        return { debit: acc.debit + (line.debit ?? 0), credit: acc.credit + (line.credit ?? 0) };
+      },
+      { debit: 0, credit: 0 },
+    );
+    if (totals.debit !== totals.credit) {
+      throw new BadRequestException('Journal entry is not balanced');
+    }
+  }
+
+  private ensurePeriodOpen(period: { year: number; month: number }) {
+    const key = `${period.year}-${String(period.month).padStart(2, '0')}`;
+    if (this.closedPeriods.has(key)) {
       throw new BadRequestException('Accounting period is closed');
     }
   }
 
-  private getPeriod(dateString: string): string {
-    const date = new Date(dateString);
-    const year = date.getUTCFullYear();
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    return `${year}-${month}`;
+  private getPeriod(date: Date): { year: number; month: number } {
+    return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1 };
   }
 
-  private toJournalLine(line: JournalEntryLineDto): JournalEntryLine {
+  private toJournalLine(line: JournalEntryLineDto): JournalEntryLineDto {
     if ((line.debit ?? 0) < 0 || (line.credit ?? 0) < 0) {
       throw new BadRequestException('Debit and credit must be non-negative');
     }
-    return {
-      id: uuid(),
-      accountId: line.accountId,
-      debit: line.debit ?? 0,
-      credit: line.credit ?? 0,
-      description: line.description,
-      taxRuleId: line.taxRuleId,
-      OrganizationId: line.OrganizationId,
-      companyId: line.companyId,
-    };
+    return line;
   }
 
-  private persistState() {
+  private persistMetaState() {
     void this.moduleState
       .saveState<AccountingState>(this.stateKey, {
-        accounts: this.accounts,
         taxRules: this.taxRules,
-        journalEntries: this.journalEntries,
         closedPeriods: Array.from(this.closedPeriods),
       })
       .catch((error) => {

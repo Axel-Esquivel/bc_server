@@ -1,12 +1,11 @@
 import { modelOptions, prop } from '@typegoose/typegoose';
 
 export enum AccountType {
-  ASSET = 'ASSET',
-  LIABILITY = 'LIABILITY',
-  EQUITY = 'EQUITY',
-  REVENUE = 'REVENUE',
-  EXPENSE = 'EXPENSE',
-  TAX = 'TAX',
+  ASSET = 'asset',
+  LIABILITY = 'liability',
+  EQUITY = 'equity',
+  INCOME = 'income',
+  EXPENSE = 'expense',
 }
 
 @modelOptions({ schemaOptions: { timestamps: true } })
@@ -31,7 +30,4 @@ export class Account {
 
   @prop({ required: true })
   OrganizationId!: string;
-
-  @prop({ required: true })
-  companyId!: string;
 }

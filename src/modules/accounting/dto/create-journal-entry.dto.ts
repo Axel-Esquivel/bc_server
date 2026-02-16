@@ -50,6 +50,10 @@ export class CreateJournalEntryDto {
   @IsEnum(JournalEntryStatus)
   status?: JournalEntryStatus;
 
+  @IsOptional()
+  @IsString()
+  enterpriseId?: string;
+
   @ValidateNested({ each: true })
   @Type(() => JournalEntryLineDto)
   @IsArray()

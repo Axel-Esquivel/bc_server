@@ -23,6 +23,10 @@ export class RecordAccountingEventDto {
   @IsArray()
   lines!: JournalEntryLineDto[];
 
+  @IsOptional()
+  @IsString()
+  enterpriseId?: string;
+
   @IsString()
   OrganizationId!: string;
 

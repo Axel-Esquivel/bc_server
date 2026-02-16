@@ -24,6 +24,7 @@ import { WarehouseType } from '../warehouses/entities/warehouse.entity';
 import { ModuleLoaderService } from '../module-loader/module-loader.service';
 import { ModuleRegistryService } from '../module-loader/module-registry.service';
 import { ModuleRegistryEntry } from '../module-loader/module-registry.types';
+import { AccountingService } from '../accounting/accounting.service';
 import { BootstrapOrganizationDto } from './dto/bootstrap-organization.dto';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
@@ -105,6 +106,7 @@ export class OrganizationsService {
     private readonly warehousesService: WarehousesService,
     private readonly moduleLoader: ModuleLoaderService,
     private readonly moduleRegistry: ModuleRegistryService,
+    private readonly accountingService: AccountingService,
   ) {}
 
   async createOrganization(dto: CreateOrganizationDto, ownerUserId: string): Promise<OrganizationEntity> {
@@ -736,6 +738,15 @@ export class OrganizationsService {
         moduleStates: nextStates,
       });
       await this.syncOrgModulesFromOrganization(organization);
+
+      if (newlyInstalled.includes('accounting')) {
+        try {
+          await this.accountingService.seedBaseAccountsIfMissing(organizationId);
+        } catch (error) {
+          const message = error instanceof Error ? error.stack ?? error.message : String(error);
+          this.logger.error(`Failed to seed accounting accounts for ${organizationId}: ${message}`);
+        }
+      }
     }
 
     return {

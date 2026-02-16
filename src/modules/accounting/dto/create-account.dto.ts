@@ -21,9 +21,14 @@ export class CreateAccountDto {
   @IsBoolean()
   active?: boolean = true;
 
+  @IsOptional()
+  @IsString()
+  parentAccountId?: string;
+
   @IsString()
   OrganizationId!: string;
 
+  @IsOptional()
   @IsString()
-  companyId!: string;
+  companyId?: string;
 }
