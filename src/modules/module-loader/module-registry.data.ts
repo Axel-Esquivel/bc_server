@@ -2,7 +2,6 @@ import { ModuleConfig } from './module.config';
 import accounting from '../accounting/module.config';
 import auth from '../auth/module.config';
 import branches from '../branches/module.config';
-import catalogs from '../catalogs/module.config';
 import chat from '../chat/module.config';
 import companies from '../companies/module.config';
 import countries from '../countries/module.config';
@@ -33,7 +32,6 @@ export const MODULE_REGISTRY_CONFIGS: ModuleConfig[] = [
   accounting as ModuleConfig,
   auth as ModuleConfig,
   branches as ModuleConfig,
-  catalogs as ModuleConfig,
   chat as ModuleConfig,
   companies as ModuleConfig,
   countries as ModuleConfig,

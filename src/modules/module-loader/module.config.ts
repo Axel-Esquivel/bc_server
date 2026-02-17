@@ -38,15 +38,15 @@ export interface ModuleConfig {
    */
   settingsSchema?: SettingsSchema;
   /**
-   * Optional human-friendly description for module catalogs.
+   * Optional human-friendly description for module metadata.
    */
   description?: string;
   /**
-   * Optional category/group for module catalogs.
+   * Optional category/group for module metadata.
    */
   category?: string;
   /**
-   * Optional icon key for module catalogs.
+   * Optional icon key for module metadata.
    */
   icon?: string;
 }

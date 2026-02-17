@@ -11,8 +11,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { v4 as uuid } from 'uuid';
-import { Model } from 'mongoose';
-import type { AnyBulkWriteOperation } from 'mongoose';
+import { AnyBulkWriteOperation, Model } from 'mongoose';
 import { MODULE_CATALOG } from '../../core/constants/modules.catalog';
 import { ModuleStateService } from '../../core/database/module-state.service';
 import { UsersService } from '../users/users.service';
@@ -420,9 +419,17 @@ export class OrganizationsService {
   }
 
   async listByUser(userId: string): Promise<OrganizationEntity[]> {
-    const organizations = await this.organizationModel.find({ 'members.userId': userId }).lean().exec();
-    return organizations.map((organization) =>
-      this.normalizeOrganizationEntity(organization as unknown as OrganizationEntity),
+    const organizations = await this.organizationModel
+      .find({ 'members.userId': userId })
+      .lean<OrganizationEntity[]>()
+      .exec();
+    const migrated = await Promise.all(
+      organizations.map((organization) =>
+        this.migrateCatalogsToProducts(organization),
+      ),
+    );
+    return migrated.map((organization) =>
+      this.normalizeOrganizationEntity(organization),
     );
   }
 
@@ -491,11 +498,15 @@ export class OrganizationsService {
   }
 
   async getOrganization(organizationId: string): Promise<OrganizationEntity> {
-    const organization = await this.organizationModel.findOne({ id: organizationId }).lean().exec();
+    const organization = await this.organizationModel
+      .findOne({ id: organizationId })
+      .lean<OrganizationEntity>()
+      .exec();
     if (!organization) {
       throw new NotFoundException('Organization not found');
     }
-    return this.normalizeOrganizationEntity(organization as unknown as OrganizationEntity);
+    const migrated = await this.migrateCatalogsToProducts(organization);
+    return this.normalizeOrganizationEntity(migrated);
   }
 
   async findByCode(code: string): Promise<OrganizationEntity | null> {
@@ -503,9 +514,12 @@ export class OrganizationsService {
     if (!normalized) {
       return null;
     }
-    const organization = await this.organizationModel.findOne({ code: normalized }).lean().exec();
+    const organization = await this.organizationModel
+      .findOne({ code: normalized })
+      .lean<OrganizationEntity>()
+      .exec();
     return organization
-      ? this.normalizeOrganizationEntity(organization as unknown as OrganizationEntity)
+      ? this.normalizeOrganizationEntity(organization)
       : null;
   }
 
@@ -1394,6 +1408,89 @@ export class OrganizationsService {
       moduleSettings,
       installedModules: this.normalizeInstalledModules(raw.installedModules, moduleStates),
     };
+  }
+
+  private async migrateCatalogsToProducts(
+    organization: OrganizationEntity,
+  ): Promise<OrganizationEntity> {
+    const installedModules = Array.isArray(organization.installedModules)
+      ? [...organization.installedModules]
+      : [];
+    const hasCatalogs = installedModules.some((module) => module.key === 'catalogs');
+    const hasProducts = installedModules.some((module) => module.key === 'products');
+    let updatedInstalled = installedModules;
+    let changed = false;
+
+    if (hasCatalogs) {
+      changed = true;
+      if (hasProducts) {
+        updatedInstalled = installedModules.filter((module) => module.key !== 'catalogs');
+      } else {
+        updatedInstalled = installedModules.map((module) =>
+          module.key === 'catalogs' ? { ...module, key: 'products' } : module,
+        );
+      }
+    }
+
+    const moduleStates: OrganizationModuleStates = { ...(organization.moduleStates ?? {}) };
+    const moduleSettings: OrganizationModuleSettingsMap = { ...(organization.moduleSettings ?? {}) };
+    const hasCatalogsState = Object.prototype.hasOwnProperty.call(moduleStates, 'catalogs');
+    const hasProductsState = Object.prototype.hasOwnProperty.call(moduleStates, 'products');
+    if (hasCatalogsState) {
+      changed = true;
+      if (!hasProductsState) {
+        moduleStates['products'] = moduleStates['catalogs'];
+      }
+      delete moduleStates['catalogs'];
+    }
+
+    const hasCatalogsSettings = Object.prototype.hasOwnProperty.call(moduleSettings, 'catalogs');
+    const hasProductsSettings = Object.prototype.hasOwnProperty.call(moduleSettings, 'products');
+    if (hasCatalogsSettings) {
+      changed = true;
+      if (!hasProductsSettings) {
+        moduleSettings['products'] = moduleSettings['catalogs'];
+      }
+      delete moduleSettings['catalogs'];
+    }
+
+    await this.migrateOrgModuleRecords(organization.id);
+
+    if (!changed) {
+      return organization;
+    }
+
+    await this.updateOrganizationFields(organization.id, {
+      installedModules: updatedInstalled,
+      moduleStates,
+      moduleSettings,
+    });
+
+    return {
+      ...organization,
+      installedModules: updatedInstalled,
+      moduleStates,
+      moduleSettings,
+    };
+  }
+
+  private async migrateOrgModuleRecords(organizationId: string): Promise<void> {
+    const modules = await this.orgModuleModel
+      .find({ organizationId, key: { $in: ['catalogs', 'products'] } })
+      .lean()
+      .exec();
+    const hasCatalogs = modules.some((module) => module.key === 'catalogs');
+    if (!hasCatalogs) {
+      return;
+    }
+    const hasProducts = modules.some((module) => module.key === 'products');
+    if (hasProducts) {
+      await this.orgModuleModel.deleteMany({ organizationId, key: 'catalogs' }).exec();
+      return;
+    }
+    await this.orgModuleModel
+      .updateMany({ organizationId, key: 'catalogs' }, { $set: { key: 'products' } })
+      .exec();
   }
 
   private normalizeRoles(

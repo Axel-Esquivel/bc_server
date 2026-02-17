@@ -19,7 +19,6 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { CountriesModule } from './modules/countries/countries.module';
 import { CurrenciesModule } from './modules/currencies/currencies.module';
 import { BranchesModule } from './modules/branches/branches.module';
-import { CatalogsModule } from './modules/catalogs/catalogs.module';
 import { WarehousesModule } from './modules/warehouses/warehouses.module';
 import { LocationsModule } from './modules/locations/locations.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -119,7 +118,6 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     BranchesModule,
     DevicesModule,
     AuthModule,
-    CatalogsModule,
     WarehousesModule,
     LocationsModule,
     InventoryModule,

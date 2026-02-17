@@ -51,7 +51,7 @@ export const MODULE_CATALOG: ModuleCatalogEntry[] = [
   {
     key: 'settings',
     name: 'Settings',
-    description: 'Global catalogs and configuration',
+    description: 'Global products configuration',
     version: '1.0.0',
     dependencies: [],
     requiresConfig: false,
@@ -73,17 +73,9 @@ export const MODULE_CATALOG: ModuleCatalogEntry[] = [
     requiresConfig: false,
   },
   {
-    key: 'catalogs',
-    name: 'Catalogs',
-    description: 'Categories and catalog setup',
-    version: '1.0.0',
-    dependencies: [],
-    requiresConfig: false,
-  },
-  {
     key: 'products',
     name: 'Products',
-    description: 'Products and master data',
+    description: 'Productos y catálogo',
     version: '1.0.0',
     dependencies: [],
     requiresConfig: false,
