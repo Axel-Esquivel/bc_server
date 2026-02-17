@@ -1,16 +1,16 @@
 import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { ModuleStateService } from '../../core/database/module-state.service';
-import { PriceListsService } from '../price-lists/price-lists.service';
-import { VariantsService } from '../variants/variants.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ProductByCodeQueryDto } from './dto/product-by-code-query.dto';
+import { ProductListQueryDto } from './dto/product-list-query.dto';
 import { ProductSearchQueryDto } from './dto/product-search-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Product } from './entities/product.entity';
 
 export interface ProductRecord extends Product {
   id: string;
+  createdAt: Date;
 }
 
 interface ProductsState {
@@ -33,11 +33,7 @@ export class ProductsService implements OnModuleInit {
   private readonly stateKey = 'module:products';
   private products: ProductRecord[] = [];
 
-  constructor(
-    private readonly moduleState: ModuleStateService,
-    private readonly variantsService: VariantsService,
-    private readonly priceListsService: PriceListsService,
-  ) {}
+  constructor(private readonly moduleState: ModuleStateService) {}
 
   async onModuleInit(): Promise<void> {
     const state = await this.moduleState.loadState<ProductsState>(this.stateKey, { products: [] });
@@ -48,12 +44,18 @@ export class ProductsService implements OnModuleInit {
     const product: ProductRecord = {
       id: uuid(),
       name: dto.name,
+      sku: dto.sku,
+      barcode: dto.barcode,
+      price: dto.price ?? 0,
+      isActive: dto.isActive ?? true,
       category: dto.category,
       purchasable: dto.purchasable ?? false,
       sellable: dto.sellable ?? true,
       trackInventory: dto.trackInventory ?? false,
       OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
+      enterpriseId: dto.enterpriseId,
+      createdAt: new Date(),
     };
 
     this.products.push(product);
@@ -61,8 +63,16 @@ export class ProductsService implements OnModuleInit {
     return product;
   }
 
-  findAll(): ProductRecord[] {
-    return [...this.products];
+  findAll(filters?: ProductListQueryDto): ProductRecord[] {
+    if (!filters) {
+      return [...this.products];
+    }
+    return this.products.filter((product) => {
+      if (product.enterpriseId !== filters.enterpriseId) return false;
+      if (filters.OrganizationId && product.OrganizationId !== filters.OrganizationId) return false;
+      if (filters.companyId && product.companyId !== filters.companyId) return false;
+      return true;
+    });
   }
 
   searchForPos(query: ProductSearchQueryDto): PosProductLookup[] {
@@ -71,23 +81,17 @@ export class ProductsService implements OnModuleInit {
       return [];
     }
 
-    const variants = this.variantsService.findAll().filter((variant) => {
-      if (query.OrganizationId && variant.OrganizationId !== query.OrganizationId) return false;
-      if (query.companyId && variant.companyId !== query.companyId) return false;
-      return true;
-    });
-
-    const products = this.buildProductIndex();
-    return variants
-      .filter((variant) => {
-        const product = products.get(variant.productId);
-        const nameMatch = variant.name.toLowerCase().includes(needle);
-        const skuMatch = variant.sku.toLowerCase().includes(needle);
-        const productNameMatch = product?.name?.toLowerCase().includes(needle) ?? false;
-        return nameMatch || skuMatch || productNameMatch;
+    return this.products
+      .filter((product) => {
+        if (product.enterpriseId !== query.enterpriseId) return false;
+        if (query.OrganizationId && product.OrganizationId !== query.OrganizationId) return false;
+        if (query.companyId && product.companyId !== query.companyId) return false;
+        const nameMatch = product.name.toLowerCase().includes(needle);
+        const skuMatch = product.sku?.toLowerCase().includes(needle) ?? false;
+        const barcodeMatch = product.barcode?.toLowerCase().includes(needle) ?? false;
+        return nameMatch || skuMatch || barcodeMatch;
       })
-      .map((variant) => this.mapVariantForPos(variant, products))
-      .filter((item): item is PosProductLookup => item !== null);
+      .map((product) => this.mapProductForPos(product));
   }
 
   findByCodeForPos(query: ProductByCodeQueryDto): PosProductLookup | null {
@@ -96,20 +100,17 @@ export class ProductsService implements OnModuleInit {
       return null;
     }
     const codeLower = code.toLowerCase();
-    const variants = this.variantsService.findAll().filter((variant) => {
-      if (query.OrganizationId && variant.OrganizationId !== query.OrganizationId) return false;
-      if (query.companyId && variant.companyId !== query.companyId) return false;
-      return true;
-    });
-
-    const match = variants.find((variant) => {
-      if (variant.sku.toLowerCase() === codeLower) return true;
-      return variant.barcodes.some((barcode) => barcode.toLowerCase() === codeLower);
+    const match = this.products.find((product) => {
+      if (product.enterpriseId !== query.enterpriseId) return false;
+      if (query.OrganizationId && product.OrganizationId !== query.OrganizationId) return false;
+      if (query.companyId && product.companyId !== query.companyId) return false;
+      if (product.sku?.toLowerCase() === codeLower) return true;
+      if (product.barcode?.toLowerCase() === codeLower) return true;
+      return false;
     });
 
     if (!match) return null;
-    const products = this.buildProductIndex();
-    return this.mapVariantForPos(match, products);
+    return this.mapProductForPos(match);
   }
 
   findOne(id: string): ProductRecord {
@@ -125,12 +126,17 @@ export class ProductsService implements OnModuleInit {
     const product = this.findOne(id);
     Object.assign(product, {
       name: dto.name ?? product.name,
+      sku: dto.sku ?? product.sku,
+      barcode: dto.barcode ?? product.barcode,
+      price: dto.price ?? product.price,
+      isActive: dto.isActive ?? product.isActive,
       category: dto.category ?? product.category,
       purchasable: dto.purchasable ?? product.purchasable,
       sellable: dto.sellable ?? product.sellable,
       trackInventory: dto.trackInventory ?? product.trackInventory,
       OrganizationId: dto.OrganizationId ?? product.OrganizationId,
       companyId: dto.companyId ?? product.companyId,
+      enterpriseId: dto.enterpriseId ?? product.enterpriseId,
     });
     return product;
   }
@@ -153,40 +159,15 @@ export class ProductsService implements OnModuleInit {
       });
   }
 
-  private buildProductIndex(): Map<string, ProductRecord> {
-    return new Map(this.products.map((product) => [product.id, product]));
-  }
-
-  private mapVariantForPos(
-    variant: ReturnType<VariantsService['findAll']>[number],
-    products: Map<string, ProductRecord>,
-  ): PosProductLookup | null {
-    const product = products.get(variant.productId);
-    if (!product) return null;
-
-    const price = this.resolveVariantPrice(variant.id, product.OrganizationId, product.companyId);
-    const barcode = variant.barcodes.length > 0 ? variant.barcodes[0] : undefined;
-
+  private mapProductForPos(product: ProductRecord): PosProductLookup {
     return {
-      _id: variant.id,
-      name: variant.name,
-      sku: variant.sku,
-      barcode,
-      price,
-      isActive: product.sellable && variant.sellable,
+      _id: product.id,
+      name: product.name,
+      sku: product.sku ?? '',
+      barcode: product.barcode,
+      price: product.price,
+      isActive: product.isActive,
       taxRate: undefined,
     };
-  }
-
-  private resolveVariantPrice(variantId: string, OrganizationId: string, companyId: string): number {
-    const priceLists = this.priceListsService.findAll().filter((list) => {
-      if (list.OrganizationId !== OrganizationId) return false;
-      if (list.companyId !== companyId) return false;
-      return true;
-    });
-
-    const items = priceLists.flatMap((list) => list.items);
-    const match = items.find((item) => item.variantId === variantId);
-    return match?.price ?? 0;
   }
 }

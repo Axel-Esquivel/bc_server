@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ProductByCodeQueryDto } from './dto/product-by-code-query.dto';
+import { ProductListQueryDto } from './dto/product-list-query.dto';
 import { ProductSearchQueryDto } from './dto/product-search-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
@@ -16,8 +17,8 @@ export class ProductsController {
   }
 
   @Get()
-  findAll() {
-    const result = this.productsService.findAll();
+  findAll(@Query() query: ProductListQueryDto) {
+    const result = this.productsService.findAll(query);
     return { message: 'Products retrieved', result };
   }
 
@@ -41,6 +42,12 @@ export class ProductsController {
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateProductDto) {
+    const result = this.productsService.update(id, dto);
+    return { message: 'Product updated', result };
+  }
+
+  @Put(':id')
+  replace(@Param('id') id: string, @Body() dto: UpdateProductDto) {
     const result = this.productsService.update(id, dto);
     return { message: 'Product updated', result };
   }

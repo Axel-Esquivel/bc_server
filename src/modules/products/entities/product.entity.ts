@@ -6,6 +6,18 @@ export class Product {
   name!: string;
 
   @prop()
+  sku?: string;
+
+  @prop()
+  barcode?: string;
+
+  @prop({ required: true, default: 0 })
+  price!: number;
+
+  @prop({ required: true, default: true })
+  isActive!: boolean;
+
+  @prop()
   category?: string;
 
   @prop({ default: false })
@@ -22,4 +34,7 @@ export class Product {
 
   @prop({ required: true, index: true })
   companyId!: string;
+
+  @prop({ required: true, index: true })
+  enterpriseId!: string;
 }
