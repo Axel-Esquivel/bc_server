@@ -5,6 +5,7 @@ import { CreateInventoryMovementDto } from '../inventory/dto/create-inventory-mo
 import { InventoryDirection } from '../inventory/entities/inventory-movement.entity';
 import { StockProjectionRecord } from '../inventory/entities/stock-projection.entity';
 import { ModuleStateService } from '../../core/database/module-state.service';
+import { CompaniesService } from '../companies/companies.service';
 import { AddInventoryCountRoundDto } from './dto/add-round.dto';
 import { CreateInventoryCountSessionDto } from './dto/create-inventory-count-session.dto';
 import { ReviewInventoryCountDto } from './dto/review-inventory-count.dto';
@@ -38,6 +39,7 @@ export class InventoryCountsService implements OnModuleInit {
   constructor(
     private readonly inventoryService: InventoryService,
     private readonly moduleState: ModuleStateService,
+    private readonly companiesService: CompaniesService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -204,6 +206,7 @@ export class InventoryCountsService implements OnModuleInit {
         direction: InventoryDirection.ADJUST,
         variantId: line.variantId,
         warehouseId: line.warehouseId,
+        enterpriseId: this.resolveEnterpriseId(line.companyId),
         locationId: line.locationId,
         batchId: line.batchId,
         quantity: line.finalQty,
@@ -239,6 +242,15 @@ export class InventoryCountsService implements OnModuleInit {
     return { session, lines, rounds };
   }
 
+  private resolveEnterpriseId(companyId: string): string {
+    const company = this.companiesService.getCompany(companyId);
+    const enterpriseId = company.defaultEnterpriseId ?? company.enterprises?.[0]?.id ?? '';
+    if (!enterpriseId) {
+      throw new BadRequestException('Enterprise not resolved for inventory counts');
+    }
+    return enterpriseId;
+  }
+
   private findSession(id: string): InventoryCountSessionRecord {
     const session = this.sessions.find((item) => item.id === id);
     if (!session) {
@@ -272,10 +284,17 @@ export class InventoryCountsService implements OnModuleInit {
     OrganizationId: string,
     companyId: string,
   ): number {
-    const projections = this.inventoryService.listStock({ variantId, warehouseId, locationId }) as StockProjectionRecord[];
+    const enterpriseId = this.resolveEnterpriseId(companyId);
+    const projections = this.inventoryService.listStock({
+      variantId,
+      warehouseId,
+      locationId,
+      enterpriseId,
+    });
     const matching = projections.find(
       (projection) =>
         projection.OrganizationId === OrganizationId &&
+        projection.enterpriseId === enterpriseId &&
         projection.companyId === companyId &&
         projection.batchId === batchId,
     );

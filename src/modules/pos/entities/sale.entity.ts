@@ -17,6 +17,9 @@ export class Sale {
   companyId!: string;
 
   @prop({ required: true, index: true })
+  enterpriseId!: string;
+
+  @prop({ required: true, index: true })
   warehouseId!: string;
 
   @prop({ index: true })
@@ -24,6 +27,9 @@ export class Sale {
 
   @prop({ index: true })
   terminalId?: string;
+
+  @prop({ index: true })
+  sessionId?: string;
 
   @prop({ index: true })
   cashierUserId?: string;

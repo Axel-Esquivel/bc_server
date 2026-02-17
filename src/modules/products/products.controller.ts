@@ -1,5 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
+import { ProductByCodeQueryDto } from './dto/product-by-code-query.dto';
+import { ProductSearchQueryDto } from './dto/product-search-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
 
@@ -17,6 +19,18 @@ export class ProductsController {
   findAll() {
     const result = this.productsService.findAll();
     return { message: 'Products retrieved', result };
+  }
+
+  @Get('search')
+  search(@Query() query: ProductSearchQueryDto) {
+    const result = this.productsService.searchForPos(query);
+    return { message: 'Products search retrieved', result };
+  }
+
+  @Get('by-code')
+  findByCode(@Query() query: ProductByCodeQueryDto) {
+    const result = this.productsService.findByCodeForPos(query);
+    return { message: 'Product lookup retrieved', result };
   }
 
   @Get(':id')

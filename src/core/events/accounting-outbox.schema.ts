@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema } from 'mongoose';
+import type { JsonObject } from './business-event';
 
 export type AccountingOutboxDocument = AccountingOutbox & Document;
 
@@ -60,7 +61,7 @@ export class AccountingOutbox {
   ref: AccountingOutboxRef;
 
   @Prop({ type: MongooseSchema.Types.Mixed, required: true })
-  payload: Record<string, unknown>;
+  payload: JsonObject;
 
   @Prop({ required: true, enum: ['pending', 'processed', 'failed', 'ignored'], default: 'pending' })
   status: AccountingOutboxStatus;

@@ -1,4 +1,5 @@
 import { modelOptions, prop } from '@typegoose/typegoose';
+import type { JsonObject } from '../../../core/events/business-event';
 
 export enum InventoryDirection {
   IN = 'IN',
@@ -19,6 +20,9 @@ export class InventoryMovement {
   @prop({ required: true, index: true })
   warehouseId!: string;
 
+  @prop({ required: true, index: true })
+  enterpriseId!: string;
+
   @prop()
   locationId?: string;
 
@@ -32,7 +36,7 @@ export class InventoryMovement {
   operationId!: string;
 
   @prop({ type: () => Object })
-  references?: Record<string, any>;
+  references?: JsonObject;
 
   @prop({ required: true })
   OrganizationId!: string;

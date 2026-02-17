@@ -1,8 +1,12 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AddCartLineDto } from './dto/add-cart-line.dto';
 import { AddPaymentDto } from './dto/add-payment.dto';
+import { ClosePosSessionDto } from './dto/close-pos-session.dto';
 import { ConfirmCartDto } from './dto/confirm-cart.dto';
 import { CreateCartDto } from './dto/create-cart.dto';
+import { CreatePosSaleDto } from './dto/create-pos-sale.dto';
+import { OpenPosSessionDto } from './dto/open-pos-session.dto';
+import { PosSaleActionDto } from './dto/pos-sale-action.dto';
 import { PosService } from './pos.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -15,6 +19,24 @@ export class PosController {
     return {
       message: 'POS cart created',
       result: this.posService.createCart(dto),
+    };
+  }
+
+  @Post('sessions/open')
+  @UseGuards(JwtAuthGuard)
+  openSession(@Body() dto: OpenPosSessionDto) {
+    return {
+      message: 'POS session opened',
+      result: this.posService.openSession(dto),
+    };
+  }
+
+  @Post('sessions/close')
+  @UseGuards(JwtAuthGuard)
+  closeSession(@Body() dto: ClosePosSessionDto) {
+    return {
+      message: 'POS session closed',
+      result: this.posService.closeSession(dto),
     };
   }
 
@@ -40,6 +62,33 @@ export class PosController {
     return {
       message: 'Sale confirmed from cart',
       result: this.posService.confirmCart(cartId, dto, req.userId ?? req.user?.sub ?? req.user?.id),
+    };
+  }
+
+  @Post('sales')
+  @UseGuards(JwtAuthGuard)
+  createSale(@Body() dto: CreatePosSaleDto) {
+    return {
+      message: 'POS sale draft created',
+      result: this.posService.createSale(dto),
+    };
+  }
+
+  @Post('sales/:id/post')
+  @UseGuards(JwtAuthGuard)
+  postSale(@Param('id') saleId: string, @Body() dto: PosSaleActionDto) {
+    return {
+      message: 'POS sale posted',
+      result: this.posService.postSale(saleId, dto),
+    };
+  }
+
+  @Post('sales/:id/void')
+  @UseGuards(JwtAuthGuard)
+  voidSale(@Param('id') saleId: string, @Body() dto: PosSaleActionDto) {
+    return {
+      message: 'POS sale voided',
+      result: this.posService.voidSale(saleId, dto),
     };
   }
 

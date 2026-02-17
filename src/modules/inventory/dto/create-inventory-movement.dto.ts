@@ -1,4 +1,5 @@
-import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsNumber, IsObject, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
+import type { JsonObject } from '../../../core/events/business-event';
 import { InventoryDirection } from '../entities/inventory-movement.entity';
 
 export class CreateInventoryMovementDto {
@@ -12,6 +13,10 @@ export class CreateInventoryMovementDto {
   @IsString()
   @IsNotEmpty()
   warehouseId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  enterpriseId!: string;
 
   @IsOptional()
   @IsString()
@@ -31,7 +36,8 @@ export class CreateInventoryMovementDto {
   operationId!: string;
 
   @IsOptional()
-  references?: Record<string, any>;
+  @IsObject()
+  references?: JsonObject;
 
   @IsString()
   @IsNotEmpty()

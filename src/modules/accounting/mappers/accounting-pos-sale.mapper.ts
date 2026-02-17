@@ -3,8 +3,9 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Account, AccountDocument } from '../schemas/account.schema';
 import { BusinessEvent } from '../../../core/events/business-event';
+import type { JsonObject } from '../../../core/events/business-event';
 
-interface PosSaleCompletedPayload {
+interface PosSaleCompletedPayload extends JsonObject {
   totals: {
     subtotal: number;
     tax: number;

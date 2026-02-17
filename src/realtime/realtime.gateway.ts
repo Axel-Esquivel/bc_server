@@ -87,4 +87,46 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
     return { error: 'Room not allowed' };
   }
+
+  @SubscribeMessage('context:join')
+  handleContextJoin(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { organizationId: string; enterpriseId: string },
+  ) {
+    this.realtimeService.enforceRateLimit(client, 'context:join', 20, 60_000);
+    const context = this.realtimeService.resolveContext(client);
+    if (!context.OrganizationId || context.OrganizationId !== data.organizationId) {
+      this.realtimeService.logSecurityEvent(context, 'context:join', 'rejected', {
+        requestedOrganizationId: data.organizationId,
+      });
+      return { error: 'Organization mismatch' };
+    }
+
+    const room = this.realtimeService.getEnterpriseRoom(data.organizationId, data.enterpriseId);
+    client.join(room);
+    if (client.data?.context) {
+      client.data.context.enterpriseId = data.enterpriseId;
+    }
+    this.realtimeService.logSecurityEvent(context, 'context:join', 'joined', {
+      organizationId: data.organizationId,
+      enterpriseId: data.enterpriseId,
+    });
+    return { joined: room };
+  }
+
+  @SubscribeMessage('context:leave')
+  handleContextLeave(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { organizationId: string; enterpriseId: string },
+  ) {
+    this.realtimeService.enforceRateLimit(client, 'context:leave', 20, 60_000);
+    const context = this.realtimeService.resolveContext(client);
+    const room = this.realtimeService.getEnterpriseRoom(data.organizationId, data.enterpriseId);
+    client.leave(room);
+    this.realtimeService.logSecurityEvent(context, 'context:leave', 'left', {
+      organizationId: data.organizationId,
+      enterpriseId: data.enterpriseId,
+    });
+    return { left: room };
+  }
 }

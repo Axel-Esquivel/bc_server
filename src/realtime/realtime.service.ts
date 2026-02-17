@@ -6,11 +6,13 @@ import { InventoryMovementRecord } from '../modules/inventory/entities/inventory
 import { StockProjectionRecord } from '../modules/inventory/entities/stock-projection.entity';
 import { CartRecord } from '../modules/pos/entities/cart.entity';
 import { SaleRecord } from '../modules/pos/entities/sale.entity';
+import type { JsonObject } from '../core/events/business-event';
 
 export interface RealtimeContext {
   userId?: string;
   OrganizationId?: string;
   companyId?: string;
+  enterpriseId?: string;
   deviceId?: string;
   permissions?: string[];
   ip?: string;
@@ -110,6 +112,17 @@ export class RealtimeService {
   emitToOrganization(OrganizationId: string | undefined, event: string, payload: any) {
     if (!OrganizationId) return;
     this.emitEvent(event, payload, [`Organization:${OrganizationId}`]);
+  }
+
+  emitToEnterprise(
+    OrganizationId: string | undefined,
+    enterpriseId: string | undefined,
+    event: string,
+    payload: JsonObject,
+  ) {
+    if (!OrganizationId || !enterpriseId) return;
+    const room = this.getEnterpriseRoom(OrganizationId, enterpriseId);
+    this.emitEvent(event, payload, [room]);
   }
 
   emitToUser(userId: string | undefined, event: string, payload: any) {
@@ -230,5 +243,9 @@ export class RealtimeService {
 
   private normalizeToken(value: string): string {
     return value.toLowerCase().startsWith('bearer ') ? value.split(' ')[1] : value;
+  }
+
+  getEnterpriseRoom(organizationId: string, enterpriseId: string): string {
+    return `Organization:${organizationId}:Enterprise:${enterpriseId}`;
   }
 }

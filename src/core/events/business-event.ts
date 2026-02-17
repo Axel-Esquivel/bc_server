@@ -1,5 +1,12 @@
 import { v4 as uuid } from 'uuid';
 
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonObject | JsonArray | undefined;
+export interface JsonObject {
+  [key: string]: JsonValue;
+}
+export interface JsonArray extends Array<JsonValue> {}
+
 export interface BusinessEventContext {
   countryId?: string;
   companyId?: string;
@@ -14,7 +21,7 @@ export interface BusinessEventRef {
   id: string;
 }
 
-export interface BusinessEvent<TPayload> {
+export interface BusinessEvent<TPayload extends JsonObject> {
   id: string;
   type: string;
   occurredAt: Date;
@@ -24,7 +31,7 @@ export interface BusinessEvent<TPayload> {
   payload: TPayload;
 }
 
-export interface BusinessEventInput<TPayload> {
+export interface BusinessEventInput<TPayload extends JsonObject> {
   type: string;
   organizationId: string;
   context: BusinessEventContext;
@@ -34,7 +41,9 @@ export interface BusinessEventInput<TPayload> {
   occurredAt?: Date;
 }
 
-export function createBusinessEvent<TPayload>(input: BusinessEventInput<TPayload>): BusinessEvent<TPayload> {
+export function createBusinessEvent<TPayload extends JsonObject>(
+  input: BusinessEventInput<TPayload>,
+): BusinessEvent<TPayload> {
   assertEnterpriseContext(input.context);
   return {
     id: input.id ?? uuid(),

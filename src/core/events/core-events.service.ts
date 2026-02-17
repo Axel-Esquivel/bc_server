@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AccountingOutbox, AccountingOutboxDocument } from './accounting-outbox.schema';
-import { BusinessEvent } from './business-event';
+import { BusinessEvent, JsonObject } from './business-event';
 
 @Injectable()
 export class CoreEventsService {
@@ -13,7 +13,7 @@ export class CoreEventsService {
     private readonly outboxModel: Model<AccountingOutboxDocument>,
   ) {}
 
-  async enqueue(event: BusinessEvent<any>): Promise<void> {
+  async enqueue<TPayload extends JsonObject>(event: BusinessEvent<TPayload>): Promise<void> {
     try {
       await this.outboxModel.create({
         organizationId: event.organizationId,
@@ -43,7 +43,7 @@ export class CoreEventsService {
     ).exec();
   }
 
-  async markFailed(eventId: string, error: unknown): Promise<void> {
+  async markFailed(eventId: string, error: Error | string): Promise<void> {
     const message = error instanceof Error ? error.stack ?? error.message : String(error);
     await this.outboxModel.updateOne(
       { eventId },

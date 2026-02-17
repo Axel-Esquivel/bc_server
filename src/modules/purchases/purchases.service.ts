@@ -3,6 +3,8 @@ import { v4 as uuid } from 'uuid';
 import { InventoryDirection } from '../inventory/entities/inventory-movement.entity';
 import { InventoryService } from '../inventory/inventory.service';
 import { ModuleStateService } from '../../core/database/module-state.service';
+import { CompaniesService } from '../companies/companies.service';
+import type { JsonObject } from '../../core/events/business-event';
 import { CreateGoodsReceiptDto, GoodsReceiptLineDto } from './dto/create-goods-receipt.dto';
 import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
 import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto';
@@ -49,6 +51,7 @@ export class PurchasesService implements OnModuleInit {
   constructor(
     private readonly inventoryService: InventoryService,
     private readonly moduleState: ModuleStateService,
+    private readonly companiesService: CompaniesService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -81,10 +84,17 @@ export class PurchasesService implements OnModuleInit {
       ...this.suggestions.filter((s) => s.OrganizationId !== query.OrganizationId || s.companyId !== query.companyId),
     );
 
-    const projections = this.inventoryService.listStock({ warehouseId: query.warehouseId });
+    const enterpriseId = this.resolveEnterpriseId(query.companyId);
+    const projections = this.inventoryService.listStock({
+      warehouseId: query.warehouseId,
+      enterpriseId,
+    });
 
     const OrganizationProjections = projections.filter(
-      (projection) => projection.OrganizationId === query.OrganizationId && projection.companyId === query.companyId,
+      (projection) =>
+        projection.OrganizationId === query.OrganizationId &&
+        projection.companyId === query.companyId &&
+        projection.enterpriseId === enterpriseId,
     );
 
     OrganizationProjections.forEach((projection) => {
@@ -169,7 +179,7 @@ export class PurchasesService implements OnModuleInit {
     };
 
     receipt.lines.forEach((line) => {
-      const references: Record<string, any> = { grnId: receipt.id, warehouseId: receipt.warehouseId };
+      const references: JsonObject = { grnId: receipt.id, warehouseId: receipt.warehouseId };
       if (order) {
         references.purchaseOrderId = order.id;
       }
@@ -178,6 +188,7 @@ export class PurchasesService implements OnModuleInit {
         direction: InventoryDirection.IN,
         variantId: line.variantId,
         warehouseId: receipt.warehouseId,
+        enterpriseId: this.resolveEnterpriseId(dto.companyId),
         locationId: line.locationId,
         batchId: line.batchId,
         quantity: line.quantity,
@@ -305,6 +316,15 @@ export class PurchasesService implements OnModuleInit {
     if (entityOrganization !== OrganizationId || entityCompany !== companyId) {
       throw new BadRequestException('Entity does not belong to the provided Organization/company');
     }
+  }
+
+  private resolveEnterpriseId(companyId: string): string {
+    const company = this.companiesService.getCompany(companyId);
+    const enterpriseId = company.defaultEnterpriseId ?? company.enterprises?.[0]?.id ?? '';
+    if (!enterpriseId) {
+      throw new BadRequestException('Enterprise not resolved for purchase inventory movements');
+    }
+    return enterpriseId;
   }
 
   private findOrder(orderId: string): PurchaseOrder {

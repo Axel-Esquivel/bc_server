@@ -1,13 +1,13 @@
 import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
-export class StockQueryDto {
-  @IsOptional()
+export class PosSaleActionDto {
   @IsString()
-  variantId?: string;
+  @IsNotEmpty()
+  OrganizationId!: string;
 
-  @IsOptional()
   @IsString()
-  warehouseId?: string;
+  @IsNotEmpty()
+  companyId!: string;
 
   @IsString()
   @IsNotEmpty()
@@ -15,5 +15,5 @@ export class StockQueryDto {
 
   @IsOptional()
   @IsString()
-  locationId?: string;
+  cashierUserId?: string;
 }

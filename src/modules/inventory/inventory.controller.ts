@@ -15,11 +15,19 @@ export class InventoryController {
     };
   }
 
+  @Get('stocks')
+  findStocks(@Query() query: StockQueryDto) {
+    return {
+      message: 'Stock projection list retrieved',
+      result: this.inventoryService.listStock(query),
+    };
+  }
+
   @Post('movements')
   recordMovement(@Body() dto: CreateInventoryMovementDto) {
     return {
       message: 'Inventory movement recorded',
-      result: this.inventoryService.recordMovement(dto),
+      result: this.inventoryService.applyMovement(dto),
     };
   }
 }

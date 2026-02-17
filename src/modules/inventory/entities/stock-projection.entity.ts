@@ -8,6 +8,9 @@ export class StockProjection {
   @prop({ required: true, index: true })
   warehouseId!: string;
 
+  @prop({ required: true, index: true })
+  enterpriseId!: string;
+
   @prop({ index: true })
   locationId?: string;
 

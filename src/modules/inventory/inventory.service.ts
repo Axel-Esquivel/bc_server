@@ -3,6 +3,8 @@ import { v4 as uuid } from 'uuid';
 import { WarehousesService } from '../warehouses/warehouses.service';
 import { RealtimeService } from '../../realtime/realtime.service';
 import { ModuleStateService } from '../../core/database/module-state.service';
+import { OutboxService } from '../outbox/outbox.service';
+import type { JsonObject } from '../../core/events/business-event';
 import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto';
 import { StockQueryDto } from './dto/stock-query.dto';
 import {
@@ -19,12 +21,29 @@ interface ReserveStockDto {
   quantity: number;
   OrganizationId: string;
   companyId: string;
+  enterpriseId: string;
 }
 
 interface InventoryState {
   movements: InventoryMovementRecord[];
   projections: StockProjectionRecord[];
   reservations: (ReserveStockDto & { reservationId: string })[];
+}
+
+interface InventoryStockChangedPayload extends JsonObject {
+  variantId: string;
+  warehouseId: string;
+  enterpriseId: string;
+  locationId?: string;
+  batchId?: string;
+  onHand: number;
+  reserved: number;
+  available: number;
+  version: number;
+  companyId: string;
+  movementId?: string;
+  changeType: 'movement' | 'reservation' | 'release';
+  occurredAt: string;
 }
 
 @Injectable()
@@ -40,6 +59,7 @@ export class InventoryService implements OnModuleInit {
     private readonly warehousesService: WarehousesService,
     private readonly realtimeService: RealtimeService,
     private readonly moduleState: ModuleStateService,
+    private readonly outboxService: OutboxService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -63,6 +83,7 @@ export class InventoryService implements OnModuleInit {
 
   listStock(filters: StockQueryDto): StockProjectionRecord[] {
     return this.projections.filter((projection) => {
+      if (filters.enterpriseId && projection.enterpriseId !== filters.enterpriseId) return false;
       if (filters.variantId && projection.variantId !== filters.variantId) return false;
       if (filters.warehouseId && projection.warehouseId !== filters.warehouseId) return false;
       if (filters.locationId && projection.locationId !== filters.locationId) return false;
@@ -70,10 +91,18 @@ export class InventoryService implements OnModuleInit {
     });
   }
 
-  recordMovement(dto: CreateInventoryMovementDto): { movement: InventoryMovementRecord; projection: StockProjectionRecord } {
+  applyMovement(dto: CreateInventoryMovementDto): { movement: InventoryMovementRecord; projection: StockProjectionRecord } {
     const duplicated = this.operationIndex.get(dto.operationId);
     if (duplicated) {
-      const existingProjection = this.findProjection(dto.variantId, dto.warehouseId, dto.locationId, dto.batchId, dto.OrganizationId, dto.companyId);
+      const existingProjection = this.findProjection(
+        dto.variantId,
+        dto.warehouseId,
+        dto.enterpriseId,
+        dto.locationId,
+        dto.batchId,
+        dto.OrganizationId,
+        dto.companyId,
+      );
       return { movement: duplicated, projection: existingProjection };
     }
 
@@ -85,6 +114,7 @@ export class InventoryService implements OnModuleInit {
     const projection = this.findOrCreateProjection(
       dto.variantId,
       dto.warehouseId,
+      dto.enterpriseId,
       dto.locationId,
       dto.batchId,
       dto.OrganizationId,
@@ -106,6 +136,7 @@ export class InventoryService implements OnModuleInit {
       direction: dto.direction,
       variantId: dto.variantId,
       warehouseId: dto.warehouseId,
+      enterpriseId: dto.enterpriseId,
       locationId: dto.locationId,
       batchId: dto.batchId,
       quantity: dto.quantity,
@@ -122,12 +153,25 @@ export class InventoryService implements OnModuleInit {
     this.realtimeService.emitInventoryStockUpdated(projection);
     this.realtimeService.emitInventoryAlert(projection);
     this.realtimeService.auditMovementEvent(projection, movement);
+    this.emitStockChangedEvent(projection, 'movement', movement.id);
     return { movement, projection };
+  }
+
+  recordMovement(dto: CreateInventoryMovementDto): { movement: InventoryMovementRecord; projection: StockProjectionRecord } {
+    return this.applyMovement(dto);
   }
 
   reserveStock(reservationId: string, dto: ReserveStockDto): StockProjectionRecord {
     if (this.reservations.has(reservationId)) {
-      return this.findProjection(dto.variantId, dto.warehouseId, dto.locationId, dto.batchId, dto.OrganizationId, dto.companyId);
+      return this.findProjection(
+        dto.variantId,
+        dto.warehouseId,
+        dto.enterpriseId,
+        dto.locationId,
+        dto.batchId,
+        dto.OrganizationId,
+        dto.companyId,
+      );
     }
 
     const warehouse = this.warehousesService.findOne(dto.warehouseId);
@@ -138,6 +182,7 @@ export class InventoryService implements OnModuleInit {
     const projection = this.findOrCreateProjection(
       dto.variantId,
       dto.warehouseId,
+      dto.enterpriseId,
       dto.locationId,
       dto.batchId,
       dto.OrganizationId,
@@ -158,6 +203,7 @@ export class InventoryService implements OnModuleInit {
     this.persistState();
     this.realtimeService.emitInventoryStockUpdated(projection);
     this.realtimeService.emitInventoryAlert(projection);
+    this.emitStockChangedEvent(projection, 'reservation');
     return projection;
   }
 
@@ -170,6 +216,7 @@ export class InventoryService implements OnModuleInit {
     const projection = this.findProjection(
       reservation.variantId,
       reservation.warehouseId,
+      reservation.enterpriseId,
       reservation.locationId,
       reservation.batchId,
       reservation.OrganizationId,
@@ -187,6 +234,7 @@ export class InventoryService implements OnModuleInit {
     this.persistState();
     this.realtimeService.emitInventoryStockUpdated(projection);
     this.realtimeService.emitInventoryAlert(projection);
+    this.emitStockChangedEvent(projection, 'release');
     return projection;
   }
 
@@ -208,6 +256,7 @@ export class InventoryService implements OnModuleInit {
   private findProjection(
     variantId: string,
     warehouseId: string,
+    enterpriseId: string,
     locationId: string | undefined,
     batchId: string | undefined,
     OrganizationId: string,
@@ -216,6 +265,7 @@ export class InventoryService implements OnModuleInit {
     const keyMatcher = (projection: StockProjectionRecord) =>
       projection.variantId === variantId &&
       projection.warehouseId === warehouseId &&
+      projection.enterpriseId === enterpriseId &&
       projection.locationId === locationId &&
       projection.batchId === batchId &&
       projection.OrganizationId === OrganizationId &&
@@ -231,6 +281,7 @@ export class InventoryService implements OnModuleInit {
   private findOrCreateProjection(
     variantId: string,
     warehouseId: string,
+    enterpriseId: string,
     locationId: string | undefined,
     batchId: string | undefined,
     OrganizationId: string,
@@ -240,6 +291,7 @@ export class InventoryService implements OnModuleInit {
       (projection) =>
         projection.variantId === variantId &&
         projection.warehouseId === warehouseId &&
+        projection.enterpriseId === enterpriseId &&
         projection.locationId === locationId &&
         projection.batchId === batchId &&
         projection.OrganizationId === OrganizationId &&
@@ -254,6 +306,7 @@ export class InventoryService implements OnModuleInit {
       id: uuid(),
       variantId,
       warehouseId,
+      enterpriseId,
       locationId,
       batchId,
       onHand: 0,
@@ -282,5 +335,45 @@ export class InventoryService implements OnModuleInit {
         const message = error instanceof Error ? error.stack ?? error.message : String(error);
         this.logger.error(`Failed to persist inventory state: ${message}`);
       });
+  }
+
+  private emitStockChangedEvent(
+    projection: StockProjectionRecord,
+    changeType: InventoryStockChangedPayload['changeType'],
+    movementId?: string,
+  ): void {
+    try {
+      const payload: InventoryStockChangedPayload = {
+        variantId: projection.variantId,
+        warehouseId: projection.warehouseId,
+        enterpriseId: projection.enterpriseId,
+        locationId: projection.locationId,
+        batchId: projection.batchId,
+        onHand: projection.onHand,
+        reserved: projection.reserved,
+        available: projection.available,
+        version: projection.version,
+        companyId: projection.companyId,
+        movementId,
+        changeType,
+        occurredAt: new Date().toISOString(),
+      };
+
+      void this.outboxService
+        .add({
+          organizationId: projection.OrganizationId,
+          enterpriseId: projection.enterpriseId,
+          moduleKey: 'inventory',
+          eventType: 'inventory.stock.changed',
+          payload,
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.stack ?? error.message : String(error);
+          this.logger.error(`Failed to enqueue inventory stock event: ${message}`);
+        });
+    } catch (error) {
+      const message = error instanceof Error ? error.stack ?? error.message : String(error);
+      this.logger.error(`Failed to emit inventory stock event: ${message}`);
+    }
   }
 }
