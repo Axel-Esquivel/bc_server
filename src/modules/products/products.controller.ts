@@ -5,14 +5,19 @@ import { ProductListQueryDto } from './dto/product-list-query.dto';
 import { ProductSearchQueryDto } from './dto/product-search-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
+import { VariantsService } from '../variants/variants.service';
+import { CreateProductVariantDto } from '../variants/dto/create-product-variant.dto';
 
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(
+    private readonly productsService: ProductsService,
+    private readonly variantsService: VariantsService,
+  ) {}
 
   @Post()
-  create(@Body() dto: CreateProductDto) {
-    const result = this.productsService.create(dto);
+  async create(@Body() dto: CreateProductDto) {
+    const result = await this.productsService.create(dto);
     return { message: 'Product created', result };
   }
 
@@ -32,6 +37,29 @@ export class ProductsController {
   findByCode(@Query() query: ProductByCodeQueryDto) {
     const result = this.productsService.findByCodeForPos(query);
     return { message: 'Product lookup retrieved', result };
+  }
+
+  @Get(':productId/variants')
+  listVariants(@Param('productId') productId: string) {
+    const product = this.productsService.findOne(productId);
+    const variants = this.variantsService
+      .findByProduct(productId)
+      .filter(
+        (variant) =>
+          variant.OrganizationId === product.OrganizationId &&
+          variant.companyId === product.companyId &&
+          variant.enterpriseId === product.enterpriseId,
+      );
+    return { message: 'Product variants retrieved', result: variants };
+  }
+
+  @Post(':productId/variants')
+  async createVariant(
+    @Param('productId') productId: string,
+    @Body() dto: CreateProductVariantDto,
+  ) {
+    const result = await this.productsService.createVariant(productId, dto);
+    return { message: 'Variant created', result };
   }
 
   @Get(':id')

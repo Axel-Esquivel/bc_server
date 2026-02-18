@@ -36,4 +36,8 @@ export class UpdateVariantDto {
   @IsOptional()
   @IsString()
   companyId?: string;
+
+  @IsOptional()
+  @IsString()
+  enterpriseId?: string;
 }

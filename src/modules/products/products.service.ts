@@ -1,12 +1,16 @@
-import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { ModuleStateService } from '../../core/database/module-state.service';
+import { OrganizationsService } from '../organizations/organizations.service';
+import { VariantsService } from '../variants/variants.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ProductByCodeQueryDto } from './dto/product-by-code-query.dto';
 import { ProductListQueryDto } from './dto/product-list-query.dto';
 import { ProductSearchQueryDto } from './dto/product-search-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Product } from './entities/product.entity';
+import { CreateProductVariantDto } from '../variants/dto/create-product-variant.dto';
+import { VariantRecord } from '../variants/variants.service';
 
 export interface ProductRecord extends Product {
   id: string;
@@ -33,14 +37,18 @@ export class ProductsService implements OnModuleInit {
   private readonly stateKey = 'module:products';
   private products: ProductRecord[] = [];
 
-  constructor(private readonly moduleState: ModuleStateService) {}
+  constructor(
+    private readonly moduleState: ModuleStateService,
+    private readonly variantsService: VariantsService,
+    private readonly organizationsService: OrganizationsService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     const state = await this.moduleState.loadState<ProductsState>(this.stateKey, { products: [] });
     this.products = state.products ?? [];
   }
 
-  create(dto: CreateProductDto): ProductRecord {
+  async create(dto: CreateProductDto): Promise<ProductRecord> {
     const product: ProductRecord = {
       id: uuid(),
       name: dto.name,
@@ -59,6 +67,22 @@ export class ProductsService implements OnModuleInit {
     };
 
     this.products.push(product);
+    const defaultVariant = this.variantsService.ensureDefaultVariant({
+      productId: product.id,
+      name: product.name,
+      sku: product.sku,
+      barcode: product.barcode,
+      sellable: product.sellable,
+      OrganizationId: product.OrganizationId,
+      companyId: product.companyId,
+      enterpriseId: product.enterpriseId,
+    });
+    if (!product.sku) {
+      product.sku = defaultVariant.sku;
+    }
+    if (!product.barcode && defaultVariant.barcodes.length > 0) {
+      product.barcode = defaultVariant.barcodes[0];
+    }
     this.persistState();
     return product;
   }
@@ -80,37 +104,45 @@ export class ProductsService implements OnModuleInit {
     if (!needle) {
       return [];
     }
-
-    return this.products
-      .filter((product) => {
-        if (product.enterpriseId !== query.enterpriseId) return false;
-        if (query.OrganizationId && product.OrganizationId !== query.OrganizationId) return false;
-        if (query.companyId && product.companyId !== query.companyId) return false;
+    const productMap = new Map(this.products.map((product) => [product.id, product]));
+    return this.variantsService
+      .findAll()
+      .filter((variant) => {
+        if (variant.enterpriseId !== query.enterpriseId) return false;
+        if (query.OrganizationId && variant.OrganizationId !== query.OrganizationId) return false;
+        if (query.companyId && variant.companyId !== query.companyId) return false;
+        const product = productMap.get(variant.productId);
+        if (!product) return false;
         const nameMatch = product.name.toLowerCase().includes(needle);
-        const skuMatch = product.sku?.toLowerCase().includes(needle) ?? false;
-        const barcodeMatch = product.barcode?.toLowerCase().includes(needle) ?? false;
+        const skuMatch = variant.sku?.toLowerCase().includes(needle) ?? false;
+        const barcodeMatch = variant.barcodes.some((barcode) => barcode.toLowerCase().includes(needle));
         return nameMatch || skuMatch || barcodeMatch;
       })
-      .map((product) => this.mapProductForPos(product));
+      .map((variant) => {
+        const product = productMap.get(variant.productId);
+        if (!product) {
+          return null;
+        }
+        return this.mapVariantForPos(product, variant);
+      })
+      .filter((item): item is PosProductLookup => Boolean(item));
   }
 
   findByCodeForPos(query: ProductByCodeQueryDto): PosProductLookup | null {
-    const code = query.code.trim();
-    if (!code) {
+    const variant = this.variantsService.findByCode({
+      enterpriseId: query.enterpriseId,
+      code: query.code,
+      OrganizationId: query.OrganizationId,
+      companyId: query.companyId,
+    });
+    if (!variant) {
       return null;
     }
-    const codeLower = code.toLowerCase();
-    const match = this.products.find((product) => {
-      if (product.enterpriseId !== query.enterpriseId) return false;
-      if (query.OrganizationId && product.OrganizationId !== query.OrganizationId) return false;
-      if (query.companyId && product.companyId !== query.companyId) return false;
-      if (product.sku?.toLowerCase() === codeLower) return true;
-      if (product.barcode?.toLowerCase() === codeLower) return true;
-      return false;
-    });
-
-    if (!match) return null;
-    return this.mapProductForPos(match);
+    const product = this.products.find((item) => item.id === variant.productId);
+    if (!product) {
+      return null;
+    }
+    return this.mapVariantForPos(product, variant);
   }
 
   findOne(id: string): ProductRecord {
@@ -141,6 +173,26 @@ export class ProductsService implements OnModuleInit {
     return product;
   }
 
+  async createVariant(productId: string, dto: CreateProductVariantDto): Promise<VariantRecord> {
+    const product = this.findOne(productId);
+    const enableVariants = await this.isVariantsEnabled(product.OrganizationId);
+    const existing = this.variantsService.countByProduct(productId);
+    if (!enableVariants && existing > 0) {
+      throw new BadRequestException('Variants are disabled for this organization');
+    }
+    return this.variantsService.create({
+      productId,
+      name: dto.name,
+      sku: dto.sku,
+      barcodes: dto.barcodes ?? [],
+      baseUomId: dto.baseUomId,
+      sellable: dto.sellable ?? true,
+      OrganizationId: product.OrganizationId,
+      companyId: product.companyId,
+      enterpriseId: product.enterpriseId,
+    });
+  }
+
   remove(id: string): void {
     const index = this.products.findIndex((item) => item.id === id);
     if (index === -1) {
@@ -159,15 +211,24 @@ export class ProductsService implements OnModuleInit {
       });
   }
 
-  private mapProductForPos(product: ProductRecord): PosProductLookup {
+  private mapVariantForPos(product: ProductRecord, variant: VariantRecord): PosProductLookup {
     return {
-      _id: product.id,
+      _id: variant.id,
       name: product.name,
-      sku: product.sku ?? '',
-      barcode: product.barcode,
+      sku: variant.sku ?? '',
+      barcode: variant.barcodes[0],
       price: product.price,
       isActive: product.isActive,
       taxRate: undefined,
     };
+  }
+
+  private async isVariantsEnabled(organizationId: string): Promise<boolean> {
+    if (!organizationId) {
+      return false;
+    }
+    const organization = await this.organizationsService.getOrganization(organizationId);
+    const settings = (organization.moduleSettings?.products ?? {}) as { enableVariants?: boolean };
+    return settings.enableVariants === true;
   }
 }

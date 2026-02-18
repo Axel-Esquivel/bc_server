@@ -1,7 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 import { VariantsService } from './variants.service';
+import { VariantByCodeQueryDto } from './dto/variant-by-code-query.dto';
 
 @Controller('variants')
 export class VariantsController {
@@ -17,6 +18,12 @@ export class VariantsController {
   findAll() {
     const result = this.variantsService.findAll();
     return { message: 'Variants retrieved', result };
+  }
+
+  @Get('by-code')
+  findByCode(@Query() query: VariantByCodeQueryDto) {
+    const result = this.variantsService.findByCode(query);
+    return { message: 'Variant lookup retrieved', result };
   }
 
   @Get(':id')
