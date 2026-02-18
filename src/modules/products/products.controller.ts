@@ -5,8 +5,8 @@ import { ProductListQueryDto } from './dto/product-list-query.dto';
 import { ProductSearchQueryDto } from './dto/product-search-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
-import { VariantsService } from '../variants/variants.service';
-import { CreateProductVariantDto } from '../variants/dto/create-product-variant.dto';
+import { VariantsService } from './variants/variants.service';
+import { CreateProductVariantDto } from './variants/dto/create-product-variant.dto';
 
 @Controller('products')
 export class ProductsController {

@@ -28,6 +28,7 @@ import { CreateCoreCountryDto } from './dto/create-core-country.dto';
 import { CreateCoreCurrencyDto } from './dto/create-core-currency.dto';
 import { OrganizationCoreSettingsDto } from './dto/organization-core-settings.dto';
 import { OrganizationStructureSettingsDto } from './dto/organization-structure-settings.dto';
+import { UpdateModuleSettingsDto } from './dto/update-module-settings.dto';
 import { UpdateCoreSettingsDto } from './dto/update-core-settings.dto';
 import { OrganizationPermission } from './decorators/organization-permission.decorator';
 import { OrganizationAdminGuard } from './guards/organization-admin.guard';
@@ -478,6 +479,20 @@ export class OrganizationsController {
     const settings = await this.organizationsService.updateStructureSettings(id, dto);
     return {
       message: 'Organization structure settings updated',
+      result: settings,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('modules.configure')
+  @Patch(':id/modules/settings')
+  async updateModuleSettings(
+    @Param('id') id: string,
+    @Body() dto: UpdateModuleSettingsDto,
+  ): Promise<ApiResponse<Record<string, unknown>>> {
+    const settings = await this.organizationsService.updateModuleSettings(id, dto);
+    return {
+      message: 'Organization module settings updated',
       result: settings,
     };
   }

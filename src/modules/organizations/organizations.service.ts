@@ -71,6 +71,7 @@ import {
   OrganizationModuleOverviewItem,
   OrganizationModulesOverviewResponse,
 } from './types/organization-modules-overview.types';
+import { UpdateModuleSettingsDto } from './dto/update-module-settings.dto';
 import {
   OrganizationModuleInstallResponse,
   OrganizationModuleStoreItem,
@@ -416,6 +417,26 @@ export class OrganizationsService {
     organization.structureSettings = next;
     await this.updateOrganizationFields(organizationId, { structureSettings: next });
     return next;
+  }
+
+  async updateModuleSettings(
+    organizationId: string,
+    update: UpdateModuleSettingsDto,
+  ): Promise<Record<string, unknown>> {
+    const organization = await this.getOrganization(organizationId);
+    if (!organization.moduleSettings) {
+      organization.moduleSettings = this.createModuleSettingsMap();
+    }
+
+    const nextSettings = { ...(organization.moduleSettings ?? {}) };
+    if (update.moduleKey === 'products') {
+      nextSettings.products = this.normalizeProductsSettings(update.settings);
+    } else {
+      nextSettings[update.moduleKey] = update.settings ?? {};
+    }
+
+    await this.updateOrganizationFields(organizationId, { moduleSettings: nextSettings });
+    return nextSettings;
   }
 
   async listByUser(userId: string): Promise<OrganizationEntity[]> {
@@ -1690,6 +1711,20 @@ export class OrganizationsService {
       state,
     };
     return item;
+  }
+
+  private normalizeProductsSettings(input: unknown): {
+    enableVariants: boolean;
+    autoGenerateSku: boolean;
+    allowMultipleBarcodes: boolean;
+  } {
+    const settings = typeof input === 'object' && input !== null ? input : {};
+    const normalized = settings as Record<string, unknown>;
+    return {
+      enableVariants: normalized.enableVariants === true,
+      autoGenerateSku: normalized.autoGenerateSku === true,
+      allowMultipleBarcodes: normalized.allowMultipleBarcodes === true,
+    };
   }
 
   private buildModulesOverviewResponse(

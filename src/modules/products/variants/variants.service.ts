@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
-import { ModuleStateService } from '../../core/database/module-state.service';
+import { ModuleStateService } from '../../../core/database/module-state.service';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 import { ProductVariant } from './entities/product-variant.entity';
@@ -29,7 +29,7 @@ export interface DefaultVariantInput {
 @Injectable()
 export class VariantsService implements OnModuleInit {
   private readonly logger = new Logger(VariantsService.name);
-  private readonly stateKey = 'module:variants';
+  private readonly stateKey = 'module:products:variants';
   private variants: VariantRecord[] = [];
 
   constructor(private readonly moduleState: ModuleStateService) {}

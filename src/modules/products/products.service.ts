@@ -2,15 +2,15 @@ import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleIni
 import { v4 as uuid } from 'uuid';
 import { ModuleStateService } from '../../core/database/module-state.service';
 import { OrganizationsService } from '../organizations/organizations.service';
-import { VariantsService } from '../variants/variants.service';
+import { VariantsService } from './variants/variants.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ProductByCodeQueryDto } from './dto/product-by-code-query.dto';
 import { ProductListQueryDto } from './dto/product-list-query.dto';
 import { ProductSearchQueryDto } from './dto/product-search-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Product } from './entities/product.entity';
-import { CreateProductVariantDto } from '../variants/dto/create-product-variant.dto';
-import { VariantRecord } from '../variants/variants.service';
+import { CreateProductVariantDto } from './variants/dto/create-product-variant.dto';
+import { VariantRecord } from './variants/variants.service';
 
 export interface ProductRecord extends Product {
   id: string;

@@ -75,19 +75,12 @@ export const MODULE_CATALOG: ModuleCatalogEntry[] = [
   {
     key: 'products',
     name: 'Products',
-    description: 'Productos y catálogo',
+    description: 'Productos y catï¿½logo',
     version: '1.0.0',
     dependencies: [],
     requiresConfig: false,
   },
-  {
-    key: 'variants',
-    name: 'Variants',
-    description: 'Sellable variants and barcodes',
-    version: '1.0.0',
-    dependencies: [],
-    requiresConfig: false,
-  },
+
   {
     key: 'uom',
     name: 'Units of Measure',

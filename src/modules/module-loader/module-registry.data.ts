@@ -25,7 +25,6 @@ import reports from '../reports/module.config';
 import roles from '../roles/module.config';
 import uom from '../uom/module.config';
 import users from '../users/module.config';
-import variants from '../variants/module.config';
 import warehouses from '../warehouses/module.config';
 
 export const MODULE_REGISTRY_CONFIGS: ModuleConfig[] = [
@@ -55,6 +54,5 @@ export const MODULE_REGISTRY_CONFIGS: ModuleConfig[] = [
   roles as ModuleConfig,
   uom as ModuleConfig,
   users as ModuleConfig,
-  variants as ModuleConfig,
   warehouses as ModuleConfig,
 ];
