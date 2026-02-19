@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+﻿import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class UpdateUomDto {
   @IsOptional()
@@ -9,17 +9,26 @@ export class UpdateUomDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  code?: string;
+  symbol?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  categoryId?: string;
 
   @IsOptional()
   @IsNumber()
   factor?: number;
 
   @IsOptional()
-  @IsString()
-  OrganizationId?: string;
+  @IsBoolean()
+  isBase?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 
   @IsOptional()
   @IsString()
-  companyId?: string;
+  organizationId?: string;
 }

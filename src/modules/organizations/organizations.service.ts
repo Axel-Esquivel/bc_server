@@ -24,6 +24,7 @@ import { ModuleLoaderService } from '../module-loader/module-loader.service';
 import { ModuleRegistryService } from '../module-loader/module-registry.service';
 import { ModuleRegistryEntry } from '../module-loader/module-registry.types';
 import { AccountingService } from '../accounting/accounting.service';
+import { UomService } from '../uom/uom.service';
 import { BootstrapOrganizationDto } from './dto/bootstrap-organization.dto';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
@@ -107,6 +108,7 @@ export class OrganizationsService {
     private readonly moduleLoader: ModuleLoaderService,
     private readonly moduleRegistry: ModuleRegistryService,
     private readonly accountingService: AccountingService,
+    private readonly uomService: UomService,
   ) {}
 
   async createOrganization(dto: CreateOrganizationDto, ownerUserId: string): Promise<OrganizationEntity> {
@@ -780,6 +782,14 @@ export class OrganizationsService {
         } catch (error) {
           const message = error instanceof Error ? error.stack ?? error.message : String(error);
           this.logger.error(`Failed to seed accounting accounts for ${organizationId}: ${message}`);
+        }
+      }
+      if (newlyInstalled.includes('products')) {
+        try {
+          await this.uomService.seedDefaultsForOrganization(organizationId);
+        } catch (error) {
+          const message = error instanceof Error ? error.stack ?? error.message : String(error);
+          this.logger.error(`Failed to seed UoMs for ${organizationId}: ${message}`);
         }
       }
     }

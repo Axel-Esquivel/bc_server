@@ -26,6 +26,8 @@ import { InventoryCountsModule } from './modules/inventory-counts/inventory-coun
 import { PurchasesModule } from './modules/purchases/purchases.module';
 import { PosModule } from './modules/pos/pos.module';
 import { ProductsModule } from './modules/products/products.module';
+import { ProductCategoriesModule } from './modules/product-categories/product-categories.module';
+import { UomModule } from './modules/uom/uom.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { AccountingModule } from './modules/accounting/accounting.module';
 import { ReportsModule } from './modules/reports/reports.module';
@@ -126,6 +128,8 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     PurchasesModule,
     PosModule,
     ProductsModule,
+    ProductCategoriesModule,
+    UomModule,
     CustomersModule,
     AccountingModule,
     ReportsModule,

@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsNumber, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateUomDto {
   @IsString()
@@ -7,16 +7,24 @@ export class CreateUomDto {
 
   @IsString()
   @IsNotEmpty()
-  code!: string;
+  symbol!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  categoryId!: string;
 
   @IsNumber()
   factor!: number;
 
-  @IsString()
-  @IsNotEmpty()
-  OrganizationId!: string;
+  @IsOptional()
+  @IsBoolean()
+  isBase?: boolean;
 
   @IsString()
   @IsNotEmpty()
-  companyId!: string;
+  organizationId!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

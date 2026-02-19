@@ -1,11 +1,31 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+﻿import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { CreateUomCategoryDto } from './dto/create-uom-category.dto';
 import { CreateUomDto } from './dto/create-uom.dto';
+import { UpdateUomCategoryDto } from './dto/update-uom-category.dto';
 import { UpdateUomDto } from './dto/update-uom.dto';
 import { UomService } from './uom.service';
 
-@Controller('uom')
+@Controller(['uom', 'uoms'])
 export class UomController {
   constructor(private readonly uomService: UomService) {}
+
+  @Post('categories')
+  createCategory(@Body() dto: CreateUomCategoryDto) {
+    const result = this.uomService.createCategory(dto);
+    return { message: 'UoM category created', result };
+  }
+
+  @Get('categories')
+  findCategories(@Query('organizationId') organizationId?: string) {
+    const result = this.uomService.findAllCategories(organizationId);
+    return { message: 'UoM categories retrieved', result };
+  }
+
+  @Patch('categories/:id')
+  updateCategory(@Param('id') id: string, @Body() dto: UpdateUomCategoryDto) {
+    const result = this.uomService.updateCategory(id, dto);
+    return { message: 'UoM category updated', result };
+  }
 
   @Post()
   create(@Body() dto: CreateUomDto) {
@@ -14,8 +34,8 @@ export class UomController {
   }
 
   @Get()
-  findAll() {
-    const result = this.uomService.findAll();
+  findAll(@Query('organizationId') organizationId?: string, @Query('categoryId') categoryId?: string) {
+    const result = this.uomService.findAll({ organizationId, categoryId });
     return { message: 'UoMs retrieved', result };
   }
 
