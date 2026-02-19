@@ -17,6 +17,9 @@ export class ProductVariant {
   @prop({ required: true, default: 0 })
   price!: number;
 
+  @prop({ required: true, default: 0 })
+  minStock!: number;
+
   @prop({ required: true })
   uomId!: string;
 

@@ -27,6 +27,11 @@ export class UpdateVariantDto {
   price?: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  minStock?: number;
+
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
   uomId?: string;

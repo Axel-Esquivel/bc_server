@@ -19,6 +19,11 @@ export class CreateProductVariantDto {
   @Min(0)
   price!: number;
 
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  minStock?: number;
+
   @IsString()
   @IsNotEmpty()
   uomId!: string;
