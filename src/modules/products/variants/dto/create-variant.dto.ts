@@ -20,7 +20,7 @@ export class CreateVariantDto {
 
   @IsString()
   @IsNotEmpty()
-  baseUomId!: string;
+  uomId!: string;
 
   @IsOptional()
   @IsBoolean()

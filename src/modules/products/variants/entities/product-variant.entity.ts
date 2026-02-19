@@ -15,7 +15,7 @@ export class ProductVariant {
   barcodes!: string[];
 
   @prop({ required: true })
-  baseUomId!: string;
+  uomId!: string;
 
   @prop({ default: true })
   sellable!: boolean;

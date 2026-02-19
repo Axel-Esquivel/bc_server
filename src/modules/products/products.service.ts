@@ -185,7 +185,7 @@ export class ProductsService implements OnModuleInit {
       name: dto.name,
       sku: dto.sku,
       barcodes: dto.barcodes ?? [],
-      baseUomId: dto.baseUomId,
+      uomId: dto.uomId,
       sellable: dto.sellable ?? true,
       OrganizationId: product.OrganizationId,
       companyId: product.companyId,

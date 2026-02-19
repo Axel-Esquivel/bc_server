@@ -16,7 +16,7 @@ export class CreateProductVariantDto {
 
   @IsString()
   @IsNotEmpty()
-  baseUomId!: string;
+  uomId!: string;
 
   @IsOptional()
   @IsBoolean()
