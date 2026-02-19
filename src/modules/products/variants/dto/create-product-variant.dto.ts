@@ -1,4 +1,5 @@
 import { IsArray, IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNumber, Min } from 'class-validator';
 
 export class CreateProductVariantDto {
   @IsString()
@@ -13,6 +14,10 @@ export class CreateProductVariantDto {
   @IsArray()
   @IsString({ each: true })
   barcodes?: string[];
+
+  @IsNumber()
+  @Min(0)
+  price!: number;
 
   @IsString()
   @IsNotEmpty()

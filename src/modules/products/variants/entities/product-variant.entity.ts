@@ -14,6 +14,9 @@ export class ProductVariant {
   @prop({ type: () => [String], default: [] })
   barcodes!: string[];
 
+  @prop({ required: true, default: 0 })
+  price!: number;
+
   @prop({ required: true })
   uomId!: string;
 

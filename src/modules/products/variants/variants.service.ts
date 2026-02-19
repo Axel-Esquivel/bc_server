@@ -20,6 +20,7 @@ export interface DefaultVariantInput {
   sku?: string;
   barcode?: string;
   uomId?: string;
+  price?: number;
   sellable?: boolean;
   OrganizationId: string;
   companyId: string;
@@ -49,6 +50,7 @@ export class VariantsService implements OnModuleInit {
       name: dto.name,
       sku,
       barcodes: dto.barcodes?.length ? dto.barcodes : [],
+      price: dto.price,
       uomId: dto.uomId,
       sellable: dto.sellable ?? true,
       OrganizationId: dto.OrganizationId,
@@ -92,6 +94,7 @@ export class VariantsService implements OnModuleInit {
       name: dto.name ?? variant.name,
       sku: nextSku,
       barcodes: dto.barcodes ?? variant.barcodes,
+      price: dto.price ?? variant.price,
       uomId: dto.uomId ?? variant.uomId,
       sellable: dto.sellable ?? variant.sellable,
       OrganizationId: dto.OrganizationId ?? variant.OrganizationId,
@@ -127,6 +130,7 @@ export class VariantsService implements OnModuleInit {
       name: input.name,
       sku: input.sku,
       barcodes: input.barcode ? [input.barcode] : [],
+      price: input.price ?? 0,
       uomId: input.uomId ?? 'unit',
       sellable: input.sellable ?? true,
       OrganizationId: input.OrganizationId,

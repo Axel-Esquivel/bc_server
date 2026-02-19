@@ -1,4 +1,5 @@
 import { IsArray, IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNumber, Min } from 'class-validator';
 
 export class UpdateVariantDto {
   @IsOptional()
@@ -19,6 +20,11 @@ export class UpdateVariantDto {
   @IsArray()
   @IsString({ each: true })
   barcodes?: string[];
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  price?: number;
 
   @IsOptional()
   @IsString()
