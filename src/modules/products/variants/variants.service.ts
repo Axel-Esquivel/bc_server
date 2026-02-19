@@ -5,6 +5,7 @@ import { CreateVariantDto } from './dto/create-variant.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 import { ProductVariant } from './entities/product-variant.entity';
 import { VariantByCodeQueryDto } from './dto/variant-by-code-query.dto';
+import { ProductPackagingService } from '../packaging/product-packaging.service';
 
 export interface VariantRecord extends ProductVariant {
   id: string;
@@ -20,7 +21,8 @@ export interface DefaultVariantInput {
   sku?: string;
   barcode?: string;
   uomId?: string;
-  price?: number;
+  uomCategoryId?: string;
+  quantity?: number;
   minStock?: number;
   sellable?: boolean;
   OrganizationId: string;
@@ -34,7 +36,10 @@ export class VariantsService implements OnModuleInit {
   private readonly stateKey = 'module:products:variants';
   private variants: VariantRecord[] = [];
 
-  constructor(private readonly moduleState: ModuleStateService) {}
+  constructor(
+    private readonly moduleState: ModuleStateService,
+    private readonly packagingService: ProductPackagingService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     const state = await this.moduleState.loadState<VariantsState>(this.stateKey, { variants: [] });
@@ -51,9 +56,10 @@ export class VariantsService implements OnModuleInit {
       name: dto.name,
       sku,
       barcodes: dto.barcodes?.length ? dto.barcodes : [],
-      price: dto.price,
       minStock: dto.minStock ?? 0,
       uomId: dto.uomId,
+      uomCategoryId: dto.uomCategoryId,
+      quantity: dto.quantity ?? 1,
       sellable: dto.sellable ?? true,
       OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
@@ -61,6 +67,7 @@ export class VariantsService implements OnModuleInit {
     };
 
     this.variants.push(variant);
+    this.packagingService.ensureDefaultPackaging(variant);
     this.persistState();
     return variant;
   }
@@ -96,9 +103,10 @@ export class VariantsService implements OnModuleInit {
       name: dto.name ?? variant.name,
       sku: nextSku,
       barcodes: dto.barcodes ?? variant.barcodes,
-      price: dto.price ?? variant.price,
       minStock: dto.minStock ?? variant.minStock,
       uomId: dto.uomId ?? variant.uomId,
+      uomCategoryId: dto.uomCategoryId ?? variant.uomCategoryId,
+      quantity: dto.quantity ?? variant.quantity,
       sellable: dto.sellable ?? variant.sellable,
       OrganizationId: dto.OrganizationId ?? variant.OrganizationId,
       companyId: dto.companyId ?? variant.companyId,
@@ -133,9 +141,10 @@ export class VariantsService implements OnModuleInit {
       name: input.name,
       sku: input.sku,
       barcodes: input.barcode ? [input.barcode] : [],
-      price: input.price ?? 0,
       minStock: input.minStock ?? 0,
       uomId: input.uomId ?? 'unit',
+      uomCategoryId: input.uomCategoryId,
+      quantity: input.quantity ?? 1,
       sellable: input.sellable ?? true,
       OrganizationId: input.OrganizationId,
       companyId: input.companyId,

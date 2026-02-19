@@ -1,33 +1,24 @@
 import { modelOptions, prop } from '@typegoose/typegoose';
 
 @modelOptions({ schemaOptions: { timestamps: true } })
-export class ProductVariant {
+export class ProductPackaging {
   @prop({ required: true })
-  productId!: string;
+  variantId!: string;
 
   @prop({ required: true })
   name!: string;
 
-  @prop({ required: true, unique: true })
-  sku!: string;
-
-  @prop({ type: () => [String], default: [] })
-  barcodes!: string[];
-
-  @prop({ required: true, default: 0 })
-  minStock!: number;
-
-  @prop({ required: true })
-  uomId!: string;
+  @prop({ required: true, min: 1 })
+  unitsPerPack!: number;
 
   @prop()
-  uomCategoryId?: string;
+  barcode?: string;
 
-  @prop({ required: true, default: 1 })
-  quantity!: number;
+  @prop({ required: true, default: 0 })
+  price!: number;
 
   @prop({ default: true })
-  sellable!: boolean;
+  isActive!: boolean;
 
   @prop({ required: true, index: true })
   OrganizationId!: string;

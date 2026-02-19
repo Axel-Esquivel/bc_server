@@ -5,6 +5,9 @@ export class Uom {
   @prop({ required: true })
   name!: string;
 
+  @prop()
+  nameNormalized?: string;
+
   @prop({ required: true })
   symbol!: string;
 

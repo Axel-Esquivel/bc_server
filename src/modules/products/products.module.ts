@@ -5,11 +5,13 @@ import { ProductsController } from './products.controller';
 import { ProductsService } from './products.service';
 import { VariantsController } from './variants/variants.controller';
 import { VariantsService } from './variants/variants.service';
+import { ProductPackagingController } from './packaging/product-packaging.controller';
+import { ProductPackagingService } from './packaging/product-packaging.service';
 
 @Module({
   imports: [PriceListsModule, OrganizationsModule],
-  controllers: [ProductsController, VariantsController],
-  providers: [ProductsService, VariantsService],
-  exports: [ProductsService, VariantsService],
+  controllers: [ProductsController, VariantsController, ProductPackagingController],
+  providers: [ProductsService, VariantsService, ProductPackagingService],
+  exports: [ProductsService, VariantsService, ProductPackagingService],
 })
 export class ProductsModule {}

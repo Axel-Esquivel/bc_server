@@ -1,5 +1,4 @@
-import { IsArray, IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
-import { IsNumber, Min } from 'class-validator';
+﻿import { IsArray, IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class UpdateVariantDto {
   @IsOptional()
@@ -24,17 +23,21 @@ export class UpdateVariantDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  price?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
   minStock?: number;
 
   @IsOptional()
   @IsString()
   @IsNotEmpty()
   uomId?: string;
+
+  @IsOptional()
+  @IsString()
+  uomCategoryId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  quantity?: number;
 
   @IsOptional()
   @IsBoolean()

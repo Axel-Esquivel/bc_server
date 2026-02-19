@@ -6,6 +6,9 @@ export class ProductCategory {
   name!: string;
 
   @prop()
+  nameNormalized?: string;
+
+  @prop()
   parentId?: string;
 
   @prop({ required: true, index: true })

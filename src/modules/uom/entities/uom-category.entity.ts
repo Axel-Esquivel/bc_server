@@ -5,6 +5,9 @@ export class UomCategory {
   @prop({ required: true })
   name!: string;
 
+  @prop()
+  nameNormalized?: string;
+
   @prop({ required: true, index: true })
   organizationId!: string;
 

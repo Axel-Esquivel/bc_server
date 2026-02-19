@@ -10,10 +10,12 @@ import { Uom } from './entities/uom.entity';
 
 export interface UomCategoryRecord extends UomCategory {
   id: string;
+  nameNormalized: string;
 }
 
 export interface UomRecord extends Uom {
   id: string;
+  nameNormalized: string;
 }
 
 interface UomState {
@@ -47,17 +49,17 @@ export class UomService implements OnModuleInit {
     if (!name) {
       throw new BadRequestException('Category name is required');
     }
-    const exists = this.categories.some(
-      (category) =>
-        category.organizationId === dto.organizationId &&
-        category.name.trim().toLowerCase() === name.toLowerCase(),
+    const nameNormalized = this.normalizeName(name);
+    const existing = this.categories.find(
+      (category) => category.organizationId === dto.organizationId && category.nameNormalized === nameNormalized,
     );
-    if (exists) {
-      throw new BadRequestException('Category already exists');
+    if (existing) {
+      return existing;
     }
     const category: UomCategoryRecord = {
       id: uuid(),
       name,
+      nameNormalized,
       organizationId: dto.organizationId,
       isActive: dto.isActive ?? true,
     };
@@ -75,8 +77,22 @@ export class UomService implements OnModuleInit {
 
   updateCategory(id: string, dto: UpdateUomCategoryDto): UomCategoryRecord {
     const category = this.findCategory(id);
+    const name = dto.name?.trim();
+    if (name) {
+      const nameNormalized = this.normalizeName(name);
+      const duplicate = this.categories.some(
+        (item) =>
+          item.id !== id &&
+          item.organizationId === category.organizationId &&
+          item.nameNormalized === nameNormalized,
+      );
+      if (duplicate) {
+        throw new BadRequestException('Category already exists');
+      }
+    }
     Object.assign(category, {
-      name: dto.name?.trim() ?? category.name,
+      name: name ?? category.name,
+      nameNormalized: name ? this.normalizeName(name) : category.nameNormalized,
       isActive: dto.isActive ?? category.isActive,
     });
     this.persistState();
@@ -99,10 +115,22 @@ export class UomService implements OnModuleInit {
     if (category.organizationId !== dto.organizationId) {
       throw new BadRequestException('Category does not belong to organization');
     }
+    const nameNormalized = this.normalizeName(dto.name);
+    const symbolNormalized = this.normalizeName(dto.symbol);
+    const existing = this.uoms.find(
+      (uom) =>
+        uom.organizationId === dto.organizationId &&
+        uom.categoryId === dto.categoryId &&
+        (uom.nameNormalized === nameNormalized || this.normalizeName(uom.symbol) === symbolNormalized),
+    );
+    if (existing) {
+      return existing;
+    }
     this.assertUniqueSymbol(dto.symbol, dto.organizationId, dto.categoryId);
     const uom: UomRecord = {
       id: uuid(),
       name: dto.name.trim(),
+      nameNormalized,
       symbol: dto.symbol.trim(),
       categoryId: dto.categoryId,
       factor: dto.factor,
@@ -144,11 +172,26 @@ export class UomService implements OnModuleInit {
     if (dto.organizationId && dto.organizationId !== uom.organizationId) {
       throw new BadRequestException('Cannot change organization');
     }
+    const nextName = dto.name?.trim();
+    if (nextName) {
+      const nameNormalized = this.normalizeName(nextName);
+      const duplicate = this.uoms.some(
+        (item) =>
+          item.id !== id &&
+          item.organizationId === uom.organizationId &&
+          item.categoryId === nextCategoryId &&
+          item.nameNormalized === nameNormalized,
+      );
+      if (duplicate) {
+        throw new BadRequestException('UoM already exists');
+      }
+    }
     if (dto.symbol && dto.symbol !== uom.symbol) {
       this.assertUniqueSymbol(dto.symbol, uom.organizationId, nextCategoryId, uom.id);
     }
     Object.assign(uom, {
-      name: dto.name?.trim() ?? uom.name,
+      name: nextName ?? uom.name,
+      nameNormalized: nextName ? this.normalizeName(nextName) : uom.nameNormalized,
       symbol: dto.symbol?.trim() ?? uom.symbol,
       categoryId: nextCategoryId,
       factor: dto.factor ?? uom.factor,
@@ -185,6 +228,7 @@ export class UomService implements OnModuleInit {
       const created: UomCategoryRecord = {
         id: uuid(),
         name,
+        nameNormalized: this.normalizeName(name),
         organizationId,
         isActive: true,
       };
@@ -217,6 +261,7 @@ export class UomService implements OnModuleInit {
       this.uoms.push({
         id: uuid(),
         name: input.name,
+        nameNormalized: this.normalizeName(input.name),
         symbol: input.symbol,
         categoryId: input.categoryId,
         factor: input.factor,
@@ -264,7 +309,10 @@ export class UomService implements OnModuleInit {
     const categories = Array.isArray(state.categories) ? state.categories : [];
     const uomsRaw = Array.isArray(state.uoms) ? state.uoms : [];
 
-    const migratedCategories = [...categories];
+    const migratedCategories = categories.map((item) => ({
+      ...item,
+      nameNormalized: this.normalizeName(item.name ?? ''),
+    }));
     const categoryByOrg = new Map<string, UomCategoryRecord>();
     const ensureUnitsCategory = (organizationId: string): UomCategoryRecord => {
       const key = organizationId.trim();
@@ -282,6 +330,7 @@ export class UomService implements OnModuleInit {
       const created: UomCategoryRecord = {
         id: uuid(),
         name: 'Unidades',
+        nameNormalized: this.normalizeName('Unidades'),
         organizationId,
         isActive: true,
       };
@@ -297,6 +346,7 @@ export class UomService implements OnModuleInit {
       return {
         id: anyRaw.id ?? uuid(),
         name: anyRaw.name ?? '',
+        nameNormalized: this.normalizeName(anyRaw.name ?? ''),
         symbol: anyRaw.symbol ?? anyRaw.code ?? '',
         categoryId,
         factor: anyRaw.factor ?? 1,
@@ -316,5 +366,9 @@ export class UomService implements OnModuleInit {
         const message = error instanceof Error ? error.stack ?? error.message : String(error);
         this.logger.error(`Failed to persist units of measure: ${message}`);
       });
+  }
+
+  private normalizeName(value: string): string {
+    return value.trim().replace(/\s+/g, ' ').toLowerCase();
   }
 }

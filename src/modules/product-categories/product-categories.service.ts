@@ -31,7 +31,11 @@ export class ProductCategoriesService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     const state = await this.moduleState.loadState<ProductCategoryState>(this.stateKey, { categories: [] });
-    this.categories = Array.isArray(state.categories) ? state.categories : [];
+    const categories = Array.isArray(state.categories) ? state.categories : [];
+    this.categories = categories.map((item) => ({
+      ...item,
+      nameNormalized: this.normalizeName(item.name),
+    }));
   }
 
   create(dto: CreateProductCategoryDto): ProductCategoryRecord {
@@ -48,19 +52,22 @@ export class ProductCategoriesService implements OnModuleInit {
         throw new BadRequestException('Parent category belongs to another organization');
       }
     }
-    const duplicate = this.categories.some(
+    const nameNormalized = this.normalizeName(name);
+    const parentId = dto.parentId ?? undefined;
+    const existing = this.categories.find(
       (item) =>
         item.organizationId === dto.organizationId &&
-        item.parentId === (dto.parentId ?? undefined) &&
-        item.name.trim().toLowerCase() === name.toLowerCase(),
+        item.parentId === parentId &&
+        item.nameNormalized === nameNormalized,
     );
-    if (duplicate) {
-      throw new BadRequestException('Category already exists');
+    if (existing) {
+      return existing;
     }
     const category: ProductCategoryRecord = {
       id: uuid(),
       name,
-      parentId: dto.parentId,
+      nameNormalized,
+      parentId,
       organizationId: dto.organizationId,
       isActive: dto.isActive ?? true,
     };
@@ -100,12 +107,14 @@ export class ProductCategoriesService implements OnModuleInit {
       }
     }
     if (name) {
+      const nameNormalized = this.normalizeName(name);
+      const parentId = dto.parentId ?? category.parentId;
       const duplicate = this.categories.some(
         (item) =>
           item.id !== id &&
           item.organizationId === category.organizationId &&
-          item.parentId === (dto.parentId ?? category.parentId) &&
-          item.name.trim().toLowerCase() === name.toLowerCase(),
+          item.parentId === parentId &&
+          item.nameNormalized === nameNormalized,
       );
       if (duplicate) {
         throw new BadRequestException('Category already exists');
@@ -113,6 +122,7 @@ export class ProductCategoriesService implements OnModuleInit {
     }
     Object.assign(category, {
       name: name ?? category.name,
+      nameNormalized: name ? this.normalizeName(name) : category.nameNormalized,
       parentId: dto.parentId ?? category.parentId,
       isActive: dto.isActive ?? category.isActive,
     });
@@ -165,5 +175,9 @@ export class ProductCategoriesService implements OnModuleInit {
         const message = error instanceof Error ? error.stack ?? error.message : String(error);
         this.logger.error(`Failed to persist product categories: ${message}`);
       });
+  }
+
+  private normalizeName(value: string): string {
+    return value.trim().replace(/\s+/g, ' ').toLowerCase();
   }
 }

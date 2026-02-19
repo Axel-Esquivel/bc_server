@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { ModuleStateService } from '../../core/database/module-state.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { VariantsService } from './variants/variants.service';
+import { ProductPackagingService } from './packaging/product-packaging.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ProductByCodeQueryDto } from './dto/product-by-code-query.dto';
 import { ProductListQueryDto } from './dto/product-list-query.dto';
@@ -41,6 +42,7 @@ export class ProductsService implements OnModuleInit {
     private readonly moduleState: ModuleStateService,
     private readonly variantsService: VariantsService,
     private readonly organizationsService: OrganizationsService,
+    private readonly packagingService: ProductPackagingService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -72,7 +74,7 @@ export class ProductsService implements OnModuleInit {
       name: product.name,
       sku: product.sku,
       barcode: product.barcode,
-      price: 0,
+      quantity: 1,
       sellable: product.sellable,
       OrganizationId: product.OrganizationId,
       companyId: product.companyId,
@@ -186,8 +188,9 @@ export class ProductsService implements OnModuleInit {
       name: dto.name,
       sku: dto.sku,
       barcodes: dto.barcodes ?? [],
-      price: dto.price,
+      quantity: dto.quantity,
       uomId: dto.uomId,
+      uomCategoryId: dto.uomCategoryId,
       sellable: dto.sellable ?? true,
       OrganizationId: product.OrganizationId,
       companyId: product.companyId,
@@ -214,12 +217,13 @@ export class ProductsService implements OnModuleInit {
   }
 
   private mapVariantForPos(product: ProductRecord, variant: VariantRecord): PosProductLookup {
+    const defaultPackaging = this.packagingService.findDefaultByVariant(variant.id);
     return {
       _id: variant.id,
       name: product.name,
       sku: variant.sku ?? '',
       barcode: variant.barcodes[0],
-      price: product.price,
+      price: defaultPackaging?.price ?? 0,
       isActive: product.isActive,
       taxRate: undefined,
     };
