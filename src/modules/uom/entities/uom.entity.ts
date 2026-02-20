@@ -11,6 +11,9 @@ export class Uom {
   @prop({ required: true })
   symbol!: string;
 
+  @prop()
+  symbolNormalized?: string;
+
   @prop({ required: true, index: true })
   categoryId!: string;
 

@@ -111,7 +111,7 @@ export class UomService {
       .findOne({
         organizationId: dto.organizationId,
         categoryId: dto.categoryId,
-        $or: [{ nameNormalized }, { symbol: dto.symbol.trim() }],
+        $or: [{ nameNormalized }, { symbolNormalized }],
       })
       .lean<UomDocument>()
       .exec();
@@ -123,6 +123,7 @@ export class UomService {
       name: dto.name.trim(),
       nameNormalized,
       symbol: dto.symbol.trim(),
+      symbolNormalized,
       categoryId: dto.categoryId,
       factor: dto.factor,
       isBase: dto.isBase ?? false,
@@ -162,14 +163,14 @@ export class UomService {
     const uom = await this.findOne(id, organizationId);
     const nextCategoryId = dto.categoryId ?? uom.categoryId;
     const category = await this.findCategory(nextCategoryId, organizationId);
-    if (dto.symbol && dto.symbol !== uom.symbol) {
-      const duplicate = await model
-        .findOne({
-          id: { $ne: id },
-          organizationId,
-          categoryId: nextCategoryId,
-          symbol: dto.symbol.trim(),
-        })
+      if (dto.symbol && dto.symbol !== uom.symbol) {
+        const duplicate = await model
+          .findOne({
+            id: { $ne: id },
+            organizationId,
+            categoryId: nextCategoryId,
+            symbolNormalized: this.normalizeName(dto.symbol),
+          })
         .lean<UomDocument>()
         .exec();
       if (duplicate) {
@@ -177,6 +178,7 @@ export class UomService {
       }
     }
     const nextName = dto.name?.trim();
+    const nextSymbol = dto.symbol?.trim();
     if (nextName) {
       const nameNormalized = this.normalizeName(nextName);
       const duplicate = await model
@@ -195,7 +197,8 @@ export class UomService {
     const next = {
       name: nextName ?? uom.name,
       nameNormalized: nextName ? this.normalizeName(nextName) : uom.nameNormalized,
-      symbol: dto.symbol?.trim() ?? uom.symbol,
+      symbol: nextSymbol ?? uom.symbol,
+      symbolNormalized: nextSymbol ? this.normalizeName(nextSymbol) : uom.symbolNormalized,
       categoryId: nextCategoryId,
       factor: dto.factor ?? uom.factor,
       isBase: dto.isBase ?? uom.isBase,
@@ -257,7 +260,7 @@ export class UomService {
         .findOne({
           organizationId,
           categoryId: input.categoryId,
-          symbol: input.symbol,
+          symbolNormalized: this.normalizeName(input.symbol),
         })
         .lean<UomDocument>()
         .exec();
@@ -269,6 +272,7 @@ export class UomService {
         name: input.name,
         nameNormalized: this.normalizeName(input.name),
         symbol: input.symbol,
+        symbolNormalized: this.normalizeName(input.symbol),
         categoryId: input.categoryId,
         factor: input.factor,
         isBase: input.isBase,
@@ -294,6 +298,11 @@ export class UomService {
   }
 
   private normalizeName(value: string): string {
-    return value.trim().replace(/\s+/g, ' ').toLowerCase();
+    return value
+      .trim()
+      .replace(/\s+/g, ' ')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
   }
 }

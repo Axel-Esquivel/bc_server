@@ -16,7 +16,11 @@ export class CounterService {
     const result = await counterModel
       .findOneAndUpdate(
         { organizationId, key },
-        { $setOnInsert: { seq: 0 }, $inc: { seq: 1 } },
+        {
+          $setOnInsert: { organizationId, key, seq: 0 },
+          $inc: { seq: 1 },
+          $set: { updatedAt: new Date() },
+        },
         { new: true, upsert: true },
       )
       .lean<Counter>()

@@ -46,8 +46,11 @@ export class ProductPackagingController {
     if (!organizationId) {
       throw new BadRequestException('OrganizationId is required');
     }
-    const result = await this.packagingService.generateInternalBarcode(organizationId, '02');
-    return { message: 'Internal barcode generated', result: { internalBarcode: result } };
+    const result = await this.packagingService.generateInternalBarcodeForPackaging(
+      organizationId,
+      dto.packagingId,
+    );
+    return { message: 'Internal barcode generated', result: { internalBarcode: result, value: result } };
   }
 
   @Delete('packaging/:id')

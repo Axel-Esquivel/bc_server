@@ -131,6 +131,26 @@ export class ProductPackagingService {
     return this.ean13Service.buildInternalBarcode(organization.eanPrefix, type, seq);
   }
 
+  async generateInternalBarcodeForPackaging(
+    organizationId: string,
+    packagingId?: string,
+  ): Promise<string> {
+    if (!packagingId) {
+      return this.generateInternalBarcode(organizationId, '02');
+    }
+    const model = this.models.packagingModel(organizationId);
+    const record = await model.findOne({ id: packagingId }).lean<PackagingRecord>().exec();
+    if (!record) {
+      throw new NotFoundException('Packaging not found');
+    }
+    if (record.internalBarcode) {
+      return record.internalBarcode;
+    }
+    const internalBarcode = await this.generateInternalBarcode(organizationId, '02');
+    await model.updateOne({ id: packagingId }, { $set: { internalBarcode } }).exec();
+    return internalBarcode;
+  }
+
   private async findOne(id: string, organizationId: string): Promise<PackagingRecord> {
     const model = this.models.packagingModel(organizationId);
     const record = await model.findOne({ id }).lean<PackagingRecord>().exec();

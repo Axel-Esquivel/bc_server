@@ -1,7 +1,11 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class GenerateInternalBarcodeDto {
   @IsString()
   @IsNotEmpty()
-  organizationId!: string;
+  organizationId?: string;
+
+  @IsOptional()
+  @IsString()
+  packagingId?: string;
 }

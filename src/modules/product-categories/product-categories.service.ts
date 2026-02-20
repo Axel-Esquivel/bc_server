@@ -161,6 +161,11 @@ export class ProductCategoriesService {
   }
 
   private normalizeName(value: string): string {
-    return value.trim().replace(/\s+/g, ' ').toLowerCase();
+    return value
+      .trim()
+      .replace(/\s+/g, ' ')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
   }
 }
