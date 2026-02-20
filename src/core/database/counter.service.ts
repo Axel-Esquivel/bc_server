@@ -17,7 +17,7 @@ export class CounterService {
       .findOneAndUpdate(
         { organizationId, key },
         {
-          $setOnInsert: { organizationId, key, seq: 0 },
+          $setOnInsert: { organizationId, key },
           $inc: { seq: 1 },
           $set: { updatedAt: new Date() },
         },
