@@ -10,6 +10,7 @@ import { ProductPackagingController } from './packaging/product-packaging.contro
 import { ProductPackagingService } from './packaging/product-packaging.service';
 import { PackagingNamesController } from './packaging-names/packaging-names.controller';
 import { PackagingNamesService } from './packaging-names/packaging-names.service';
+import { ProductsModelsProvider } from './models/products-models.provider';
 
 @Module({
   imports: [PriceListsModule, OrganizationsModule],
@@ -20,7 +21,19 @@ import { PackagingNamesService } from './packaging-names/packaging-names.service
     ProductPackagingController,
     PackagingNamesController,
   ],
-  providers: [ProductsService, VariantsService, ProductPackagingService, PackagingNamesService],
-  exports: [ProductsService, VariantsService, ProductPackagingService, PackagingNamesService],
+  providers: [
+    ProductsService,
+    VariantsService,
+    ProductPackagingService,
+    PackagingNamesService,
+    ProductsModelsProvider,
+  ],
+  exports: [
+    ProductsService,
+    VariantsService,
+    ProductPackagingService,
+    PackagingNamesService,
+    ProductsModelsProvider,
+  ],
 })
 export class ProductsModule {}

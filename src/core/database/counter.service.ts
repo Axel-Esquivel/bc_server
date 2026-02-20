@@ -1,21 +1,31 @@
 import { Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Counter, CounterDocument } from './counter.schema';
+import { OrgDbService } from './org-db.service';
+import { OrgModelFactory } from './org-model.factory';
+import { Counter, CounterSchema } from './counter.schema';
 
 @Injectable()
 export class CounterService {
-  constructor(@InjectModel(Counter.name) private readonly counterModel: Model<CounterDocument>) {}
+  constructor(private readonly orgDb: OrgDbService, private readonly modelFactory: OrgModelFactory) {}
 
   async next(organizationId: string, key: string): Promise<number> {
-    const result = await this.counterModel
+    if (!organizationId) {
+      throw new Error('OrganizationId is required');
+    }
+    const counterModel = this.getModel(organizationId);
+    const result = await counterModel
       .findOneAndUpdate(
         { organizationId, key },
-        { $inc: { seq: 1 }, $setOnInsert: { organizationId, key, seq: 0 } },
+        { $setOnInsert: { seq: 0 }, $inc: { seq: 1 } },
         { new: true, upsert: true },
       )
       .lean<Counter>()
       .exec();
     return result?.seq ?? 1;
+  }
+
+  private getModel(organizationId: string): Model<Counter> {
+    const conn = this.orgDb.getConnection(organizationId);
+    return this.modelFactory.getModel<Counter>(conn, Counter.name, CounterSchema, 'counters');
   }
 }

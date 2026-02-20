@@ -1,6 +1,5 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
-import { ModuleStateService } from '../../core/database/module-state.service';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { VariantsService } from './variants/variants.service';
 import { ProductPackagingService } from './packaging/product-packaging.service';
@@ -12,14 +11,13 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { Product } from './entities/product.entity';
 import { CreateProductVariantDto } from './variants/dto/create-product-variant.dto';
 import { VariantRecord } from './variants/variants.service';
+import { ProductsModelsProvider } from './models/products-models.provider';
+import { ProductDocument } from './schemas/product.schema';
+import { ProductVariantDocument } from './schemas/product-variant.schema';
 
 export interface ProductRecord extends Product {
   id: string;
-  createdAt: Date;
-}
-
-interface ProductsState {
-  products: ProductRecord[];
+  createdAt?: Date;
 }
 
 export interface PosProductLookup {
@@ -33,24 +31,16 @@ export interface PosProductLookup {
 }
 
 @Injectable()
-export class ProductsService implements OnModuleInit {
-  private readonly logger = new Logger(ProductsService.name);
-  private readonly stateKey = 'module:products';
-  private products: ProductRecord[] = [];
-
+export class ProductsService {
   constructor(
-    private readonly moduleState: ModuleStateService,
+    private readonly models: ProductsModelsProvider,
     private readonly variantsService: VariantsService,
     private readonly organizationsService: OrganizationsService,
     private readonly packagingService: ProductPackagingService,
   ) {}
 
-  async onModuleInit(): Promise<void> {
-    const state = await this.moduleState.loadState<ProductsState>(this.stateKey, { products: [] });
-    this.products = state.products ?? [];
-  }
-
   async create(dto: CreateProductDto): Promise<ProductRecord> {
+    const model = this.models.productModel(dto.OrganizationId);
     const product: ProductRecord = {
       id: uuid(),
       name: dto.name,
@@ -68,7 +58,7 @@ export class ProductsService implements OnModuleInit {
       createdAt: new Date(),
     };
 
-    this.products.push(product);
+    const created = await model.create(product);
     const defaultVariant = await this.variantsService.ensureDefaultVariant({
       productId: product.id,
       name: product.name,
@@ -80,88 +70,126 @@ export class ProductsService implements OnModuleInit {
       companyId: product.companyId,
       enterpriseId: product.enterpriseId,
     });
-    if (!product.sku) {
-      product.sku = defaultVariant.sku;
+    const nextSku = product.sku || defaultVariant.sku;
+    const nextBarcode = product.barcode || (defaultVariant.barcodes.length > 0 ? defaultVariant.barcodes[0] : undefined);
+    if (nextSku !== created.sku || nextBarcode !== created.barcode) {
+      await model
+        .updateOne(
+          { id: product.id },
+          {
+            $set: {
+              sku: nextSku,
+              barcode: nextBarcode,
+            },
+          },
+        )
+        .exec();
     }
-    if (!product.barcode && defaultVariant.barcodes.length > 0) {
-      product.barcode = defaultVariant.barcodes[0];
-    }
-    this.persistState();
-    return product;
+    return {
+      ...(created.toObject() as ProductRecord),
+      sku: nextSku,
+      barcode: nextBarcode,
+    };
   }
 
-  findAll(filters?: ProductListQueryDto): ProductRecord[] {
-    if (!filters) {
-      return [...this.products];
-    }
-    const includeInactive = filters.includeInactive === 'true';
-    return this.products.filter((product) => {
-      if (product.enterpriseId !== filters.enterpriseId) return false;
-      if (filters.OrganizationId && product.OrganizationId !== filters.OrganizationId) return false;
-      if (filters.companyId && product.companyId !== filters.companyId) return false;
-      if (!includeInactive && product.isActive === false) return false;
-      return true;
-    });
-  }
-
-  searchForPos(query: ProductSearchQueryDto): PosProductLookup[] {
-    const needle = query.q.trim().toLowerCase();
-    if (!needle) {
+  async findAll(filters?: ProductListQueryDto, organizationId?: string): Promise<ProductRecord[]> {
+    const orgId = organizationId ?? filters?.OrganizationId;
+    if (!filters || !orgId) {
       return [];
     }
-    const productMap = new Map(this.products.map((product) => [product.id, product]));
-    return this.variantsService
-      .findAll()
-      .filter((variant) => {
-        if (variant.enterpriseId !== query.enterpriseId) return false;
-        if (query.OrganizationId && variant.OrganizationId !== query.OrganizationId) return false;
-        if (query.companyId && variant.companyId !== query.companyId) return false;
-        const product = productMap.get(variant.productId);
-        if (!product) return false;
-        const nameMatch = product.name.toLowerCase().includes(needle);
-        const skuMatch = variant.sku?.toLowerCase().includes(needle) ?? false;
-        const barcodeMatch = variant.barcodes.some((barcode) => barcode.toLowerCase().includes(needle));
-        return nameMatch || skuMatch || barcodeMatch;
-      })
-      .map((variant) => {
+    const model = this.models.productModel(orgId);
+    const includeInactive = filters.includeInactive === 'true';
+    const query: Record<string, string | boolean> = {
+      enterpriseId: filters.enterpriseId,
+    };
+    if (filters.companyId) {
+      query.companyId = filters.companyId;
+    }
+    if (!includeInactive) {
+      query.isActive = true;
+    }
+    return await model.find(query).lean<ProductRecord[]>().exec();
+  }
+
+  async searchForPos(query: ProductSearchQueryDto, organizationId?: string): Promise<PosProductLookup[]> {
+    const needle = query.q.trim().toLowerCase();
+    const orgId = organizationId ?? query.OrganizationId;
+    if (!needle || !orgId) {
+      return [];
+    }
+    const variantModel = this.models.variantModel(orgId);
+    const productModel = this.models.productModel(orgId);
+    const variantQuery: Record<string, string> = {
+      enterpriseId: query.enterpriseId,
+    };
+    if (query.companyId) {
+      variantQuery.companyId = query.companyId;
+    }
+    const variants = await variantModel.find(variantQuery).lean<ProductVariantDocument[]>().exec();
+    if (variants.length === 0) {
+      return [];
+    }
+    const productIds = Array.from(new Set(variants.map((variant) => variant.productId)));
+    const products = await productModel
+      .find({ id: { $in: productIds } })
+      .lean<ProductDocument[]>()
+      .exec();
+    const productMap = new Map(products.map((product) => [product.id, product]));
+    const matches = variants.filter((variant) => {
+      const product = productMap.get(variant.productId);
+      if (!product) return false;
+      const nameMatch = product.name.toLowerCase().includes(needle);
+      const skuMatch = variant.sku?.toLowerCase().includes(needle) ?? false;
+      const barcodeMatch = variant.barcodes.some((barcode) => barcode.toLowerCase().includes(needle));
+      return nameMatch || skuMatch || barcodeMatch;
+    });
+    const mapped = await Promise.all(
+      matches.map(async (variant) => {
         const product = productMap.get(variant.productId);
         if (!product) {
           return null;
         }
         return this.mapVariantForPos(product, variant);
-      })
-      .filter((item): item is PosProductLookup => Boolean(item));
+      }),
+    );
+    return mapped.filter((item): item is PosProductLookup => Boolean(item));
   }
 
-  findByCodeForPos(query: ProductByCodeQueryDto): PosProductLookup | null {
-    const variant = this.variantsService.findByCode({
+  async findByCodeForPos(query: ProductByCodeQueryDto, organizationId?: string): Promise<PosProductLookup | null> {
+    const orgId = organizationId ?? query.OrganizationId;
+    if (!orgId) {
+      return null;
+    }
+    const variant = await this.variantsService.findByCode({
       enterpriseId: query.enterpriseId,
       code: query.code,
-      OrganizationId: query.OrganizationId,
+      OrganizationId: orgId,
       companyId: query.companyId,
     });
     if (!variant) {
       return null;
     }
-    const product = this.products.find((item) => item.id === variant.productId);
+    const model = this.models.productModel(orgId);
+    const product = await model.findOne({ id: variant.productId }).lean<ProductDocument>().exec();
     if (!product) {
       return null;
     }
     return this.mapVariantForPos(product, variant);
   }
 
-  findOne(id: string): ProductRecord {
-    const product = this.products.find((item) => item.id === id);
+  async findOne(id: string, organizationId: string): Promise<ProductRecord> {
+    const model = this.models.productModel(organizationId);
+    const product = await model.findOne({ id }).lean<ProductDocument>().exec();
     if (!product) {
       throw new NotFoundException('Product not found');
     }
-    this.persistState();
-    return product;
+    return product as ProductRecord;
   }
 
-  update(id: string, dto: UpdateProductDto): ProductRecord {
-    const product = this.findOne(id);
-    Object.assign(product, {
+  async update(id: string, dto: UpdateProductDto, organizationId: string): Promise<ProductRecord> {
+    const model = this.models.productModel(organizationId);
+    const product = await this.findOne(id, organizationId);
+    const next = {
       name: dto.name ?? product.name,
       sku: dto.sku ?? product.sku,
       barcode: dto.barcode ?? product.barcode,
@@ -174,25 +202,29 @@ export class ProductsService implements OnModuleInit {
       OrganizationId: dto.OrganizationId ?? product.OrganizationId,
       companyId: dto.companyId ?? product.companyId,
       enterpriseId: dto.enterpriseId ?? product.enterpriseId,
-    });
-    this.persistState();
-    return product;
+    };
+    await model.updateOne({ id }, { $set: next }).exec();
+    return { ...product, ...next };
   }
 
-  setStatus(id: string, isActive: boolean, organizationId?: string): ProductRecord {
-    const product = this.findOne(id);
-    if (organizationId && product.OrganizationId !== organizationId) {
-      throw new BadRequestException('Product does not belong to organization');
+  async setStatus(id: string, isActive: boolean, organizationId: string): Promise<ProductRecord> {
+    if (!organizationId) {
+      throw new BadRequestException('OrganizationId is required');
     }
-    product.isActive = isActive;
-    this.persistState();
-    return product;
+    const model = this.models.productModel(organizationId);
+    const product = await this.findOne(id, organizationId);
+    await model.updateOne({ id }, { $set: { isActive } }).exec();
+    return { ...product, isActive };
   }
 
-  async createVariant(productId: string, dto: CreateProductVariantDto): Promise<VariantRecord> {
-    const product = this.findOne(productId);
+  async createVariant(
+    productId: string,
+    dto: CreateProductVariantDto,
+    organizationId: string,
+  ): Promise<VariantRecord> {
+    const product = await this.findOne(productId, organizationId);
     const enableVariants = await this.isVariantsEnabled(product.OrganizationId);
-    const existing = this.variantsService.countByProduct(productId);
+    const existing = await this.variantsService.countByProduct(productId, product.OrganizationId);
     if (!enableVariants && existing > 0) {
       throw new BadRequestException('Variants are disabled for this organization');
     }
@@ -213,26 +245,17 @@ export class ProductsService implements OnModuleInit {
     });
   }
 
-  remove(id: string): void {
-    const index = this.products.findIndex((item) => item.id === id);
-    if (index === -1) {
+  async remove(id: string, organizationId: string): Promise<void> {
+    const model = this.models.productModel(organizationId);
+    const exists = await model.exists({ id });
+    if (!exists) {
       throw new NotFoundException('Product not found');
     }
-    this.products.splice(index, 1);
-    this.persistState();
+    await model.deleteOne({ id }).exec();
   }
 
-  private persistState() {
-    void this.moduleState
-      .saveState<ProductsState>(this.stateKey, { products: this.products })
-      .catch((error) => {
-        const message = error instanceof Error ? error.stack ?? error.message : String(error);
-        this.logger.error(`Failed to persist products: ${message}`);
-      });
-  }
-
-  private mapVariantForPos(product: ProductRecord, variant: VariantRecord): PosProductLookup {
-    const defaultPackaging = this.packagingService.findDefaultByVariant(variant.id);
+  private async mapVariantForPos(product: ProductDocument, variant: VariantRecord): Promise<PosProductLookup> {
+    const defaultPackaging = await this.packagingService.findDefaultByVariant(variant.id, product.OrganizationId);
     return {
       _id: variant.id,
       name: product.name,

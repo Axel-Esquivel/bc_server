@@ -1,12 +1,14 @@
-﻿import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+﻿import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
-import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateUomCategoryDto } from './dto/create-uom-category.dto';
 import { CreateUomDto } from './dto/create-uom.dto';
 import { UpdateUomCategoryDto } from './dto/update-uom-category.dto';
 import { UpdateUomDto } from './dto/update-uom.dto';
 import { UomCategory } from './entities/uom-category.entity';
 import { Uom } from './entities/uom.entity';
+import { UomModelsProvider } from './models/uom-models.provider';
+import { UomCategoryDocument } from './schemas/uom-category.schema';
+import { UomDocument } from './schemas/uom.schema';
 
 export interface UomCategoryRecord extends UomCategory {
   id: string;
@@ -18,43 +20,30 @@ export interface UomRecord extends Uom {
   nameNormalized: string;
 }
 
-interface UomState {
-  categories: UomCategoryRecord[];
-  uoms: UomRecord[];
-}
-
 interface UomListFilters {
   organizationId?: string;
   categoryId?: string;
 }
 
 @Injectable()
-export class UomService implements OnModuleInit {
+export class UomService {
   private readonly logger = new Logger(UomService.name);
-  private readonly stateKey = 'module:uom';
-  private categories: UomCategoryRecord[] = [];
-  private uoms: UomRecord[] = [];
 
-  constructor(private readonly moduleState: ModuleStateService) {}
+  constructor(private readonly models: UomModelsProvider) {}
 
-  async onModuleInit(): Promise<void> {
-    const state = await this.moduleState.loadState<UomState>(this.stateKey, { categories: [], uoms: [] });
-    const normalized = this.normalizeState(state);
-    this.categories = normalized.categories;
-    this.uoms = normalized.uoms;
-  }
-
-  createCategory(dto: CreateUomCategoryDto): UomCategoryRecord {
+  async createCategory(dto: CreateUomCategoryDto): Promise<UomCategoryRecord> {
     const name = dto.name.trim();
     if (!name) {
       throw new BadRequestException('Category name is required');
     }
+    const model = this.models.categoryModel(dto.organizationId);
     const nameNormalized = this.normalizeName(name);
-    const existing = this.categories.find(
-      (category) => category.organizationId === dto.organizationId && category.nameNormalized === nameNormalized,
-    );
+    const existing = await model
+      .findOne({ organizationId: dto.organizationId, nameNormalized })
+      .lean<UomCategoryDocument>()
+      .exec();
     if (existing) {
-      return existing;
+      return existing as UomCategoryRecord;
     }
     const category: UomCategoryRecord = {
       id: uuid(),
@@ -63,71 +52,73 @@ export class UomService implements OnModuleInit {
       organizationId: dto.organizationId,
       isActive: dto.isActive ?? true,
     };
-    this.categories.push(category);
-    this.persistState();
+    await model.create(category);
     return category;
   }
 
-  findAllCategories(organizationId?: string): UomCategoryRecord[] {
+  async findAllCategories(organizationId?: string): Promise<UomCategoryRecord[]> {
     if (!organizationId) {
-      return [...this.categories];
+      return [];
     }
-    return this.categories.filter((category) => category.organizationId === organizationId);
+    const model = this.models.categoryModel(organizationId);
+    return model.find({ organizationId }).lean<UomCategoryRecord[]>().exec();
   }
 
-  updateCategory(id: string, dto: UpdateUomCategoryDto): UomCategoryRecord {
-    const category = this.findCategory(id);
+  async updateCategory(id: string, dto: UpdateUomCategoryDto, organizationId: string): Promise<UomCategoryRecord> {
+    if (!organizationId) {
+      throw new BadRequestException('OrganizationId is required');
+    }
+    const model = this.models.categoryModel(organizationId);
+    const category = await this.findCategory(id, organizationId);
     const name = dto.name?.trim();
     if (name) {
       const nameNormalized = this.normalizeName(name);
-      const duplicate = this.categories.some(
-        (item) =>
-          item.id !== id &&
-          item.organizationId === category.organizationId &&
-          item.nameNormalized === nameNormalized,
-      );
+      const duplicate = await model
+        .findOne({ id: { $ne: id }, organizationId, nameNormalized })
+        .lean<UomCategoryDocument>()
+        .exec();
       if (duplicate) {
         throw new BadRequestException('Category already exists');
       }
     }
-    Object.assign(category, {
+    const next = {
       name: name ?? category.name,
       nameNormalized: name ? this.normalizeName(name) : category.nameNormalized,
       isActive: dto.isActive ?? category.isActive,
-    });
-    this.persistState();
-    return category;
+    };
+    await model.updateOne({ id }, { $set: next }).exec();
+    return { ...category, ...next };
   }
 
-  findCategory(id: string): UomCategoryRecord {
-    const category = this.categories.find((item) => item.id === id);
+  async findCategory(id: string, organizationId: string): Promise<UomCategoryRecord> {
+    const model = this.models.categoryModel(organizationId);
+    const category = await model.findOne({ id }).lean<UomCategoryDocument>().exec();
     if (!category) {
       throw new NotFoundException('UoM category not found');
     }
-    return category;
+    return category as UomCategoryRecord;
   }
 
-  create(dto: CreateUomDto): UomRecord {
-    const category = this.categories.find((item) => item.id === dto.categoryId);
-    if (!category) {
-      throw new BadRequestException('Category not found');
-    }
+  async create(dto: CreateUomDto): Promise<UomRecord> {
+    const model = this.models.uomModel(dto.organizationId);
+    const category = await this.findCategory(dto.categoryId, dto.organizationId);
     if (category.organizationId !== dto.organizationId) {
       throw new BadRequestException('Category does not belong to organization');
     }
     const nameNormalized = this.normalizeName(dto.name);
     const symbolNormalized = this.normalizeName(dto.symbol);
-    const existing = this.uoms.find(
-      (uom) =>
-        uom.organizationId === dto.organizationId &&
-        uom.categoryId === dto.categoryId &&
-        (uom.nameNormalized === nameNormalized || this.normalizeName(uom.symbol) === symbolNormalized),
-    );
+    const existing = await model
+      .findOne({
+        organizationId: dto.organizationId,
+        categoryId: dto.categoryId,
+        $or: [{ nameNormalized }, { symbol: dto.symbol.trim() }],
+      })
+      .lean<UomDocument>()
+      .exec();
     if (existing) {
-      return existing;
+      return existing as UomRecord;
     }
-    this.assertUniqueSymbol(dto.symbol, dto.organizationId, dto.categoryId);
-    const uom: UomRecord = {
+    const record: UomRecord = {
       id: uuid(),
       name: dto.name.trim(),
       nameNormalized,
@@ -138,58 +129,70 @@ export class UomService implements OnModuleInit {
       organizationId: dto.organizationId,
       isActive: dto.isActive ?? true,
     };
-    this.uoms.push(uom);
-    this.persistState();
-    return uom;
+    await model.create(record);
+    return record;
   }
 
-  findAll(filters?: UomListFilters): UomRecord[] {
-    if (!filters) {
-      return [...this.uoms];
+  async findAll(filters?: UomListFilters): Promise<UomRecord[]> {
+    if (!filters?.organizationId) {
+      return [];
     }
-    return this.uoms.filter((uom) => {
-      if (filters.organizationId && uom.organizationId !== filters.organizationId) return false;
-      if (filters.categoryId && uom.categoryId !== filters.categoryId) return false;
-      return true;
-    });
+    const model = this.models.uomModel(filters.organizationId);
+    const query: Record<string, string> = { organizationId: filters.organizationId };
+    if (filters.categoryId) {
+      query.categoryId = filters.categoryId;
+    }
+    return model.find(query).lean<UomRecord[]>().exec();
   }
 
-  findOne(id: string): UomRecord {
-    const uom = this.uoms.find((item) => item.id === id);
+  async findOne(id: string, organizationId: string): Promise<UomRecord> {
+    const model = this.models.uomModel(organizationId);
+    const uom = await model.findOne({ id }).lean<UomDocument>().exec();
     if (!uom) {
       throw new NotFoundException('UoM not found');
     }
-    return uom;
+    return uom as UomRecord;
   }
 
-  update(id: string, dto: UpdateUomDto): UomRecord {
-    const uom = this.findOne(id);
-    const nextCategoryId = dto.categoryId ?? uom.categoryId;
-    const category = this.categories.find((item) => item.id === nextCategoryId);
-    if (!category) {
-      throw new BadRequestException('Category not found');
+  async update(id: string, dto: UpdateUomDto, organizationId: string): Promise<UomRecord> {
+    if (!organizationId) {
+      throw new BadRequestException('OrganizationId is required');
     }
-    if (dto.organizationId && dto.organizationId !== uom.organizationId) {
-      throw new BadRequestException('Cannot change organization');
+    const model = this.models.uomModel(organizationId);
+    const uom = await this.findOne(id, organizationId);
+    const nextCategoryId = dto.categoryId ?? uom.categoryId;
+    const category = await this.findCategory(nextCategoryId, organizationId);
+    if (dto.symbol && dto.symbol !== uom.symbol) {
+      const duplicate = await model
+        .findOne({
+          id: { $ne: id },
+          organizationId,
+          categoryId: nextCategoryId,
+          symbol: dto.symbol.trim(),
+        })
+        .lean<UomDocument>()
+        .exec();
+      if (duplicate) {
+        throw new BadRequestException('UoM symbol already exists');
+      }
     }
     const nextName = dto.name?.trim();
     if (nextName) {
       const nameNormalized = this.normalizeName(nextName);
-      const duplicate = this.uoms.some(
-        (item) =>
-          item.id !== id &&
-          item.organizationId === uom.organizationId &&
-          item.categoryId === nextCategoryId &&
-          item.nameNormalized === nameNormalized,
-      );
+      const duplicate = await model
+        .findOne({
+          id: { $ne: id },
+          organizationId,
+          categoryId: nextCategoryId,
+          nameNormalized,
+        })
+        .lean<UomDocument>()
+        .exec();
       if (duplicate) {
         throw new BadRequestException('UoM already exists');
       }
     }
-    if (dto.symbol && dto.symbol !== uom.symbol) {
-      this.assertUniqueSymbol(dto.symbol, uom.organizationId, nextCategoryId, uom.id);
-    }
-    Object.assign(uom, {
+    const next = {
       name: nextName ?? uom.name,
       nameNormalized: nextName ? this.normalizeName(nextName) : uom.nameNormalized,
       symbol: dto.symbol?.trim() ?? uom.symbol,
@@ -197,68 +200,71 @@ export class UomService implements OnModuleInit {
       factor: dto.factor ?? uom.factor,
       isBase: dto.isBase ?? uom.isBase,
       isActive: dto.isActive ?? uom.isActive,
-    });
-    this.persistState();
-    return uom;
+    };
+    await model.updateOne({ id }, { $set: next }).exec();
+    return { ...uom, ...next };
   }
 
-  remove(id: string): void {
-    const index = this.uoms.findIndex((item) => item.id === id);
-    if (index === -1) {
+  async remove(id: string, organizationId: string): Promise<void> {
+    const model = this.models.uomModel(organizationId);
+    const exists = await model.exists({ id });
+    if (!exists) {
       throw new NotFoundException('UoM not found');
     }
-    this.uoms.splice(index, 1);
-    this.persistState();
+    await model.deleteOne({ id }).exec();
   }
 
   async seedDefaultsForOrganization(organizationId: string): Promise<void> {
     if (!organizationId) {
       return;
     }
-    const categoryMap = new Map<string, UomCategoryRecord>();
-    const ensureCategory = (name: string): UomCategoryRecord => {
-      const existing = this.categories.find(
-        (category) =>
-          category.organizationId === organizationId && category.name.trim().toLowerCase() === name.toLowerCase(),
-      );
+    const categoryModel = this.models.categoryModel(organizationId);
+    const uomModel = this.models.uomModel(organizationId);
+
+    const ensureCategory = async (name: string): Promise<UomCategoryRecord> => {
+      const normalized = this.normalizeName(name);
+      const existing = await categoryModel
+        .findOne({ organizationId, nameNormalized: normalized })
+        .lean<UomCategoryDocument>()
+        .exec();
       if (existing) {
-        categoryMap.set(name, existing);
-        return existing;
+        return existing as UomCategoryRecord;
       }
       const created: UomCategoryRecord = {
         id: uuid(),
         name,
-        nameNormalized: this.normalizeName(name),
+        nameNormalized: normalized,
         organizationId,
         isActive: true,
       };
-      this.categories.push(created);
-      categoryMap.set(name, created);
+      await categoryModel.create(created);
       return created;
     };
 
-    const lengthCategory = ensureCategory('Longitud');
-    const massCategory = ensureCategory('Masa');
-    const volumeCategory = ensureCategory('Volumen');
-    const unitsCategory = ensureCategory('Unidades');
+    const lengthCategory = await ensureCategory('Longitud');
+    const massCategory = await ensureCategory('Masa');
+    const volumeCategory = await ensureCategory('Volumen');
+    const unitsCategory = await ensureCategory('Unidades');
 
-    const seedUom = (input: {
+    const seedUom = async (input: {
       name: string;
       symbol: string;
       categoryId: string;
       factor: number;
       isBase: boolean;
     }) => {
-      const exists = this.uoms.some(
-        (uom) =>
-          uom.organizationId === organizationId &&
-          uom.categoryId === input.categoryId &&
-          uom.symbol.trim().toLowerCase() === input.symbol.trim().toLowerCase(),
-      );
-      if (exists) {
+      const existing = await uomModel
+        .findOne({
+          organizationId,
+          categoryId: input.categoryId,
+          symbol: input.symbol,
+        })
+        .lean<UomDocument>()
+        .exec();
+      if (existing) {
         return;
       }
-      this.uoms.push({
+      const record: UomRecord = {
         id: uuid(),
         name: input.name,
         nameNormalized: this.normalizeName(input.name),
@@ -268,104 +274,23 @@ export class UomService implements OnModuleInit {
         isBase: input.isBase,
         organizationId,
         isActive: true,
-      });
+      };
+      await uomModel.create(record);
     };
 
-    seedUom({ name: 'Metro', symbol: 'm', categoryId: lengthCategory.id, factor: 1, isBase: true });
-    seedUom({ name: 'Centímetro', symbol: 'cm', categoryId: lengthCategory.id, factor: 0.01, isBase: false });
-    seedUom({ name: 'Kilómetro', symbol: 'km', categoryId: lengthCategory.id, factor: 1000, isBase: false });
+    await seedUom({ name: 'Metro', symbol: 'm', categoryId: lengthCategory.id, factor: 1, isBase: true });
+    await seedUom({ name: 'Centímetro', symbol: 'cm', categoryId: lengthCategory.id, factor: 0.01, isBase: false });
+    await seedUom({ name: 'Kilómetro', symbol: 'km', categoryId: lengthCategory.id, factor: 1000, isBase: false });
 
-    seedUom({ name: 'Kilogramo', symbol: 'kg', categoryId: massCategory.id, factor: 1, isBase: true });
-    seedUom({ name: 'Gramo', symbol: 'g', categoryId: massCategory.id, factor: 0.001, isBase: false });
+    await seedUom({ name: 'Kilogramo', symbol: 'kg', categoryId: massCategory.id, factor: 1, isBase: true });
+    await seedUom({ name: 'Gramo', symbol: 'g', categoryId: massCategory.id, factor: 0.001, isBase: false });
 
-    seedUom({ name: 'Litro', symbol: 'l', categoryId: volumeCategory.id, factor: 1, isBase: true });
-    seedUom({ name: 'Mililitro', symbol: 'ml', categoryId: volumeCategory.id, factor: 0.001, isBase: false });
+    await seedUom({ name: 'Litro', symbol: 'l', categoryId: volumeCategory.id, factor: 1, isBase: true });
+    await seedUom({ name: 'Mililitro', symbol: 'ml', categoryId: volumeCategory.id, factor: 0.001, isBase: false });
 
-    seedUom({ name: 'Unidad', symbol: 'unidad', categoryId: unitsCategory.id, factor: 1, isBase: true });
-    seedUom({ name: 'Docena', symbol: 'docena', categoryId: unitsCategory.id, factor: 12, isBase: false });
-    seedUom({ name: 'Caja x12', symbol: 'caja x12', categoryId: unitsCategory.id, factor: 12, isBase: false });
-
-    this.persistState();
-  }
-
-  private assertUniqueSymbol(symbol: string, organizationId: string, categoryId: string, excludeId?: string): void {
-    const normalized = symbol.trim().toLowerCase();
-    if (!normalized) {
-      throw new BadRequestException('Symbol is required');
-    }
-    const exists = this.uoms.some(
-      (uom) =>
-        uom.organizationId === organizationId &&
-        uom.categoryId === categoryId &&
-        uom.symbol.trim().toLowerCase() === normalized &&
-        uom.id !== excludeId,
-    );
-    if (exists) {
-      throw new BadRequestException('UoM symbol already exists');
-    }
-  }
-
-  private normalizeState(state: UomState): UomState {
-    const categories = Array.isArray(state.categories) ? state.categories : [];
-    const uomsRaw = Array.isArray(state.uoms) ? state.uoms : [];
-
-    const migratedCategories = categories.map((item) => ({
-      ...item,
-      nameNormalized: this.normalizeName(item.name ?? ''),
-    }));
-    const categoryByOrg = new Map<string, UomCategoryRecord>();
-    const ensureUnitsCategory = (organizationId: string): UomCategoryRecord => {
-      const key = organizationId.trim();
-      const cached = categoryByOrg.get(key);
-      if (cached) {
-        return cached;
-      }
-      const existing = migratedCategories.find(
-        (category) => category.organizationId === organizationId && category.name.toLowerCase() === 'unidades',
-      );
-      if (existing) {
-        categoryByOrg.set(key, existing);
-        return existing;
-      }
-      const created: UomCategoryRecord = {
-        id: uuid(),
-        name: 'Unidades',
-        nameNormalized: this.normalizeName('Unidades'),
-        organizationId,
-        isActive: true,
-      };
-      migratedCategories.push(created);
-      categoryByOrg.set(key, created);
-      return created;
-    };
-
-    const migratedUoms: UomRecord[] = uomsRaw.map((raw) => {
-      const anyRaw = raw as UomRecord & { OrganizationId?: string; companyId?: string; code?: string };
-      const organizationId = anyRaw.organizationId ?? anyRaw.OrganizationId ?? '';
-      const categoryId = anyRaw.categoryId ?? (organizationId ? ensureUnitsCategory(organizationId).id : uuid());
-      return {
-        id: anyRaw.id ?? uuid(),
-        name: anyRaw.name ?? '',
-        nameNormalized: this.normalizeName(anyRaw.name ?? ''),
-        symbol: anyRaw.symbol ?? anyRaw.code ?? '',
-        categoryId,
-        factor: anyRaw.factor ?? 1,
-        isBase: anyRaw.isBase ?? false,
-        organizationId,
-        isActive: anyRaw.isActive ?? true,
-      };
-    });
-
-    return { categories: migratedCategories, uoms: migratedUoms };
-  }
-
-  private persistState() {
-    void this.moduleState
-      .saveState<UomState>(this.stateKey, { categories: this.categories, uoms: this.uoms })
-      .catch((error) => {
-        const message = error instanceof Error ? error.stack ?? error.message : String(error);
-        this.logger.error(`Failed to persist units of measure: ${message}`);
-      });
+    await seedUom({ name: 'Unidad', symbol: 'unidad', categoryId: unitsCategory.id, factor: 1, isBase: true });
+    await seedUom({ name: 'Docena', symbol: 'docena', categoryId: unitsCategory.id, factor: 12, isBase: false });
+    await seedUom({ name: 'Caja x12', symbol: 'caja x12', categoryId: unitsCategory.id, factor: 12, isBase: false });
   }
 
   private normalizeName(value: string): string {

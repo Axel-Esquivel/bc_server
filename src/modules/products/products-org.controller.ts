@@ -7,12 +7,12 @@ export class ProductsOrgController {
   constructor(private readonly productsService: ProductsService) {}
 
   @Patch(':id/status')
-  setStatus(
+  async setStatus(
     @Param('organizationId') organizationId: string,
     @Param('id') id: string,
     @Body() dto: UpdateProductStatusDto,
   ) {
-    const result = this.productsService.setStatus(id, dto.isActive, organizationId);
+    const result = await this.productsService.setStatus(id, dto.isActive, organizationId);
     return { message: 'Product status updated', result };
   }
 }

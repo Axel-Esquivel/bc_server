@@ -1,6 +1,5 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
-import { ModuleStateService } from '../../../core/database/module-state.service';
 import { CreatePackagingDto } from './dto/create-packaging.dto';
 import { UpdatePackagingDto } from './dto/update-packaging.dto';
 import { ProductPackaging } from './entities/product-packaging.entity';
@@ -8,34 +7,24 @@ import type { VariantRecord } from '../variants/variants.service';
 import { CounterService } from '../../../core/database/counter.service';
 import { Ean13Service } from '../../../core/utils/ean13.service';
 import { OrganizationsService } from '../../organizations/organizations.service';
+import { ProductsModelsProvider } from '../models/products-models.provider';
+import { ProductVariantDocument } from '../schemas/product-variant.schema';
 
 export interface PackagingRecord extends ProductPackaging {
   id: string;
 }
 
-interface PackagingState {
-  packaging: PackagingRecord[];
-}
-
 @Injectable()
 export class ProductPackagingService {
-  private readonly logger = new Logger(ProductPackagingService.name);
-  private readonly stateKey = 'module:products:packaging';
-  private packaging: PackagingRecord[] = [];
-
   constructor(
-    private readonly moduleState: ModuleStateService,
+    private readonly models: ProductsModelsProvider,
     private readonly counterService: CounterService,
     private readonly ean13Service: Ean13Service,
     private readonly organizationsService: OrganizationsService,
   ) {}
 
-  async onModuleInit(): Promise<void> {
-    const state = await this.moduleState.loadState<PackagingState>(this.stateKey, { packaging: [] });
-    this.packaging = Array.isArray(state.packaging) ? state.packaging : [];
-  }
-
   async create(dto: CreatePackagingDto): Promise<PackagingRecord> {
+    const model = this.models.packagingModel(dto.OrganizationId);
     const internalBarcode = await this.resolveInternalBarcode(dto);
     const record: PackagingRecord = {
       id: uuid(),
@@ -50,41 +39,46 @@ export class ProductPackagingService {
       companyId: dto.companyId,
       enterpriseId: dto.enterpriseId,
     };
-    this.packaging.push(record);
-    this.persistState();
+    await model.create(record);
     return record;
   }
 
-  listByVariant(variantId: string): PackagingRecord[] {
-    return this.packaging.filter((item) => item.variantId === variantId);
+  async listByVariant(variantId: string, organizationId: string): Promise<PackagingRecord[]> {
+    const model = this.models.packagingModel(organizationId);
+    return await model
+      .find({ variantId })
+      .lean<PackagingRecord[]>()
+      .exec();
   }
 
-  async update(id: string, dto: UpdatePackagingDto): Promise<PackagingRecord> {
-    const record = this.findOne(id);
+  async update(id: string, dto: UpdatePackagingDto, organizationId: string): Promise<PackagingRecord> {
+    const model = this.models.packagingModel(organizationId);
+    const record = await this.findOne(id, organizationId);
     if (dto.internalBarcode) {
-      this.assertUniqueInternalBarcode(dto.internalBarcode, record.OrganizationId, record.id);
+      await this.assertUniqueInternalBarcode(dto.internalBarcode, record.OrganizationId, record.id);
     }
-    Object.assign(record, {
+    const next = {
       name: dto.name?.trim() ?? record.name,
       unitsPerPack: dto.unitsPerPack ?? record.unitsPerPack,
       barcode: dto.barcode?.trim() ?? record.barcode,
       internalBarcode: dto.internalBarcode?.trim() ?? record.internalBarcode,
       price: dto.price ?? record.price,
       isActive: dto.isActive ?? record.isActive,
-    });
-    this.persistState();
-    return record;
+    };
+    await model.updateOne({ id }, { $set: next }).exec();
+    return { ...record, ...next };
   }
 
-  softDelete(id: string): PackagingRecord {
-    const record = this.findOne(id);
-    record.isActive = false;
-    this.persistState();
-    return record;
+  async softDelete(id: string, organizationId: string): Promise<PackagingRecord> {
+    const model = this.models.packagingModel(organizationId);
+    const record = await this.findOne(id, organizationId);
+    await model.updateOne({ id }, { $set: { isActive: false } }).exec();
+    return { ...record, isActive: false };
   }
 
-  findDefaultByVariant(variantId: string): PackagingRecord | null {
-    const candidates = this.listByVariant(variantId).filter((item) => item.isActive);
+  async findDefaultByVariant(variantId: string, organizationId: string): Promise<PackagingRecord | null> {
+    const items = await this.listByVariant(variantId, organizationId);
+    const candidates = items.filter((item) => item.isActive);
     if (candidates.length === 0) {
       return null;
     }
@@ -93,11 +87,13 @@ export class ProductPackagingService {
   }
 
   async ensureDefaultPackaging(variant: VariantRecord): Promise<PackagingRecord> {
-    const existing = this.listByVariant(variant.id).find(
-      (item) => item.unitsPerPack === 1 && item.isActive,
-    );
+    const model = this.models.packagingModel(variant.OrganizationId);
+    const existing = await model
+      .findOne({ variantId: variant.id, unitsPerPack: 1, isActive: true })
+      .lean<PackagingRecord>()
+      .exec();
     if (existing) {
-      return existing;
+      return existing as PackagingRecord;
     }
     const internalBarcode = await this.generateInternalBarcode(variant.OrganizationId, '02');
     const created: PackagingRecord = {
@@ -112,19 +108,21 @@ export class ProductPackagingService {
       companyId: variant.companyId,
       enterpriseId: variant.enterpriseId,
     };
-    this.packaging.push(created);
-    this.persistState();
+    await model.create(created);
     return created;
   }
 
-  existsInternalBarcode(organizationId: string, code: string, excludeId?: string): boolean {
+  async existsInternalBarcode(organizationId: string, code: string, excludeId?: string): Promise<boolean> {
     const normalized = code.trim();
-    return this.packaging.some(
-      (item) =>
-        item.OrganizationId === organizationId &&
-        item.internalBarcode === normalized &&
-        item.id !== excludeId,
-    );
+    const model = this.models.packagingModel(organizationId);
+    const exists = await model
+      .findOne({
+        internalBarcode: normalized,
+        ...(excludeId ? { id: { $ne: excludeId } } : {}),
+      })
+      .lean<{ id: string }>()
+      .exec();
+    return Boolean(exists);
   }
 
   async generateInternalBarcode(organizationId: string, type: '01' | '02'): Promise<string> {
@@ -133,38 +131,43 @@ export class ProductPackagingService {
     return this.ean13Service.buildInternalBarcode(organization.eanPrefix, type, seq);
   }
 
-  private findOne(id: string): PackagingRecord {
-    const record = this.packaging.find((item) => item.id === id);
+  private async findOne(id: string, organizationId: string): Promise<PackagingRecord> {
+    const model = this.models.packagingModel(organizationId);
+    const record = await model.findOne({ id }).lean<PackagingRecord>().exec();
     if (!record) {
       throw new NotFoundException('Packaging not found');
     }
-    return record;
+    return record as PackagingRecord;
   }
 
   private async resolveInternalBarcode(dto: CreatePackagingDto): Promise<string | null> {
     const provided = dto.internalBarcode?.trim();
     if (provided) {
-      this.assertUniqueInternalBarcode(provided, dto.OrganizationId);
+      await this.assertUniqueInternalBarcode(provided, dto.OrganizationId);
       return provided;
     }
     return this.generateInternalBarcode(dto.OrganizationId, '02');
   }
 
-  private assertUniqueInternalBarcode(code: string, organizationId: string, excludeId?: string): void {
+  private async assertUniqueInternalBarcode(
+    code: string,
+    organizationId: string,
+    excludeId?: string,
+  ): Promise<void> {
     if (!organizationId) {
       throw new BadRequestException('OrganizationId is required');
     }
-    if (this.existsInternalBarcode(organizationId, code, excludeId)) {
+    const exists = await this.existsInternalBarcode(organizationId, code, excludeId);
+    if (exists) {
       throw new BadRequestException('Internal barcode already exists');
     }
-  }
-
-  private persistState() {
-    void this.moduleState
-      .saveState<PackagingState>(this.stateKey, { packaging: this.packaging })
-      .catch((error) => {
-        const message = error instanceof Error ? error.stack ?? error.message : String(error);
-        this.logger.error(`Failed to persist packaging: ${message}`);
-      });
+    const variantModel = this.models.variantModel(organizationId);
+    const existsInVariants = await variantModel
+      .findOne({ internalBarcode: code.trim() })
+      .lean<ProductVariantDocument>()
+      .exec();
+    if (existsInVariants) {
+      throw new BadRequestException('Internal barcode already exists');
+    }
   }
 }

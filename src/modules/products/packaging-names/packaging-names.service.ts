@@ -1,52 +1,46 @@
-import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
-import { ModuleStateService } from '../../../core/database/module-state.service';
 import { PackagingName } from './entities/packaging-name.entity';
 import { CreatePackagingNameDto } from './dto/create-packaging-name.dto';
+import { ProductsModelsProvider } from '../models/products-models.provider';
 
 export interface PackagingNameRecord extends PackagingName {
   id: string;
 }
 
-interface PackagingNameState {
-  names: PackagingNameRecord[];
-}
-
 @Injectable()
-export class PackagingNamesService implements OnModuleInit {
-  private readonly logger = new Logger(PackagingNamesService.name);
-  private readonly stateKey = 'module:products:packaging-names';
-  private names: PackagingNameRecord[] = [];
+export class PackagingNamesService {
+  constructor(private readonly models: ProductsModelsProvider) {}
 
-  constructor(private readonly moduleState: ModuleStateService) {}
-
-  async onModuleInit(): Promise<void> {
-    const state = await this.moduleState.loadState<PackagingNameState>(this.stateKey, { names: [] });
-    this.names = Array.isArray(state.names) ? state.names : [];
-  }
-
-  list(organizationId: string): PackagingNameRecord[] {
+  async list(organizationId: string): Promise<PackagingNameRecord[]> {
     if (!organizationId) {
       return [];
     }
-    const current = this.names.filter((item) => item.organizationId === organizationId);
+    const model = this.models.packagingNameModel(organizationId);
+    const current = await model
+      .find({ organizationId })
+      .sort({ sortOrder: 1, name: 1 })
+      .lean<PackagingNameRecord[]>()
+      .exec();
     if (current.length === 0) {
       return this.seedDefaults(organizationId);
     }
     return current;
   }
 
-  create(dto: CreatePackagingNameDto): PackagingNameRecord {
+  async create(dto: CreatePackagingNameDto): Promise<PackagingNameRecord> {
     const name = dto.name.trim();
     if (!name) {
       throw new BadRequestException('Packaging name is required');
     }
+    const model = this.models.packagingNameModel(dto.organizationId);
     const normalized = this.normalizeName(name);
-    const existing = this.names.find(
-      (item) => item.organizationId === dto.organizationId && item.nameNormalized === normalized,
-    );
+    const existing = await model
+      .findOne({ organizationId: dto.organizationId, nameNormalized: normalized })
+      .lean<PackagingNameRecord>()
+      .exec();
     if (existing) {
-      return existing;
+      return existing as PackagingNameRecord;
     }
     const record: PackagingNameRecord = {
       id: uuid(),
@@ -56,21 +50,22 @@ export class PackagingNamesService implements OnModuleInit {
       isActive: true,
       sortOrder: dto.sortOrder ? Number(dto.sortOrder) : undefined,
     };
-    this.names.push(record);
-    this.persistState();
+    await model.create(record);
     return record;
   }
 
-  private seedDefaults(organizationId: string): PackagingNameRecord[] {
+  private async seedDefaults(organizationId: string): Promise<PackagingNameRecord[]> {
+    const model = this.models.packagingNameModel(organizationId);
     const defaults = ['Unidad', 'Paquete', 'Docena', 'Caja', 'Fardo', 'Saco', 'Bolsa', 'Rollo'];
     const created: PackagingNameRecord[] = [];
-    defaults.forEach((name, index) => {
+    for (const [index, name] of defaults.entries()) {
       const normalized = this.normalizeName(name);
-      const exists = this.names.some(
-        (item) => item.organizationId === organizationId && item.nameNormalized === normalized,
-      );
+      const exists = await model
+        .findOne({ organizationId, nameNormalized: normalized })
+        .lean<PackagingNameRecord>()
+        .exec();
       if (exists) {
-        return;
+        continue;
       }
       const record: PackagingNameRecord = {
         id: uuid(),
@@ -80,25 +75,21 @@ export class PackagingNamesService implements OnModuleInit {
         isActive: true,
         sortOrder: index + 1,
       };
-      this.names.push(record);
+      await model.create(record);
       created.push(record);
-    });
-    if (created.length > 0) {
-      this.persistState();
     }
-    return this.names.filter((item) => item.organizationId === organizationId);
+    if (created.length === 0) {
+      const current = await model
+        .find({ organizationId })
+        .sort({ sortOrder: 1, name: 1 })
+        .lean<PackagingNameRecord[]>()
+        .exec();
+      return current;
+    }
+    return this.list(organizationId);
   }
 
   private normalizeName(value: string): string {
     return value.trim().replace(/\s+/g, ' ').toLowerCase();
-  }
-
-  private persistState() {
-    void this.moduleState
-      .saveState<PackagingNameState>(this.stateKey, { names: this.names })
-      .catch((error) => {
-        const message = error instanceof Error ? error.stack ?? error.message : String(error);
-        this.logger.error(`Failed to persist packaging names: ${message}`);
-      });
   }
 }
