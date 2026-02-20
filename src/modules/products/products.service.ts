@@ -69,7 +69,7 @@ export class ProductsService implements OnModuleInit {
     };
 
     this.products.push(product);
-    const defaultVariant = this.variantsService.ensureDefaultVariant({
+    const defaultVariant = await this.variantsService.ensureDefaultVariant({
       productId: product.id,
       name: product.name,
       sku: product.sku,
@@ -94,10 +94,12 @@ export class ProductsService implements OnModuleInit {
     if (!filters) {
       return [...this.products];
     }
+    const includeInactive = filters.includeInactive === 'true';
     return this.products.filter((product) => {
       if (product.enterpriseId !== filters.enterpriseId) return false;
       if (filters.OrganizationId && product.OrganizationId !== filters.OrganizationId) return false;
       if (filters.companyId && product.companyId !== filters.companyId) return false;
+      if (!includeInactive && product.isActive === false) return false;
       return true;
     });
   }
@@ -173,6 +175,17 @@ export class ProductsService implements OnModuleInit {
       companyId: dto.companyId ?? product.companyId,
       enterpriseId: dto.enterpriseId ?? product.enterpriseId,
     });
+    this.persistState();
+    return product;
+  }
+
+  setStatus(id: string, isActive: boolean, organizationId?: string): ProductRecord {
+    const product = this.findOne(id);
+    if (organizationId && product.OrganizationId !== organizationId) {
+      throw new BadRequestException('Product does not belong to organization');
+    }
+    product.isActive = isActive;
+    this.persistState();
     return product;
   }
 
@@ -188,6 +201,8 @@ export class ProductsService implements OnModuleInit {
       name: dto.name,
       sku: dto.sku,
       barcodes: dto.barcodes ?? [],
+      internalBarcode: dto.internalBarcode,
+      generateInternalBarcode: dto.generateInternalBarcode,
       quantity: dto.quantity,
       uomId: dto.uomId,
       uomCategoryId: dto.uomCategoryId,

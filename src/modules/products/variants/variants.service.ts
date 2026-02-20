@@ -6,6 +6,9 @@ import { UpdateVariantDto } from './dto/update-variant.dto';
 import { ProductVariant } from './entities/product-variant.entity';
 import { VariantByCodeQueryDto } from './dto/variant-by-code-query.dto';
 import { ProductPackagingService } from '../packaging/product-packaging.service';
+import { CounterService } from '../../../core/database/counter.service';
+import { Ean13Service } from '../../../core/utils/ean13.service';
+import { OrganizationsService } from '../../organizations/organizations.service';
 
 export interface VariantRecord extends ProductVariant {
   id: string;
@@ -39,6 +42,9 @@ export class VariantsService implements OnModuleInit {
   constructor(
     private readonly moduleState: ModuleStateService,
     private readonly packagingService: ProductPackagingService,
+    private readonly counterService: CounterService,
+    private readonly ean13Service: Ean13Service,
+    private readonly organizationsService: OrganizationsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -46,16 +52,17 @@ export class VariantsService implements OnModuleInit {
     this.variants = state.variants ?? [];
   }
 
-  create(dto: CreateVariantDto): VariantRecord {
+  async create(dto: CreateVariantDto): Promise<VariantRecord> {
     const sku = this.ensureSku(dto.sku, dto.OrganizationId, dto.enterpriseId);
     this.assertUniqueSku(sku, dto.OrganizationId, dto.enterpriseId);
-    this.assertUniqueBarcodes(dto.barcodes ?? [], dto.OrganizationId, dto.enterpriseId);
+    const internalBarcode = await this.resolveInternalBarcode(dto);
     const variant: VariantRecord = {
       id: uuid(),
       productId: dto.productId,
       name: dto.name,
       sku,
       barcodes: dto.barcodes?.length ? dto.barcodes : [],
+      internalBarcode: internalBarcode ?? undefined,
       minStock: dto.minStock ?? 0,
       uomId: dto.uomId,
       uomCategoryId: dto.uomCategoryId,
@@ -67,7 +74,7 @@ export class VariantsService implements OnModuleInit {
     };
 
     this.variants.push(variant);
-    this.packagingService.ensureDefaultPackaging(variant);
+    await this.packagingService.ensureDefaultPackaging(variant);
     this.persistState();
     return variant;
   }
@@ -89,20 +96,19 @@ export class VariantsService implements OnModuleInit {
     return variant;
   }
 
-  update(id: string, dto: UpdateVariantDto): VariantRecord {
+  async update(id: string, dto: UpdateVariantDto): Promise<VariantRecord> {
     const variant = this.findOne(id);
     const nextSku = dto.sku?.trim() || variant.sku;
     if (nextSku !== variant.sku) {
       this.assertUniqueSku(nextSku, variant.OrganizationId, variant.enterpriseId, variant.id);
     }
-    if (dto.barcodes) {
-      this.assertUniqueBarcodes(dto.barcodes, variant.OrganizationId, variant.enterpriseId, variant.id);
-    }
+    const internalBarcode = await this.resolveInternalBarcode(dto, variant);
     Object.assign(variant, {
       productId: dto.productId ?? variant.productId,
       name: dto.name ?? variant.name,
       sku: nextSku,
       barcodes: dto.barcodes ?? variant.barcodes,
+      internalBarcode: internalBarcode ?? variant.internalBarcode,
       minStock: dto.minStock ?? variant.minStock,
       uomId: dto.uomId ?? variant.uomId,
       uomCategoryId: dto.uomCategoryId ?? variant.uomCategoryId,
@@ -131,7 +137,7 @@ export class VariantsService implements OnModuleInit {
     );
   }
 
-  ensureDefaultVariant(input: DefaultVariantInput): VariantRecord {
+  async ensureDefaultVariant(input: DefaultVariantInput): Promise<VariantRecord> {
     const existing = this.variants.find((variant) => variant.productId === input.productId);
     if (existing) {
       return existing;
@@ -222,24 +228,44 @@ export class VariantsService implements OnModuleInit {
     }
   }
 
-  private assertUniqueBarcodes(
-    barcodes: string[],
-    organizationId: string,
-    enterpriseId: string,
-    excludeId?: string,
-  ): void {
-    const normalized = barcodes.map((barcode) => barcode.trim()).filter(Boolean);
-    if (normalized.length === 0) {
-      return;
+  private async resolveInternalBarcode(
+    dto: CreateVariantDto | UpdateVariantDto,
+    current?: VariantRecord,
+  ): Promise<string | null> {
+    const requested = dto.internalBarcode?.trim();
+    if (requested) {
+      this.assertUniqueInternalBarcode(requested, dto.OrganizationId ?? current?.OrganizationId);
+      return requested;
     }
-    const existing = this.variants.find((variant) => {
-      if (variant.OrganizationId !== organizationId) return false;
-      if (variant.enterpriseId !== enterpriseId) return false;
-      if (variant.id === excludeId) return false;
-      return variant.barcodes.some((barcode) => normalized.includes(barcode));
-    });
-    if (existing) {
-      throw new BadRequestException('Barcode already exists');
+    if (dto.generateInternalBarcode) {
+      const organizationId = dto.OrganizationId ?? current?.OrganizationId;
+      if (!organizationId) {
+        throw new BadRequestException('OrganizationId is required to generate internal barcode');
+      }
+      return this.generateInternalBarcode(organizationId, '01');
     }
+    return current?.internalBarcode ?? null;
+  }
+
+  private assertUniqueInternalBarcode(value: string, organizationId?: string): void {
+    if (!organizationId) {
+      throw new BadRequestException('OrganizationId is required');
+    }
+    const normalized = value.trim();
+    const existsInVariants = this.variants.some(
+      (variant) => variant.OrganizationId === organizationId && variant.internalBarcode === normalized,
+    );
+    if (existsInVariants) {
+      throw new BadRequestException('Internal barcode already exists');
+    }
+    if (this.packagingService.existsInternalBarcode(organizationId, normalized)) {
+      throw new BadRequestException('Internal barcode already exists');
+    }
+  }
+
+  private async generateInternalBarcode(organizationId: string, type: '01' | '02'): Promise<string> {
+    const organization = await this.organizationsService.getOrganization(organizationId);
+    const seq = await this.counterService.next(organizationId, 'variant_internal_barcode');
+    return this.ean13Service.buildInternalBarcode(organization.eanPrefix, type, seq);
   }
 }

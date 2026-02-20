@@ -21,6 +21,14 @@ export class UpdateVariantDto {
   barcodes?: string[];
 
   @IsOptional()
+  @IsString()
+  internalBarcode?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  generateInternalBarcode?: boolean;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   minStock?: number;

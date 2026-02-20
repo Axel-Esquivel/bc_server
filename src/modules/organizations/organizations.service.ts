@@ -122,6 +122,7 @@ export class OrganizationsService {
       id: uuid(),
       name: dto.name.trim(),
       code: await this.generateUniqueCode(),
+      eanPrefix: await this.generateUniqueEanPrefix(),
       ownerUserId,
       createdBy: ownerUserId,
       setupStatus: 'pending',
@@ -284,6 +285,24 @@ export class OrganizationsService {
       branches: createdBranches,
       warehouses: createdWarehouses,
     };
+  }
+
+  async getEanPrefix(organizationId: string): Promise<string> {
+    const organization = await this.getOrganization(organizationId);
+    return organization.eanPrefix;
+  }
+
+  async updateEanPrefix(organizationId: string, eanPrefix: string): Promise<string> {
+    const normalized = this.normalizeEanPrefix(eanPrefix);
+    const existing = await this.organizationModel.findOne({
+      id: { $ne: organizationId },
+      eanPrefix: normalized,
+    });
+    if (existing) {
+      throw new ConflictException('EAN prefix already in use');
+    }
+    await this.updateOrganizationFields(organizationId, { eanPrefix: normalized });
+    return normalized;
   }
 
   async getCoreSettings(organizationId: string): Promise<OrganizationCoreSettings> {
@@ -528,6 +547,11 @@ export class OrganizationsService {
     if (!organization) {
       throw new NotFoundException('Organization not found');
     }
+    if (!organization.eanPrefix || !this.isValidEanPrefix(organization.eanPrefix)) {
+      const eanPrefix = await this.generateUniqueEanPrefix();
+      await this.updateOrganizationFields(organizationId, { eanPrefix });
+      organization.eanPrefix = eanPrefix;
+    }
     const migrated = await this.migrateCatalogsToProducts(organization);
     return this.normalizeOrganizationEntity(migrated);
   }
@@ -541,9 +565,15 @@ export class OrganizationsService {
       .findOne({ code: normalized })
       .lean<OrganizationEntity>()
       .exec();
-    return organization
-      ? this.normalizeOrganizationEntity(organization)
-      : null;
+    if (!organization) {
+      return null;
+    }
+    if (!organization.eanPrefix || !this.isValidEanPrefix(organization.eanPrefix)) {
+      const eanPrefix = await this.generateUniqueEanPrefix();
+      await this.updateOrganizationFields(organization.id, { eanPrefix });
+      organization.eanPrefix = eanPrefix;
+    }
+    return this.normalizeOrganizationEntity(organization);
   }
 
   async listOrganizations(organizationId: string): Promise<OrganizationOrganizationsnapshot[]> {
@@ -1422,6 +1452,33 @@ export class OrganizationsService {
     }
 
     return `${uuid().slice(0, 4).toUpperCase()}-${uuid().slice(9, 13).toUpperCase()}`;
+  }
+
+  private async generateUniqueEanPrefix(): Promise<string> {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const base = `${Date.now()}${Math.floor(Math.random() * 1000)}`.replace(/\D/g, '');
+      const candidate = base.slice(-6);
+      if (!this.isValidEanPrefix(candidate)) {
+        continue;
+      }
+      const exists = await this.organizationModel.exists({ eanPrefix: candidate });
+      if (!exists) {
+        return candidate;
+      }
+    }
+    return String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
+  }
+
+  private normalizeEanPrefix(value: string): string {
+    const trimmed = value.trim();
+    if (!this.isValidEanPrefix(trimmed)) {
+      throw new BadRequestException('EAN prefix must be numeric and 3-7 digits');
+    }
+    return trimmed;
+  }
+
+  private isValidEanPrefix(value: string): boolean {
+    return /^\d{3,7}$/.test(value);
   }
 
   private normalizeOrganizationEntity(raw: OrganizationEntity): OrganizationEntity {

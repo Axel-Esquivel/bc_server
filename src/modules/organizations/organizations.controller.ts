@@ -30,6 +30,7 @@ import { OrganizationCoreSettingsDto } from './dto/organization-core-settings.dt
 import { OrganizationStructureSettingsDto } from './dto/organization-structure-settings.dto';
 import { UpdateModuleSettingsDto } from './dto/update-module-settings.dto';
 import { UpdateCoreSettingsDto } from './dto/update-core-settings.dto';
+import { UpdateEanPrefixDto } from './dto/update-ean-prefix.dto';
 import { OrganizationPermission } from './decorators/organization-permission.decorator';
 import { OrganizationAdminGuard } from './guards/organization-admin.guard';
 import { OrganizationMemberGuard } from './guards/organization-member.guard';
@@ -344,6 +345,30 @@ export class OrganizationsController {
     return {
       message: 'Organization core settings loaded',
       result: settings,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationMemberGuard)
+  @Get(':id/ean-prefix')
+  async getEanPrefix(@Param('id') id: string): Promise<ApiResponse<{ eanPrefix: string }>> {
+    const eanPrefix = await this.organizationsService.getEanPrefix(id);
+    return {
+      message: 'Organization EAN prefix loaded',
+      result: { eanPrefix },
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('organizations.write')
+  @Patch(':id/ean-prefix')
+  async updateEanPrefix(
+    @Param('id') id: string,
+    @Body() dto: UpdateEanPrefixDto,
+  ): Promise<ApiResponse<{ eanPrefix: string }>> {
+    const eanPrefix = await this.organizationsService.updateEanPrefix(id, dto.eanPrefix);
+    return {
+      message: 'Organization EAN prefix updated',
+      result: { eanPrefix },
     };
   }
 

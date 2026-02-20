@@ -9,8 +9,8 @@ export class VariantsController {
   constructor(private readonly variantsService: VariantsService) {}
 
   @Post()
-  create(@Body() dto: CreateVariantDto) {
-    const result = this.variantsService.create(dto);
+  async create(@Body() dto: CreateVariantDto) {
+    const result = await this.variantsService.create(dto);
     return { message: 'Variant created', result };
   }
 
@@ -33,8 +33,8 @@ export class VariantsController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateVariantDto) {
-    const result = this.variantsService.update(id, dto);
+  async update(@Param('id') id: string, @Body() dto: UpdateVariantDto) {
+    const result = await this.variantsService.update(id, dto);
     return { message: 'Variant updated', result };
   }
 

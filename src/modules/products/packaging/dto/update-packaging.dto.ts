@@ -16,6 +16,10 @@ export class UpdatePackagingDto {
   barcode?: string;
 
   @IsOptional()
+  @IsString()
+  internalBarcode?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   price?: number;

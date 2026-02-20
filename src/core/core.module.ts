@@ -7,6 +7,7 @@ import { LoggingInterceptor } from './interceptors/logging.interceptor';
 import { TransformInterceptor } from './interceptors/transform.interceptor';
 import { AccountingOutbox, AccountingOutboxSchema } from './events/accounting-outbox.schema';
 import { CoreEventsService } from './events/core-events.service';
+import { Ean13Service } from './utils/ean13.service';
 
 @Global()
 @Module({
@@ -17,7 +18,8 @@ import { CoreEventsService } from './events/core-events.service';
     { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },
     HttpExceptionFilter,
     CoreEventsService,
+    Ean13Service,
   ],
-  exports: [CoreEventsService],
+  exports: [CoreEventsService, Ean13Service],
 })
 export class CoreModule {}

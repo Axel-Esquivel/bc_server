@@ -7,6 +7,10 @@ export class ProductListQueryDto {
 
   @IsOptional()
   @IsString()
+  includeInactive?: string;
+
+  @IsOptional()
+  @IsString()
   OrganizationId?: string;
 
   @IsOptional()

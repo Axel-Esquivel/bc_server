@@ -14,6 +14,9 @@ export class ProductPackaging {
   @prop()
   barcode?: string;
 
+  @prop()
+  internalBarcode?: string;
+
   @prop({ required: true, default: 0 })
   price!: number;
 

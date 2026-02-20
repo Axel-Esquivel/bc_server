@@ -81,6 +81,9 @@ export class Organization {
   @Prop({ required: true, unique: true, index: true })
   code: string;
 
+  @Prop({ required: true })
+  eanPrefix: string;
+
   @Prop({ required: true, index: true })
   ownerUserId: string;
 

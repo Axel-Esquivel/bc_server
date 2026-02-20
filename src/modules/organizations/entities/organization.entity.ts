@@ -36,6 +36,7 @@ export interface OrganizationEntity {
   id: string;
   name: string;
   code: string;
+  eanPrefix: string;
   ownerUserId: string;
   createdBy: string;
   setupStatus: OrganizationSetupStatus;

@@ -17,6 +17,10 @@ export class CreatePackagingDto {
   @IsString()
   barcode?: string;
 
+  @IsOptional()
+  @IsString()
+  internalBarcode?: string;
+
   @IsNumber()
   @Min(0)
   price!: number;
