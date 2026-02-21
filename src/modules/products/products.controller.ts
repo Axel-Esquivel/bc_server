@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ProductByCodeQueryDto } from './dto/product-by-code-query.dto';
 import { ProductListQueryDto } from './dto/product-list-query.dto';
@@ -8,8 +8,10 @@ import { ProductsService } from './products.service';
 import { VariantsService } from './variants/variants.service';
 import { CreateProductVariantDto } from './variants/dto/create-product-variant.dto';
 import type { AuthenticatedRequest } from '../../core/types/authenticated-request.types';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('products')
+@UseGuards(JwtAuthGuard)
 export class ProductsController {
   constructor(
     private readonly productsService: ProductsService,

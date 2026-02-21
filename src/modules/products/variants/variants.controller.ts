@@ -1,11 +1,13 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 import { VariantsService } from './variants.service';
 import { VariantByCodeQueryDto } from './dto/variant-by-code-query.dto';
 import type { AuthenticatedRequest } from '../../../core/types/authenticated-request.types';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 
 @Controller('variants')
+@UseGuards(JwtAuthGuard)
 export class VariantsController {
   constructor(private readonly variantsService: VariantsService) {}
 

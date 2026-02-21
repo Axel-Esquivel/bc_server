@@ -1,9 +1,11 @@
-import { BadRequestException, Body, Controller, Get, Post, Query, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { PackagingNamesService } from './packaging-names.service';
 import { CreatePackagingNameDto } from './dto/create-packaging-name.dto';
 import type { AuthenticatedRequest } from '../../../core/types/authenticated-request.types';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 
 @Controller('packaging-names')
+@UseGuards(JwtAuthGuard)
 export class PackagingNamesController {
   constructor(private readonly packagingNamesService: PackagingNamesService) {}
 

@@ -1,11 +1,13 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { CreatePackagingDto } from './dto/create-packaging.dto';
 import { GenerateInternalBarcodeDto } from './dto/generate-internal-barcode.dto';
 import { UpdatePackagingDto } from './dto/update-packaging.dto';
 import { ProductPackagingService } from './product-packaging.service';
 import type { AuthenticatedRequest } from '../../../core/types/authenticated-request.types';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 
 @Controller('products')
+@UseGuards(JwtAuthGuard)
 export class ProductPackagingController {
   constructor(private readonly packagingService: ProductPackagingService) {}
 

@@ -19,7 +19,6 @@ export class CounterService {
         {
           $setOnInsert: { organizationId, key },
           $inc: { seq: 1 },
-          $set: { updatedAt: new Date() },
         },
         { new: true, upsert: true },
       )

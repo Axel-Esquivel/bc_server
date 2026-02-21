@@ -8,9 +8,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
     if (user) {
-      request.userId = user.sub ?? user.id;
-      request.OrganizationId = user.OrganizationId;
+      request.OrganizationId = user.organizationId ?? user.OrganizationId;
       request.deviceId = user.deviceId;
+      request.userId = user.sub ?? user.id;
     }
     return result;
   }

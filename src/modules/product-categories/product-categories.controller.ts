@@ -1,10 +1,12 @@
-﻿import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { CreateProductCategoryDto } from './dto/create-product-category.dto';
 import { UpdateProductCategoryDto } from './dto/update-product-category.dto';
 import { ProductCategoriesService } from './product-categories.service';
 import type { AuthenticatedRequest } from '../../core/types/authenticated-request.types';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('product-categories')
+@UseGuards(JwtAuthGuard)
 export class ProductCategoriesController {
   constructor(private readonly categoriesService: ProductCategoriesService) {}
 
