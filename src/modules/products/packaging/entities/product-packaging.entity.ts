@@ -23,6 +23,9 @@ export class ProductPackaging {
   @prop({ default: true })
   isActive!: boolean;
 
+  @prop({ default: false })
+  systemCreated?: boolean;
+
   @prop({ required: true, index: true })
   OrganizationId!: string;
 

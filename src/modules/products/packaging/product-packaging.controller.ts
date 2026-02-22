@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post,
 import { CreatePackagingDto } from './dto/create-packaging.dto';
 import { GenerateInternalBarcodeDto } from './dto/generate-internal-barcode.dto';
 import { UpdatePackagingDto } from './dto/update-packaging.dto';
+import { MarkSystemPackagingDto } from './dto/mark-system-packaging.dto';
 import { ProductPackagingService } from './product-packaging.service';
 import type { AuthenticatedRequest } from '../../../core/types/authenticated-request.types';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -53,6 +54,12 @@ export class ProductPackagingController {
       dto.packagingId,
     );
     return { message: 'Internal barcode generated', result: { internalBarcode: result, value: result } };
+  }
+
+  @Post('packaging/mark-system')
+  async markSystemPackagings(@Body() dto: MarkSystemPackagingDto) {
+    const updated = await this.packagingService.markSystemPackagings(dto.organizationId);
+    return { message: 'System packagings marked', result: { updated } };
   }
 
   @Delete('packaging/:id')

@@ -7,6 +7,7 @@ export interface AuthenticatedRequest extends Request {
     deviceId?: string;
     organizationId?: string | null;
     companyId?: string | null;
+    enterpriseId?: string | null;
   };
   userId?: string;
 }

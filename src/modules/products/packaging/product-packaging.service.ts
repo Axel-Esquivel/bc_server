@@ -107,12 +107,33 @@ export class ProductPackagingService {
       internalBarcode,
       price: 0,
       isActive: true,
+      systemCreated: true,
       OrganizationId: variant.OrganizationId,
       companyId: variant.companyId,
       enterpriseId: variant.enterpriseId,
     };
     await model.create(created);
     return created;
+  }
+
+  async markSystemPackagings(organizationId: string): Promise<number> {
+    const model = this.models.packagingModel(organizationId);
+    const result = await model
+      .updateMany(
+        {
+          OrganizationId: organizationId,
+          systemCreated: { $ne: true },
+          name: 'Unidad',
+          unitsPerPack: 1,
+          $and: [
+            { $or: [{ price: 0 }, { price: { $exists: false } }] },
+            { $or: [{ barcode: { $exists: false } }, { barcode: '' }, { barcode: null }] },
+          ],
+        },
+        { $set: { systemCreated: true } },
+      )
+      .exec();
+    return result.modifiedCount ?? 0;
   }
 
   async existsInternalBarcode(organizationId: string, code: string, excludeId?: string): Promise<boolean> {

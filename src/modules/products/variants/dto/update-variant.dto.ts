@@ -1,4 +1,4 @@
-﻿import { IsArray, IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsNotEmpty, IsNumber, IsNumberString, IsOptional, IsString, Min } from 'class-validator';
 
 export class UpdateVariantDto {
   @IsOptional()
@@ -12,7 +12,7 @@ export class UpdateVariantDto {
   name?: string;
 
   @IsOptional()
-  @IsString()
+  @IsNumberString()
   sku?: string;
 
   @IsOptional()
@@ -63,3 +63,4 @@ export class UpdateVariantDto {
   @IsString()
   enterpriseId?: string;
 }
+

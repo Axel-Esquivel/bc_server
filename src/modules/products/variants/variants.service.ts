@@ -90,6 +90,9 @@ export class VariantsService {
   async update(id: string, dto: UpdateVariantDto, organizationId: string): Promise<VariantRecord> {
     const model = this.models.variantModel(organizationId);
     const variant = await this.findOne(id, organizationId);
+    if (dto.sku) {
+      this.assertNumericSku(dto.sku);
+    }
     const nextSku = dto.sku?.trim() || variant.sku;
     if (nextSku !== variant.sku) {
       await this.assertUniqueSku(nextSku, variant.OrganizationId, variant.enterpriseId, variant.id);
@@ -180,31 +183,19 @@ export class VariantsService {
   ): Promise<string> {
     const normalized = sku?.trim();
     if (normalized) {
+      this.assertNumericSku(normalized);
       return normalized;
     }
-    return this.generateSku(organizationId, enterpriseId);
+    return this.generateInternalSku(organizationId, enterpriseId);
   }
 
-  private async generateSku(organizationId: string, enterpriseId: string): Promise<string> {
-    const model = this.models.variantModel(organizationId);
-    const prefix = 'PRD-';
-    const existing = await model
-      .find({ OrganizationId: organizationId, enterpriseId, sku: new RegExp(`^${prefix}`) }, { sku: 1 })
-      .lean<{ sku: string }[]>()
-      .exec();
-    let max = 0;
-    for (const record of existing) {
-      const value = Number(record.sku.slice(prefix.length));
-      if (!Number.isNaN(value) && value > max) {
-        max = value;
-      }
-    }
-    let next = max + 1;
-    let candidate = `${prefix}${String(next).padStart(6, '0')}`;
-    while (!(await this.isSkuAvailable(candidate, organizationId, enterpriseId))) {
-      next += 1;
-      candidate = `${prefix}${String(next).padStart(6, '0')}`;
-    }
+  private async generateInternalSku(organizationId: string, enterpriseId: string): Promise<string> {
+    const organization = await this.organizationsService.getOrganization(organizationId);
+    let candidate = '';
+    do {
+      const seq = await this.counterService.next(organizationId, 'variant_internal_sku');
+      candidate = this.ean13Service.buildInternalBarcode(organization.eanPrefix, '01', seq);
+    } while (!(await this.isSkuAvailable(candidate, organizationId, enterpriseId)));
     return candidate;
   }
 
@@ -226,6 +217,32 @@ export class VariantsService {
     return !existing;
   }
 
+  private assertNumericSku(value: string): void {
+    if (!/^\d+$/.test(value.trim())) {
+      throw new BadRequestException('SKU must be numeric');
+    }
+  }
+
+  async generateInternalSkuForVariant(
+    organizationId: string,
+    enterpriseId: string,
+    variantId?: string,
+  ): Promise<string> {
+    if (variantId) {
+      const model = this.models.variantModel(organizationId);
+      const record = await model.findOne({ id: variantId }).lean<VariantRecord>().exec();
+      if (!record) {
+        throw new NotFoundException('Variant not found');
+      }
+      if (record.sku) {
+        return record.sku;
+      }
+      const sku = await this.generateInternalSku(organizationId, enterpriseId);
+      await model.updateOne({ id: variantId }, { $set: { sku } }).exec();
+      return sku;
+    }
+    return this.generateInternalSku(organizationId, enterpriseId);
+  }
   private async assertUniqueSku(
     sku: string,
     organizationId: string,

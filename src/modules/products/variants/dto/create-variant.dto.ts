@@ -1,4 +1,4 @@
-﻿import { IsArray, IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsNotEmpty, IsNumberString, IsOptional, IsString } from 'class-validator';
 import { IsNumber, Min } from 'class-validator';
 
 export class CreateVariantDto {
@@ -11,7 +11,7 @@ export class CreateVariantDto {
   name!: string;
 
   @IsOptional()
-  @IsString()
+  @IsNumberString()
   sku?: string;
 
   @IsOptional()
@@ -61,3 +61,4 @@ export class CreateVariantDto {
   @IsNotEmpty()
   enterpriseId!: string;
 }
+

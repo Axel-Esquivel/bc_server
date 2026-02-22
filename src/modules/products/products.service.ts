@@ -99,7 +99,7 @@ export class ProductsService {
     }
     const model = this.models.productModel(orgId);
     const includeInactive = filters.includeInactive === 'true';
-    const query: Record<string, string | boolean> = {
+    const query: Record<string, unknown> = {
       enterpriseId: filters.enterpriseId,
     };
     if (filters.companyId) {
@@ -107,6 +107,18 @@ export class ProductsService {
     }
     if (!includeInactive) {
       query.isActive = true;
+    }
+    if (filters.category) {
+      query.category = filters.category;
+    }
+    const search = filters.search?.trim();
+    if (search) {
+      const needle = this.escapeRegex(search);
+      query.$or = [
+        { name: { $regex: needle, $options: 'i' } },
+        { sku: { $regex: needle, $options: 'i' } },
+        { barcode: { $regex: needle, $options: 'i' } },
+      ];
     }
     return await model.find(query).lean<ProductRecord[]>().exec();
   }
@@ -274,5 +286,9 @@ export class ProductsService {
     const organization = await this.organizationsService.getOrganization(organizationId);
     const settings = (organization.moduleSettings?.products ?? {}) as { enableVariants?: boolean };
     return settings.enableVariants === true;
+  }
+
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }

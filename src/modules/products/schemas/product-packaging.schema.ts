@@ -9,6 +9,7 @@ export interface ProductPackagingDocument extends Document {
   internalBarcode?: string;
   price: number;
   isActive: boolean;
+  systemCreated?: boolean;
   OrganizationId: string;
   companyId: string;
   enterpriseId: string;
@@ -26,6 +27,7 @@ export const ProductPackagingSchema = new Schema<ProductPackagingDocument>(
     internalBarcode: { type: String, index: true, sparse: true, unique: true },
     price: { type: Number, required: true, default: 0 },
     isActive: { type: Boolean, default: true },
+    systemCreated: { type: Boolean, default: false },
     OrganizationId: { type: String, required: true, index: true },
     companyId: { type: String, required: true, index: true },
     enterpriseId: { type: String, required: true, index: true },

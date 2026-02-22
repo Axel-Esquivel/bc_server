@@ -1,5 +1,6 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { CreateVariantDto } from './dto/create-variant.dto';
+import { GenerateInternalSkuDto } from './dto/generate-internal-sku.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 import { VariantsService } from './variants.service';
 import { VariantByCodeQueryDto } from './dto/variant-by-code-query.dto';
@@ -15,6 +16,21 @@ export class VariantsController {
   async create(@Body() dto: CreateVariantDto) {
     const result = await this.variantsService.create(dto);
     return { message: 'Variant created', result };
+  }
+
+  @Post('internal-sku')
+  async generateInternalSku(@Body() dto: GenerateInternalSkuDto, @Req() req: AuthenticatedRequest) {
+    const organizationId = dto.organizationId ?? req.user?.organizationId;
+    const enterpriseId = dto.enterpriseId ?? req.user?.enterpriseId;
+    if (!organizationId || !enterpriseId) {
+      throw new BadRequestException('OrganizationId and enterpriseId are required');
+    }
+    const result = await this.variantsService.generateInternalSkuForVariant(
+      organizationId,
+      enterpriseId,
+      dto.variantId,
+    );
+    return { message: 'Internal sku generated', result: { sku: result } };
   }
 
   @Get()
