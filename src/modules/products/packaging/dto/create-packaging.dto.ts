@@ -1,9 +1,9 @@
 import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreatePackagingDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  variantId!: string;
+  variantId?: string;
 
   @IsString()
   @IsNotEmpty()

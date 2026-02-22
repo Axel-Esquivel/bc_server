@@ -11,7 +11,7 @@ export class Counter {
   @Prop({ required: true })
   key: string;
 
-  @Prop({ required: true, default: 0 })
+  @Prop({ required: true })
   seq: number;
 }
 

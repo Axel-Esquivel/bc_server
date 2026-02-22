@@ -24,6 +24,9 @@ export class ProductPackagingService {
   ) {}
 
   async create(dto: CreatePackagingDto): Promise<PackagingRecord> {
+    if (!dto.variantId) {
+      throw new BadRequestException('variantId is required');
+    }
     const model = this.models.packagingModel(dto.OrganizationId);
     const internalBarcode = await this.resolveInternalBarcode(dto);
     const record: PackagingRecord = {
