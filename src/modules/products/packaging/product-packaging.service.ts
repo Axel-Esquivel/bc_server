@@ -150,7 +150,6 @@ export class ProductPackagingService {
       return record.internalBarcode;
     }
     const internalBarcode = await this.generateInternalBarcode(organizationId, '02');
-    await model.updateOne({ id: packagingId }, { $set: { internalBarcode } }).exec();
     return internalBarcode;
   }
 
@@ -169,7 +168,7 @@ export class ProductPackagingService {
       await this.assertUniqueInternalBarcode(provided, dto.OrganizationId);
       return provided;
     }
-    return this.generateInternalBarcode(dto.OrganizationId, '02');
+    return null;
   }
 
   private async assertUniqueInternalBarcode(

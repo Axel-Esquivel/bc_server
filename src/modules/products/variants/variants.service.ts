@@ -62,7 +62,6 @@ export class VariantsService {
     };
 
     await model.create(variant);
-    await this.packagingService.ensureDefaultPackaging(variant);
     return variant;
   }
 
