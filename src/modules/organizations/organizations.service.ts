@@ -78,6 +78,8 @@ import {
   OrganizationModuleStoreItem,
   OrganizationModuleStoreResponse,
   OrganizationModuleUninstallResponse,
+  SuiteOperationError,
+  SuiteOperationResponse,
 } from './types/organization-module-store.types';
 import type { PosTerminal } from './types/pos-terminal.types';
 import type { ModuleDescriptor } from '../module-loader/module-loader.service';
@@ -688,6 +690,9 @@ export class OrganizationsService {
         dependencies: [...module.dependencies],
         isSystem: module.isSystem,
         category: module.category,
+        suite: module.suite,
+        tags: [...module.tags],
+        order: module.order,
         icon: module.icon,
         installed: installedKeys.has(module.key),
       }));
@@ -900,6 +905,114 @@ export class OrganizationsService {
     return {
       uninstalledKeys: uninstallOrder,
       alreadyUninstalledKeys: [],
+    };
+  }
+
+  async installSuite(
+    organizationId: string,
+    suiteKey: string,
+    userId: string,
+  ): Promise<SuiteOperationResponse> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertPermission(organization, userId, 'modules.configure');
+
+    const registry = this.moduleRegistry.listInstallableModules();
+    const suiteModules = registry.filter((module) => module.suite === suiteKey);
+    if (suiteModules.length === 0) {
+      throw new BadRequestException(`Suite ${suiteKey} not found`);
+    }
+
+    const ordered = this.sortSuiteModules(suiteModules);
+    const installedKeys = new Set(organization.installedModules.map((module) => module.key));
+    const installed: string[] = [];
+    const skipped: string[] = [];
+    const errors: SuiteOperationError[] = [];
+
+    for (const key of ordered) {
+      if (installedKeys.has(key)) {
+        skipped.push(key);
+        continue;
+      }
+      try {
+        await this.installModule(organizationId, key, userId);
+        installed.push(key);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push({ key, message });
+      }
+    }
+
+    return {
+      installed,
+      skipped,
+      errors,
+      blockers: [],
+    };
+  }
+
+  async uninstallSuite(
+    organizationId: string,
+    suiteKey: string,
+    userId: string,
+  ): Promise<SuiteOperationResponse> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertPermission(organization, userId, 'modules.configure');
+
+    const registry = this.moduleRegistry.listInstallableModules();
+    const suiteModules = registry.filter((module) => module.suite === suiteKey);
+    if (suiteModules.length === 0) {
+      throw new BadRequestException(`Suite ${suiteKey} not found`);
+    }
+
+    const suiteKeys = suiteModules.map((module) => module.key);
+    const suiteKeySet = new Set(suiteKeys);
+    const installedKeys = new Set(organization.installedModules.map((module) => module.key));
+
+    const registryMap = this.moduleRegistry.getModuleMap();
+    const dependencyMap = this.getRegistryDependencyMap(registryMap);
+    const dependentsMap = this.getReverseDependencyMap(dependencyMap);
+
+    const blockers = new Set<string>();
+    const blockedModules = new Set<string>();
+    suiteKeys.forEach((key) => {
+      const dependents = dependentsMap.get(key) ?? [];
+      const externalDependents = dependents.filter(
+        (dependent) => installedKeys.has(dependent) && !suiteKeySet.has(dependent),
+      );
+      if (externalDependents.length > 0) {
+        blockedModules.add(key);
+        externalDependents.forEach((dependent) => blockers.add(dependent));
+      }
+    });
+
+    const ordered = this.sortSuiteModules(suiteModules).reverse();
+    const installed: string[] = [];
+    const skipped: string[] = [];
+    const errors: SuiteOperationError[] = [];
+
+    for (const key of ordered) {
+      if (!installedKeys.has(key)) {
+        skipped.push(key);
+        continue;
+      }
+      if (blockedModules.has(key)) {
+        skipped.push(key);
+        continue;
+      }
+      try {
+        await this.uninstallModule(organizationId, key, userId, false);
+        installed.push(key);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push({ key, message });
+      }
+    }
+
+    return {
+      installed,
+      skipped,
+      errors,
+      blockers: Array.from(blockers),
     };
   }
 
@@ -1937,6 +2050,73 @@ export class OrganizationsService {
 
     visit(moduleKey);
     return order;
+  }
+
+  private sortSuiteModules(modules: ModuleRegistryEntry[]): string[] {
+    const nodes = new Map<string, ModuleRegistryEntry>();
+    modules.forEach((module) => nodes.set(module.key, module));
+
+    const indegree = new Map<string, number>();
+    const adjacency = new Map<string, string[]>();
+
+    nodes.forEach((module, key) => {
+      indegree.set(key, 0);
+      adjacency.set(key, []);
+    });
+
+    nodes.forEach((module, key) => {
+      const dependencies = Array.isArray(module.dependencies) ? module.dependencies : [];
+      dependencies.forEach((dependency) => {
+        if (!nodes.has(dependency)) {
+          return;
+        }
+        const list = adjacency.get(dependency) ?? [];
+        list.push(key);
+        adjacency.set(dependency, list);
+        indegree.set(key, (indegree.get(key) ?? 0) + 1);
+      });
+    });
+
+    const ready = Array.from(nodes.values()).filter((module) => (indegree.get(module.key) ?? 0) === 0);
+    const ordered: string[] = [];
+
+    const sortReady = () => {
+      ready.sort((a, b) => {
+        const orderDiff = a.order - b.order;
+        if (orderDiff !== 0) {
+          return orderDiff;
+        }
+        return a.name.localeCompare(b.name);
+      });
+    };
+
+    sortReady();
+
+    while (ready.length > 0) {
+      const current = ready.shift();
+      if (!current) {
+        break;
+      }
+      ordered.push(current.key);
+      const dependents = adjacency.get(current.key) ?? [];
+      dependents.forEach((dependent) => {
+        const next = (indegree.get(dependent) ?? 0) - 1;
+        indegree.set(dependent, next);
+        if (next === 0) {
+          const entry = nodes.get(dependent);
+          if (entry) {
+            ready.push(entry);
+          }
+        }
+      });
+      sortReady();
+    }
+
+    if (ordered.length !== nodes.size) {
+      throw new BadRequestException(`Circular module dependency detected in suite ${modules[0]?.suite}`);
+    }
+
+    return ordered;
   }
 
   private ensureModuleState(

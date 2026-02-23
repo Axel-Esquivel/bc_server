@@ -49,6 +49,7 @@ import type {
   OrganizationModuleInstallResponse,
   OrganizationModuleStoreResponse,
   OrganizationModuleUninstallResponse,
+  SuiteOperationResponse,
 } from './types/organization-module-store.types';
 import type { SafeUser } from '../users/entities/user.entity';
 import type { CompanyEntity } from '../companies/entities/company.entity';
@@ -286,6 +287,38 @@ export class OrganizationsController {
     const result = await this.organizationsService.uninstallModule(id, moduleKey, userId, dto.cascade === true);
     return {
       message: 'Organization module uninstalled',
+      result,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('modules.configure')
+  @Post(':id/modules/suite/:suiteKey/install')
+  async installSuite(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Param('suiteKey') suiteKey: string,
+  ): Promise<ApiResponse<SuiteOperationResponse>> {
+    const userId = this.getUserId(req);
+    const result = await this.organizationsService.installSuite(id, suiteKey, userId);
+    return {
+      message: 'Organization suite installed',
+      result,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('modules.configure')
+  @Post(':id/modules/suite/:suiteKey/uninstall')
+  async uninstallSuite(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Param('suiteKey') suiteKey: string,
+  ): Promise<ApiResponse<SuiteOperationResponse>> {
+    const userId = this.getUserId(req);
+    const result = await this.organizationsService.uninstallSuite(id, suiteKey, userId);
+    return {
+      message: 'Organization suite uninstalled',
       result,
     };
   }

@@ -7,7 +7,7 @@ const moduleConfig: ModuleConfig = {
   enabled: true,
   dependencies: ['stock-movements', 'auth'],
   description: 'Ajustes por conteo fisico.',
-  category: 'inventario',
+  category: 'inventory',
   icon: 'pi pi-sliders-h',
   isSystem: false,
   isInstallable: true,

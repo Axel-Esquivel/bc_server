@@ -1,11 +1,16 @@
-const moduleConfig = {
+import { ModuleConfig } from '../module-loader/module.config';
+
+const moduleConfig: ModuleConfig = {
   key: 'pos',
   name: 'pos',
   version: '1.0.0',
   enabled: true,
   dependencies: ['inventory', 'products', 'organizations'],
   description: 'Punto de venta.',
-  category: 'ventas',
+  category: 'pos',
+  suite: 'pos-suite',
+  tags: ['pos'],
+  order: 10,
   icon: 'pi pi-shopping-cart',
   isSystem: false,
   isInstallable: true,

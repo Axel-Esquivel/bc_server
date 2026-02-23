@@ -1,3 +1,5 @@
+import { ModuleCategory } from './module.config';
+
 export interface ModuleRegistryEntry {
   key: string;
   name: string;
@@ -6,6 +8,9 @@ export interface ModuleRegistryEntry {
   dependencies: string[];
   isSystem: boolean;
   isInstallable: boolean;
-  category?: string;
+  category: ModuleCategory;
+  suite: string;
+  tags: string[];
+  order: number;
   icon?: string;
 }

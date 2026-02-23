@@ -7,7 +7,7 @@ const moduleConfig: ModuleConfig = {
   enabled: true,
   dependencies: ['stock-movements', 'locations', 'auth'],
   description: 'Transferencias entre almacenes con flujo de transito.',
-  category: 'inventario',
+  category: 'inventory',
   icon: 'pi pi-exchange',
   isSystem: false,
   isInstallable: true,

@@ -1,3 +1,5 @@
+import { ModuleCategory } from '../../module-loader/module.config';
+
 export interface OrganizationModuleStoreItem {
   key: string;
   name: string;
@@ -5,7 +7,10 @@ export interface OrganizationModuleStoreItem {
   version: string;
   dependencies: string[];
   isSystem: boolean;
-  category?: string;
+  category: ModuleCategory;
+  suite: string;
+  tags: string[];
+  order: number;
   icon?: string;
   installed: boolean;
 }
@@ -13,6 +18,18 @@ export interface OrganizationModuleStoreItem {
 export interface OrganizationModuleStoreResponse {
   available: OrganizationModuleStoreItem[];
   installed: OrganizationModuleStoreItem[];
+}
+
+export interface SuiteOperationError {
+  key: string;
+  message: string;
+}
+
+export interface SuiteOperationResponse {
+  installed: string[];
+  skipped: string[];
+  errors: SuiteOperationError[];
+  blockers: string[];
 }
 
 export interface OrganizationModuleInstallResponse {

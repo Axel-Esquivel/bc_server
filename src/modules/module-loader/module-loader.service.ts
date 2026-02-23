@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/com
 import * as fs from 'fs';
 import * as path from 'path';
 import { ModuleStateService } from '../../core/database/module-state.service';
-import { ModuleConfig } from './module.config';
+import { ModuleCategory, ModuleConfig, moduleCategories } from './module.config';
 
 export interface ModuleDescriptor {
   config: ModuleConfig;
@@ -122,6 +122,7 @@ export class ModuleLoaderService implements OnModuleInit {
           return;
         }
 
+        const normalizedCategory = this.normalizeCategory(rawConfig.category);
         const normalized: ModuleConfig = {
           key: rawConfig.key ?? rawConfig.name ?? entry.name,
           name: rawConfig.name || rawConfig.key || entry.name,
@@ -133,7 +134,14 @@ export class ModuleLoaderService implements OnModuleInit {
           setupWizard: rawConfig.setupWizard,
           settingsSchema: rawConfig.settingsSchema,
           description: rawConfig.description,
-          category: rawConfig.category,
+          category: normalizedCategory,
+          suite: rawConfig.suite?.trim() || 'utilities-suite',
+          tags: Array.isArray(rawConfig.tags)
+            ? rawConfig.tags
+                .map((tag) => tag.trim())
+                .filter((tag) => tag.length > 0)
+            : [],
+          order: typeof rawConfig.order === 'number' ? rawConfig.order : 100,
           icon: rawConfig.icon,
         };
 
@@ -145,6 +153,16 @@ export class ModuleLoaderService implements OnModuleInit {
     });
 
     return configs;
+  }
+
+  private normalizeCategory(value?: string): ModuleCategory {
+    if (!value) {
+      return 'utilities';
+    }
+    if (moduleCategories.includes(value as ModuleCategory)) {
+      return value as ModuleCategory;
+    }
+    return 'utilities';
   }
 
   private mergeConfigs(filesystemConfigs: ModuleConfig[], storedConfigs: ModuleConfig[]): ModuleConfig[] {

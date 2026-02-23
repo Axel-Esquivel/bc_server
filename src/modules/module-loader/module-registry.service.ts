@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { ModuleConfig } from './module.config';
+import { ModuleCategory, ModuleConfig, moduleCategories } from './module.config';
 import { ModuleRegistryEntry } from './module-registry.types';
 import { MODULE_REGISTRY_CONFIGS } from './module-registry.data';
 
@@ -64,9 +64,14 @@ export class ModuleRegistryService implements OnModuleInit {
         dependencies: [],
         isSystem: true,
         isInstallable: false,
+        category: 'utilities',
+        suite: 'utilities-suite',
+        tags: [],
+        order: 100,
       };
     }
     const key = config.key ?? config.name;
+    const category = this.normalizeCategory(config.category);
     return {
       key,
       name: config.name || key,
@@ -75,8 +80,25 @@ export class ModuleRegistryService implements OnModuleInit {
       dependencies: Array.isArray(config.dependencies) ? config.dependencies : [],
       isSystem: config.isSystem ?? false,
       isInstallable: config.isInstallable ?? true,
-      category: config.category,
+      category,
+      suite: config.suite?.trim() || 'utilities-suite',
+      tags: Array.isArray(config.tags)
+        ? config.tags
+            .map((tag) => tag.trim())
+            .filter((tag) => tag.length > 0)
+        : [],
+      order: typeof config.order === 'number' ? config.order : 100,
       icon: config.icon,
     };
+  }
+
+  private normalizeCategory(value?: string): ModuleCategory {
+    if (!value) {
+      return 'utilities';
+    }
+    if (moduleCategories.includes(value as ModuleCategory)) {
+      return value as ModuleCategory;
+    }
+    return 'utilities';
   }
 }

@@ -7,7 +7,7 @@ const moduleConfig: ModuleConfig = {
   enabled: true,
   dependencies: ['stock', 'auth'],
   description: 'Reservas de stock para ventas y picking.',
-  category: 'inventario',
+  category: 'inventory',
   icon: 'pi pi-bookmark',
   isSystem: false,
   isInstallable: true,

@@ -1,5 +1,19 @@
 import { SettingsSchema, SetupWizardConfig } from '../../core/types/organization-setup-settings.types';
 
+export const moduleCategories = [
+  'core',
+  'master-data',
+  'inventory',
+  'pos',
+  'purchases',
+  'sales',
+  'accounting',
+  'reports',
+  'utilities',
+] as const;
+
+export type ModuleCategory = (typeof moduleCategories)[number];
+
 export interface ModuleConfig {
   /**
    * Stable key used for dependencies and installation.
@@ -44,7 +58,19 @@ export interface ModuleConfig {
   /**
    * Optional category/group for module metadata.
    */
-  category?: string;
+  category?: ModuleCategory;
+  /**
+   * Optional suite identifier for module grouping.
+   */
+  suite?: string;
+  /**
+   * Optional tags for search/labels.
+   */
+  tags?: string[];
+  /**
+   * Optional ordering hint for store listings.
+   */
+  order?: number;
   /**
    * Optional icon key for module metadata.
    */
@@ -64,7 +90,10 @@ export const moduleTemplate: ModuleConfig = {
   isSystem: false,
   isInstallable: true,
   description: 'Describe what the module provides.',
-  category: 'general',
+  category: 'utilities',
+  suite: 'utilities-suite',
+  tags: [],
+  order: 100,
   icon: 'pi pi-box',
 };
 
