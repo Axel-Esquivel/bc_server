@@ -13,6 +13,15 @@ export class SaleLine {
 
   @prop({ default: 0 })
   discountAmount!: number;
+
+  @prop()
+  phoneNumber?: string;
+
+  @prop()
+  denomination?: number;
+
+  @prop()
+  prepaidProviderId?: string;
 }
 
 export interface SaleLineRecord extends SaleLine {

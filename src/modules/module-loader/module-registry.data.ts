@@ -19,6 +19,7 @@ import permissions from '../permissions/module.config';
 import pos from '../pos/module.config';
 import priceLists from '../price-lists/module.config';
 import products from '../products/module.config';
+import prepaid from '../prepaid/module.config';
 import providers from '../providers/module.config';
 import purchases from '../purchases/module.config';
 import reports from '../reports/module.config';
@@ -48,6 +49,7 @@ export const MODULE_REGISTRY_CONFIGS: ModuleConfig[] = [
   pos as ModuleConfig,
   priceLists as ModuleConfig,
   products as ModuleConfig,
+  prepaid as ModuleConfig,
   providers as ModuleConfig,
   purchases as ModuleConfig,
   reports as ModuleConfig,

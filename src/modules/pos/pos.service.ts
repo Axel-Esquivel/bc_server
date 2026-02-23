@@ -8,6 +8,7 @@ import { CoreEventsService } from '../../core/events/core-events.service';
 import { createBusinessEvent } from '../../core/events/business-event';
 import type { JsonObject } from '../../core/events/business-event';
 import { OutboxService } from '../outbox/outbox.service';
+import { PrepaidService } from '../prepaid/prepaid.service';
 import { AddCartLineDto } from './dto/add-cart-line.dto';
 import { AddPaymentDto } from './dto/add-payment.dto';
 import { ClosePosSessionDto } from './dto/close-pos-session.dto';
@@ -116,6 +117,7 @@ export class PosService implements OnModuleInit {
     private readonly companiesService: CompaniesService,
     private readonly coreEventsService: CoreEventsService,
     private readonly outboxService: OutboxService,
+    private readonly prepaidService: PrepaidService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -236,7 +238,7 @@ export class PosService implements OnModuleInit {
     return cart;
   }
 
-  confirmCart(cartId: string, dto: ConfirmCartDto, cashierUserId: string): SaleRecord {
+  async confirmCart(cartId: string, dto: ConfirmCartDto, cashierUserId: string): Promise<SaleRecord> {
     const cart = this.findCart(cartId);
     this.ensureTenant(cart.OrganizationId, cart.companyId, dto.OrganizationId, dto.companyId);
     const terminal = this.getTerminal(dto.OrganizationId, dto.terminalId);
@@ -285,6 +287,8 @@ export class PosService implements OnModuleInit {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
+
+    await this.consumePrepaidForLines(cart.OrganizationId, cart.companyId, enterpriseId, cart.lines, sale.id);
 
     cart.lines.forEach((line) => {
       const releaseProjection = this.inventoryService.releaseReservation(line.reservedOperationId);
@@ -460,6 +464,9 @@ export class PosService implements OnModuleInit {
         unitPrice: line.unitPrice,
         discountAmount: 0,
         total: line.qty * line.unitPrice,
+        phoneNumber: line.phoneNumber,
+        denomination: line.denomination,
+        prepaidProviderId: line.prepaidProviderId,
       })),
       payments: payments.map((payment) => ({
         id: uuid(),
@@ -480,7 +487,7 @@ export class PosService implements OnModuleInit {
     return sale;
   }
 
-  postSale(saleId: string, dto: PosSaleActionDto): SaleRecord {
+  async postSale(saleId: string, dto: PosSaleActionDto): Promise<SaleRecord> {
     this.ensureEnterprise(dto.companyId, dto.enterpriseId);
     const sale = this.findSale(saleId);
     if (sale.enterpriseId !== dto.enterpriseId) {
@@ -495,6 +502,9 @@ export class PosService implements OnModuleInit {
     }
 
     this.validateStockAvailability(sale);
+
+    await this.consumePrepaidForLines(sale.OrganizationId, sale.companyId, sale.enterpriseId, sale.lines, sale.id);
+
     sale.lines.forEach((line) => {
       this.inventoryService.recordMovement({
         direction: InventoryDirection.OUT,
@@ -517,6 +527,21 @@ export class PosService implements OnModuleInit {
     const totals = this.calculateSaleTotalsFromSale(sale);
     this.emitSaleDomainEvent(sale, 'pos.sale.posted', totals);
     return sale;
+  }
+
+  private async consumePrepaidForLines(
+    organizationId: string,
+    companyId: string,
+    enterpriseId: string,
+    lines: Array<{ variantId: string; quantity: number; id?: string }>,
+    saleId?: string,
+  ): Promise<void> {
+    const prepaidLines = lines.map((line) => ({
+      variantId: line.variantId,
+      quantity: line.quantity,
+      saleLineId: line.id,
+    }));
+    await this.prepaidService.consumeForSale(organizationId, companyId, enterpriseId, prepaidLines, saleId);
   }
 
   voidSale(saleId: string, dto: PosSaleActionDto): SaleRecord {

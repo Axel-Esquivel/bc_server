@@ -25,6 +25,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { InventoryCountsModule } from './modules/inventory-counts/inventory-counts.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
 import { PosModule } from './modules/pos/pos.module';
+import { PrepaidModule } from './modules/prepaid/prepaid.module';
 import { ProductsModule } from './modules/products/products.module';
 import { ProductCategoriesModule } from './modules/product-categories/product-categories.module';
 import { UomModule } from './modules/uom/uom.module';
@@ -127,6 +128,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     InventoryCountsModule,
     PurchasesModule,
     PosModule,
+    PrepaidModule,
     ProductsModule,
     ProductCategoriesModule,
     UomModule,

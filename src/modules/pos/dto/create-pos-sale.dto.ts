@@ -22,6 +22,18 @@ export class CreatePosSaleLineDto {
   @IsOptional()
   @IsNumber()
   taxRate?: number;
+
+  @IsOptional()
+  @IsString()
+  phoneNumber?: string;
+
+  @IsOptional()
+  @IsNumber()
+  denomination?: number;
+
+  @IsOptional()
+  @IsString()
+  prepaidProviderId?: string;
 }
 
 export class CreatePosPaymentDto {

@@ -154,6 +154,14 @@ export const MODULE_CATALOG: ModuleCatalogEntry[] = [
     requiresConfig: true,
   },
   {
+    key: 'prepaid',
+    name: 'Prepaid',
+    description: 'Recargas y saldo por proveedor',
+    version: '1.0.0',
+    dependencies: ['pos'],
+    requiresConfig: false,
+  },
+  {
     key: 'customers',
     name: 'Customers',
     description: 'Customer records and credit',

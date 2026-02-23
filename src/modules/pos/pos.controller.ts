@@ -58,10 +58,10 @@ export class PosController {
 
   @Post('carts/:id/confirm')
   @UseGuards(JwtAuthGuard)
-  confirm(@Param('id') cartId: string, @Body() dto: ConfirmCartDto, @Req() req: any) {
+  async confirm(@Param('id') cartId: string, @Body() dto: ConfirmCartDto, @Req() req: any) {
     return {
       message: 'Sale confirmed from cart',
-      result: this.posService.confirmCart(cartId, dto, req.userId ?? req.user?.sub ?? req.user?.id),
+      result: await this.posService.confirmCart(cartId, dto, req.userId ?? req.user?.sub ?? req.user?.id),
     };
   }
 
@@ -76,10 +76,10 @@ export class PosController {
 
   @Post('sales/:id/post')
   @UseGuards(JwtAuthGuard)
-  postSale(@Param('id') saleId: string, @Body() dto: PosSaleActionDto) {
+  async postSale(@Param('id') saleId: string, @Body() dto: PosSaleActionDto) {
     return {
       message: 'POS sale posted',
-      result: this.posService.postSale(saleId, dto),
+      result: await this.posService.postSale(saleId, dto),
     };
   }
 
