@@ -14,6 +14,10 @@ export class CreateCompanyWarehouseDto {
   @IsOptional()
   code?: string;
 
+  @IsString()
+  @IsOptional()
+  enterpriseId?: string;
+
   @IsEnum(WarehouseType)
   @IsOptional()
   type?: WarehouseType;

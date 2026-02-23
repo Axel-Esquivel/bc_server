@@ -1,169 +1,222 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-  OnModuleInit,
-  forwardRef,
-} from '@nestjs/common';
-import { v4 as uuid } from 'uuid';
-import { ModuleStateService } from '../../core/database/module-state.service';
-import { BranchesService } from '../branches/branches.service';
-import { CompaniesService } from '../companies/companies.service';
-import { CreateCompanyWarehouseDto } from './dto/create-company-warehouse.dto';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { LocationsService } from '../locations/locations.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
-import { Warehouse, WarehouseType } from './entities/warehouse.entity';
+import { WarehouseListQueryDto } from './dto/warehouse-list-query.dto';
+import { Warehouse, WarehouseDocument, WarehouseType } from './entities/warehouse.entity';
 
-export interface WarehouseRecord extends Warehouse {
+export interface WarehouseRecord {
   id: string;
-}
-
-interface WarehousesState {
-  warehouses: WarehouseRecord[];
+  organizationId: string;
+  enterpriseId: string;
+  code: string;
+  name: string;
+  active: boolean;
+  type: WarehouseType;
+  allowNegativeStock: boolean;
+  allowCountingLock: boolean;
+  companyId: string;
+  branchId: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  OrganizationId: string;
 }
 
 @Injectable()
 export class WarehousesService implements OnModuleInit {
   private readonly logger = new Logger(WarehousesService.name);
-  private readonly stateKey = 'module:warehouses';
-  private warehouses: WarehouseRecord[] = [];
+  private cache: WarehouseRecord[] = [];
 
   constructor(
-    private readonly moduleState: ModuleStateService,
-    @Inject(forwardRef(() => CompaniesService))
-    private readonly companiesService: CompaniesService,
-    private readonly branchesService: BranchesService,
+    @InjectModel(Warehouse.name) private readonly warehouseModel: Model<WarehouseDocument>,
+    private readonly locationsService: LocationsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    const state = await this.moduleState.loadState<WarehousesState>(this.stateKey, { warehouses: [] });
-    this.warehouses = state.warehouses ?? [];
+    const warehouses = await this.warehouseModel.find().lean<WarehouseDocument[]>().exec();
+    this.cache = warehouses.map((warehouse) => this.toRecord(warehouse));
   }
 
-  create(dto: CreateWarehouseDto): WarehouseRecord {
-    const exists = this.warehouses.some((warehouse) => warehouse.code === dto.code);
-    if (exists) {
+  async create(dto: CreateWarehouseDto): Promise<WarehouseRecord> {
+    const organizationId = this.resolveOrganizationId(dto);
+    const enterpriseId = this.resolveEnterpriseId(dto.enterpriseId);
+    const name = this.normalizeName(dto.name, 'Warehouse name is required');
+    const code = this.normalizeCode(dto.code, 'Warehouse code is required');
+
+    const existing = await this.warehouseModel
+      .findOne({ organizationId, enterpriseId, code })
+      .lean<WarehouseDocument>()
+      .exec();
+    if (existing) {
       throw new BadRequestException('Warehouse code already exists');
     }
 
-    const warehouse: WarehouseRecord = {
-      id: uuid(),
-      name: dto.name,
-      code: dto.code,
-      type: dto.type,
+    const created = await this.warehouseModel.create({
+      organizationId,
+      enterpriseId,
+      name,
+      code,
+      active: dto.active ?? true,
+      type: dto.type ?? WarehouseType.WAREHOUSE,
       allowNegativeStock: dto.allowNegativeStock ?? false,
       allowCountingLock: dto.allowCountingLock ?? true,
-      OrganizationId: dto.OrganizationId,
-      companyId: dto.companyId,
-      branchId: dto.branchId ?? 'unknown',
-    };
+      companyId: dto.companyId?.trim() ?? '',
+      branchId: dto.branchId?.trim() ?? '',
+    });
 
-    this.warehouses.push(warehouse);
-    this.persistState();
-    return warehouse;
+    try {
+      await this.locationsService.createRootLocationsForWarehouse(created._id.toString(), {
+        organizationId,
+        enterpriseId,
+        warehouseCode: created.code,
+      });
+    } catch (error) {
+      await this.warehouseModel.deleteOne({ _id: created._id }).exec();
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to seed warehouse locations: ${message}`);
+      throw error;
+    }
+
+    const record = this.toRecord(created);
+    this.cache.push(record);
+    return record;
   }
 
-  findAll(): WarehouseRecord[] {
-    return [...this.warehouses];
+  async findAll(filters?: WarehouseListQueryDto): Promise<WarehouseRecord[]> {
+    const organizationId = filters?.organizationId ?? filters?.OrganizationId;
+    const enterpriseId = filters?.enterpriseId;
+    const active = filters?.active;
+    return this.cache.filter((warehouse) => {
+      if (organizationId && warehouse.organizationId !== organizationId.trim()) return false;
+      if (enterpriseId && warehouse.enterpriseId !== enterpriseId.trim()) return false;
+      if (active !== undefined && warehouse.active !== active) return false;
+      return true;
+    });
   }
 
   findOne(id: string): WarehouseRecord {
-    const warehouse = this.warehouses.find((item) => item.id === id);
+    const warehouse = this.cache.find((item) => item.id === id);
     if (!warehouse) {
       throw new NotFoundException('Warehouse not found');
     }
-    this.persistState();
     return warehouse;
   }
 
-  update(id: string, dto: UpdateWarehouseDto): WarehouseRecord {
+  async update(id: string, dto: UpdateWarehouseDto): Promise<WarehouseRecord> {
     const warehouse = this.findOne(id);
 
-    if (dto.code && dto.code !== warehouse.code) {
-      const duplicated = this.warehouses.some((item) => item.code === dto.code);
+    if (dto.organizationId || dto.OrganizationId) {
+      const nextOrg = this.resolveOrganizationId(dto);
+      if (nextOrg !== warehouse.organizationId) {
+        throw new BadRequestException('Warehouse organization cannot be changed');
+      }
+    }
+    if (dto.enterpriseId) {
+      const nextEnterpriseId = dto.enterpriseId.trim();
+      if (nextEnterpriseId !== warehouse.enterpriseId) {
+        throw new BadRequestException('Warehouse enterprise cannot be changed');
+      }
+    }
+
+    const nextName = dto.name ? this.normalizeName(dto.name, 'Warehouse name is required') : warehouse.name;
+    const nextCode = dto.code ? this.normalizeCode(dto.code, 'Warehouse code is required') : warehouse.code;
+    if (nextCode !== warehouse.code) {
+      const duplicated = await this.warehouseModel
+        .findOne({
+          _id: { $ne: id },
+          organizationId: warehouse.organizationId,
+          enterpriseId: warehouse.enterpriseId,
+          code: nextCode,
+        })
+        .lean<WarehouseDocument>()
+        .exec();
       if (duplicated) {
         throw new BadRequestException('Warehouse code already exists');
       }
     }
 
-    Object.assign(warehouse, {
-      name: dto.name ?? warehouse.name,
-      code: dto.code ?? warehouse.code,
+    const next = {
+      name: nextName,
+      code: nextCode,
+      active: dto.active ?? warehouse.active,
       type: dto.type ?? warehouse.type,
       allowNegativeStock: dto.allowNegativeStock ?? warehouse.allowNegativeStock,
       allowCountingLock: dto.allowCountingLock ?? warehouse.allowCountingLock,
-      OrganizationId: dto.OrganizationId ?? warehouse.OrganizationId,
-      companyId: dto.companyId ?? warehouse.companyId,
-      branchId: dto.branchId ?? warehouse.branchId,
-    });
-
-    return warehouse;
-  }
-
-  remove(id: string): void {
-    const index = this.warehouses.findIndex((item) => item.id === id);
-    if (index === -1) {
-      throw new NotFoundException('Warehouse not found');
-    }
-    this.warehouses.splice(index, 1);
-    this.persistState();
-  }
-
-  createForCompany(companyId: string, dto: CreateCompanyWarehouseDto): WarehouseRecord {
-    this.companiesService.getCompany(companyId);
-    const branch = this.branchesService.findOne(dto.branchId);
-    if (branch.companyId !== companyId) {
-      throw new BadRequestException('Branch does not belong to the company');
-    }
-
-    const code = dto.code?.trim() || this.generateCode(dto.name);
-    const type: WarehouseType = dto.type ?? WarehouseType.WAREHOUSE;
-
-    const warehouse: WarehouseRecord = {
-      id: uuid(),
-      name: dto.name,
-      code,
-      type,
-      allowNegativeStock: dto.allowNegativeStock ?? false,
-      allowCountingLock: dto.allowCountingLock ?? true,
-      OrganizationId: 'company',
-      companyId,
-      branchId: dto.branchId,
+      companyId: dto.companyId?.trim() ?? warehouse.companyId,
+      branchId: dto.branchId?.trim() ?? warehouse.branchId,
     };
 
-    if (this.warehouses.some((item) => item.code === warehouse.code)) {
-      throw new BadRequestException('Warehouse code already exists');
+    await this.warehouseModel.updateOne({ _id: id }, { $set: next }).exec();
+    const updated = { ...warehouse, ...next };
+    const index = this.cache.findIndex((item) => item.id === id);
+    if (index !== -1) {
+      this.cache[index] = updated;
     }
-
-    this.warehouses.push(warehouse);
-    this.persistState();
-    return warehouse;
+    return updated;
   }
 
-  listByCompany(companyId: string): WarehouseRecord[] {
-    this.companiesService.getCompany(companyId);
-    return this.warehouses.filter((warehouse) => warehouse.companyId === companyId);
+  async remove(id: string): Promise<void> {
+    const warehouse = this.findOne(id);
+    if (!warehouse.active) {
+      return;
+    }
+    await this.warehouseModel.updateOne({ _id: id }, { $set: { active: false } }).exec();
+    const index = this.cache.findIndex((item) => item.id === id);
+    if (index !== -1) {
+      this.cache[index] = { ...warehouse, active: false };
+    }
   }
 
-  private persistState() {
-    void this.moduleState
-      .saveState<WarehousesState>(this.stateKey, { warehouses: this.warehouses })
-      .catch((error) => {
-        const message = error instanceof Error ? error.stack ?? error.message : String(error);
-        this.logger.error(`Failed to persist warehouses: ${message}`);
-      });
+  private toRecord(warehouse: WarehouseDocument): WarehouseRecord {
+    return {
+      id: warehouse._id.toString(),
+      organizationId: warehouse.organizationId,
+      enterpriseId: warehouse.enterpriseId,
+      code: warehouse.code,
+      name: warehouse.name,
+      active: warehouse.active,
+      type: warehouse.type,
+      allowNegativeStock: warehouse.allowNegativeStock,
+      allowCountingLock: warehouse.allowCountingLock,
+      companyId: warehouse.companyId ?? '',
+      branchId: warehouse.branchId ?? '',
+      createdAt: warehouse.createdAt,
+      updatedAt: warehouse.updatedAt,
+      OrganizationId: warehouse.organizationId,
+    };
   }
 
-  private generateCode(name: string): string {
-    const base = name
-      .trim()
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 8);
-    const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
-    return base ? `${base}-${suffix}` : `WH-${suffix}`;
+  private resolveOrganizationId(dto: { organizationId?: string; OrganizationId?: string }): string {
+    const organizationId = dto.organizationId ?? dto.OrganizationId;
+    if (!organizationId?.trim()) {
+      throw new BadRequestException('OrganizationId is required');
+    }
+    return organizationId.trim();
   }
+
+  private resolveEnterpriseId(enterpriseId?: string): string {
+    if (!enterpriseId?.trim()) {
+      throw new BadRequestException('EnterpriseId is required');
+    }
+    return enterpriseId.trim();
+  }
+
+  private normalizeCode(value: string | undefined, message: string): string {
+    const code = value?.trim().toUpperCase();
+    if (!code) {
+      throw new BadRequestException(message);
+    }
+    return code;
+  }
+
+  private normalizeName(value: string | undefined, message: string): string {
+    const name = value?.trim();
+    if (!name) {
+      throw new BadRequestException(message);
+    }
+    return name;
+  }
+
 }

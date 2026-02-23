@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema } from 'mongoose';
+import type { JsonObject } from '../../core/events/business-event';
 
 export type OutboxEventDocument = OutboxEvent & Document;
 
@@ -23,7 +24,7 @@ export class OutboxEvent {
   eventType: string;
 
   @Prop({ type: MongooseSchema.Types.Mixed, default: {} })
-  payload!: Record<string, unknown>;
+  payload!: JsonObject;
 
   @Prop({ required: true, enum: ['pending', 'processed', 'failed'], default: 'pending' })
   status: OutboxEventStatus;

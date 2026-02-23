@@ -1,30 +1,53 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { OrganizationPermission } from '../organizations/decorators/organization-permission.decorator';
-import { OrganizationAdminGuard } from '../organizations/guards/organization-admin.guard';
-import { CreateInventoryLocationDto } from './dto/create-inventory-location.dto';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import type { AuthenticatedRequest } from '../../core/types/authenticated-request.types';
+import { CreateLocationDto } from './dto/create-location.dto';
+import { LocationListQueryDto } from './dto/location-list-query.dto';
+import { UpdateLocationDto } from './dto/update-location.dto';
 import { LocationsService } from './locations.service';
 
-@Controller('organizations/:id/companies/:companyId/locations')
-@UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+@Controller('locations')
 export class LocationsController {
   constructor(private readonly locationsService: LocationsService) {}
 
   @Get()
-  @OrganizationPermission('locations.read')
-  async list(@Param('id') organizationId: string, @Param('companyId') companyId: string) {
-    const result = await this.locationsService.listByCompany(organizationId, companyId);
+  async list(@Query() query: LocationListQueryDto, @Req() req: AuthenticatedRequest) {
+    const organizationId = query.organizationId ?? req.user?.organizationId ?? undefined;
+    const enterpriseId = query.enterpriseId ?? req.user?.enterpriseId ?? undefined;
+    const result = await this.locationsService.listByWarehouse({
+      ...query,
+      organizationId,
+      enterpriseId,
+    });
     return { message: 'Locations retrieved', result };
   }
 
   @Post()
-  @OrganizationPermission('locations.write')
-  async create(
-    @Param('id') organizationId: string,
-    @Param('companyId') companyId: string,
-    @Body() dto: CreateInventoryLocationDto,
-  ) {
-    const result = await this.locationsService.create(organizationId, companyId, dto);
+  async create(@Body() dto: CreateLocationDto, @Req() req: AuthenticatedRequest) {
+    const organizationId = dto.organizationId ?? req.user?.organizationId ?? undefined;
+    const enterpriseId = dto.enterpriseId ?? req.user?.enterpriseId ?? undefined;
+    const result = await this.locationsService.create({
+      ...dto,
+      organizationId,
+      enterpriseId,
+    });
     return { message: 'Location created', result };
+  }
+
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
+    const result = await this.locationsService.findOne(id);
+    return { message: 'Location retrieved', result };
+  }
+
+  @Patch(':id')
+  async update(@Param('id') id: string, @Body() dto: UpdateLocationDto) {
+    const result = await this.locationsService.update(id, dto);
+    return { message: 'Location updated', result };
+  }
+
+  @Delete(':id')
+  async remove(@Param('id') id: string) {
+    await this.locationsService.remove(id);
+    return { message: 'Location deleted', result: { id } };
   }
 }

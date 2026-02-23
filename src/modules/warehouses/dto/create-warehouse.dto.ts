@@ -1,17 +1,34 @@
-import { IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
 import { WarehouseType } from '../entities/warehouse.entity';
 
 export class CreateWarehouseDto {
   @IsString()
-  @IsNotEmpty()
-  name!: string;
+  @IsOptional()
+  name?: string;
 
   @IsString()
-  @IsNotEmpty()
-  code!: string;
+  @IsOptional()
+  code?: string;
+
+  @IsString()
+  @IsOptional()
+  organizationId?: string;
+
+  @IsString()
+  @IsOptional()
+  OrganizationId?: string;
+
+  @IsString()
+  @IsOptional()
+  enterpriseId?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  active?: boolean;
 
   @IsEnum(WarehouseType)
-  type!: WarehouseType;
+  @IsOptional()
+  type?: WarehouseType;
 
   @IsBoolean()
   @IsOptional()
@@ -22,12 +39,8 @@ export class CreateWarehouseDto {
   allowCountingLock?: boolean;
 
   @IsString()
-  @IsNotEmpty()
-  OrganizationId!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  companyId!: string;
+  @IsOptional()
+  companyId?: string;
 
   @IsString()
   @IsOptional()

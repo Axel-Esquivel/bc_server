@@ -245,10 +245,21 @@ export class OrganizationsService {
           }
         }
 
-        const warehouse = await this.warehousesService.createForCompany(company.id, {
+        const enterpriseId =
+          company.defaultEnterpriseId || company.enterprises?.[0]?.id || '';
+        if (!enterpriseId) {
+          throw new BadRequestException('EnterpriseId is required');
+        }
+
+        const warehouse = await this.warehousesService.create({
+          organizationId: company.organizationId,
+          enterpriseId,
           name: warehousePayload.name,
-          branchId,
+          code: this.generateWarehouseCode(warehousePayload.name),
+          active: true,
           type: warehousePayload.type ?? WarehouseType.WAREHOUSE,
+          companyId: company.id,
+          branchId,
         });
         createdWarehouses.push({
           id: warehouse.id,
@@ -3010,6 +3021,17 @@ export class OrganizationsService {
     update: Partial<OrganizationEntity>,
   ): Promise<void> {
     await this.organizationModel.updateOne({ id: organizationId }, { $set: update }).exec();
+  }
+
+  private generateWarehouseCode(name: string): string {
+    const base = name
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 8);
+    const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+    return base ? `${base}-${suffix}` : `WH-${suffix}`;
   }
 
   private async syncOrgModulesFromOrganization(organization: OrganizationEntity): Promise<void> {

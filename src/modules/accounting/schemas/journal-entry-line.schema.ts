@@ -28,4 +28,3 @@ export class JournalEntryLine {
 }
 
 export const JournalEntryLineSchema = SchemaFactory.createForClass(JournalEntryLine);
-JournalEntryLineSchema.index({ journalEntryId: 1 });

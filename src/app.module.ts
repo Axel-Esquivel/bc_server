@@ -23,11 +23,17 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
 import { LocationsModule } from './modules/locations/locations.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { InventoryCountsModule } from './modules/inventory-counts/inventory-counts.module';
+import { InventoryEventsModule } from './modules/inventory-events/inventory-events.module';
+import { InventoryAdjustmentsModule } from './modules/inventory-adjustments/inventory-adjustments.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
 import { PosModule } from './modules/pos/pos.module';
 import { PrepaidModule } from './modules/prepaid/prepaid.module';
 import { ProductsModule } from './modules/products/products.module';
 import { ProductCategoriesModule } from './modules/product-categories/product-categories.module';
+import { StockModule } from './modules/stock/stock.module';
+import { StockMovementsModule } from './modules/stock-movements/stock-movements.module';
+import { StockReservationsModule } from './modules/stock-reservations/stock-reservations.module';
+import { TransfersModule } from './modules/transfers/transfers.module';
 import { UomModule } from './modules/uom/uom.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { AccountingModule } from './modules/accounting/accounting.module';
@@ -126,6 +132,12 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     LocationsModule,
     InventoryModule,
     InventoryCountsModule,
+    InventoryEventsModule,
+    InventoryAdjustmentsModule,
+    StockModule,
+    StockMovementsModule,
+    StockReservationsModule,
+    TransfersModule,
     PurchasesModule,
     PosModule,
     PrepaidModule,

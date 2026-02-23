@@ -5,7 +5,7 @@ const moduleConfig: ModuleConfig = {
   name: 'locations',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['companies'],
+  dependencies: ['auth'],
   description: 'Ubicaciones y zonas internas.',
   category: 'inventario',
   icon: 'pi pi-map',

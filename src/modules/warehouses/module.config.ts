@@ -5,7 +5,7 @@ const moduleConfig: ModuleConfig = {
   name: 'warehouses',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['companies', 'branches', 'auth'],
+  dependencies: ['companies', 'branches', 'locations', 'auth'],
   description: 'Bodegas y almacenes.',
   category: 'inventario',
   icon: 'pi pi-building',

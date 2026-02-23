@@ -1,12 +1,10 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CompanyPermission } from '../companies/decorators/company-permission.decorator';
-import { CompanyPermissionGuard } from '../companies/guards/company-permission.guard';
-import { CreateCompanyWarehouseDto } from './dto/create-company-warehouse.dto';
-import { CreateLocationDto } from './dto/create-location.dto';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import type { AuthenticatedRequest } from '../../core/types/authenticated-request.types';
+import { LocationsService } from '../locations/locations.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
+import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
+import { WarehouseListQueryDto } from './dto/warehouse-list-query.dto';
 import { WarehousesService } from './warehouses.service';
-import { LocationsService } from './locations.service';
 
 @Controller()
 export class WarehousesController {
@@ -16,48 +14,60 @@ export class WarehousesController {
   ) {}
 
   @Get('warehouses')
-  findAll() {
-    return this.warehousesService.findAll();
-  }
-
-  @UseGuards(JwtAuthGuard, CompanyPermissionGuard)
-  @CompanyPermission('company.manage')
-  @Get('companies/:companyId/warehouses')
-  listByCompany(@Param('companyId') companyId: string) {
-    const result = this.warehousesService.listByCompany(companyId);
+  async findAll(@Query() query: WarehouseListQueryDto, @Req() req: AuthenticatedRequest) {
+    const organizationId = query.organizationId ?? query.OrganizationId ?? req.user?.organizationId ?? undefined;
+    const enterpriseId = query.enterpriseId ?? req.user?.enterpriseId ?? undefined;
+    const result = await this.warehousesService.findAll({
+      ...query,
+      organizationId,
+      enterpriseId,
+    });
     return { message: 'Warehouses retrieved', result };
   }
 
-  @UseGuards(JwtAuthGuard, CompanyPermissionGuard)
-  @CompanyPermission('company.manage')
-  @Post('companies/:companyId/warehouses')
-  createForCompany(
-    @Param('companyId') companyId: string,
-    @Body() dto: CreateCompanyWarehouseDto,
-  ) {
-    const result = this.warehousesService.createForCompany(companyId, dto);
+  @Post('warehouses')
+  async create(@Body() dto: CreateWarehouseDto, @Req() req: AuthenticatedRequest) {
+    const organizationId = dto.organizationId ?? dto.OrganizationId ?? req.user?.organizationId ?? undefined;
+    const enterpriseId = dto.enterpriseId ?? req.user?.enterpriseId ?? undefined;
+    const result = await this.warehousesService.create({
+      ...dto,
+      organizationId,
+      enterpriseId,
+    });
     return { message: 'Warehouse created', result };
   }
 
-  @Post('warehouses')
-  create(@Body() dto: CreateWarehouseDto) {
-    return this.warehousesService.create(dto);
-  }
-
   @Get('warehouses/:id')
-  findOne(@Param('id') id: string) {
-    return this.warehousesService.findOne(id);
+  async findOne(@Param('id') id: string) {
+    const result = await this.warehousesService.findOne(id);
+    return { message: 'Warehouse retrieved', result };
   }
 
-  @Post('warehouses/:id/locations')
-  createLocation(@Param('id') warehouseId: string, @Body() dto: CreateLocationDto) {
-    const warehouse = this.warehousesService.findOne(warehouseId);
-    return this.locationsService.createForWarehouse(warehouse, dto);
+  @Patch('warehouses/:id')
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateWarehouseDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const organizationId = dto.organizationId ?? dto.OrganizationId ?? req.user?.organizationId ?? undefined;
+    const enterpriseId = dto.enterpriseId ?? req.user?.enterpriseId ?? undefined;
+    const result = await this.warehousesService.update(id, {
+      ...dto,
+      organizationId,
+      enterpriseId,
+    });
+    return { message: 'Warehouse updated', result };
   }
 
-  @Get('warehouses/:id/locations')
-  listLocations(@Param('id') warehouseId: string) {
-    this.warehousesService.findOne(warehouseId);
-    return this.locationsService.findByWarehouse(warehouseId);
+  @Delete('warehouses/:id')
+  async remove(@Param('id') id: string) {
+    await this.warehousesService.remove(id);
+    return { message: 'Warehouse deleted', result: { id } };
+  }
+
+  @Get('warehouses/:id/locations/tree')
+  async getLocationTree(@Param('id') warehouseId: string) {
+    const result = await this.locationsService.getTree(warehouseId);
+    return { message: 'Warehouse locations tree retrieved', result };
   }
 }

@@ -58,4 +58,16 @@ export class OutboxService {
       { $set: { status: 'failed', processedAt: new Date() } },
     ).exec();
   }
+
+  async fetchPendingByEventTypes(eventTypes: string[], limit = 50): Promise<OutboxEvent[]> {
+    if (!eventTypes.length) {
+      return [];
+    }
+    return this.outboxModel
+      .find({ status: 'pending', eventType: { $in: eventTypes } })
+      .sort({ createdAt: 1 })
+      .limit(limit)
+      .lean()
+      .exec();
+  }
 }

@@ -1,14 +1,17 @@
-import { Module, forwardRef } from '@nestjs/common';
-import { BranchesModule } from '../branches/branches.module';
-import { CompaniesModule } from '../companies/companies.module';
+import { Module } from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
+import { LocationsModule } from '../locations/locations.module';
+import { Warehouse, WarehouseSchema } from './entities/warehouse.entity';
 import { WarehousesService } from './warehouses.service';
 import { WarehousesController } from './warehouses.controller';
-import { LocationsService } from './locations.service';
 
 @Module({
-  imports: [forwardRef(() => CompaniesModule), forwardRef(() => BranchesModule)],
+  imports: [
+    LocationsModule,
+    MongooseModule.forFeature([{ name: Warehouse.name, schema: WarehouseSchema }]),
+  ],
   controllers: [WarehousesController],
-  providers: [WarehousesService, LocationsService],
-  exports: [WarehousesService, LocationsService],
+  providers: [WarehousesService],
+  exports: [WarehousesService],
 })
 export class WarehousesModule {}

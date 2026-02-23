@@ -10,6 +10,22 @@ export class UpdateWarehouseDto {
   @IsOptional()
   code?: string;
 
+  @IsString()
+  @IsOptional()
+  organizationId?: string;
+
+  @IsString()
+  @IsOptional()
+  OrganizationId?: string;
+
+  @IsString()
+  @IsOptional()
+  enterpriseId?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  active?: boolean;
+
   @IsEnum(WarehouseType)
   @IsOptional()
   type?: WarehouseType;
@@ -21,10 +37,6 @@ export class UpdateWarehouseDto {
   @IsBoolean()
   @IsOptional()
   allowCountingLock?: boolean;
-
-  @IsString()
-  @IsOptional()
-  OrganizationId?: string;
 
   @IsString()
   @IsOptional()
