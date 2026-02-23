@@ -1,9 +1,14 @@
-import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
 
 export class CreatePrepaidVariantConfigDto {
+  @IsOptional()
+  @IsString()
+  variantId?: string;
+
   @IsString()
   @IsNotEmpty()
-  variantId!: string;
+  @MinLength(2)
+  name!: string;
 
   @IsString()
   @IsNotEmpty()
@@ -12,6 +17,16 @@ export class CreatePrepaidVariantConfigDto {
   @IsNumber()
   @Min(0)
   denomination!: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  durationDays?: number;
+
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(3)
+  requestCodeTemplate!: string;
 
   @IsOptional()
   @IsBoolean()

@@ -9,6 +9,10 @@ export class CreatePrepaidProviderDto {
   @IsBoolean()
   isActive?: boolean;
 
+  @IsOptional()
+  @IsString()
+  pin?: string;
+
   @IsString()
   @IsNotEmpty()
   OrganizationId!: string;

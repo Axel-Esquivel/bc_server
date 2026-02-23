@@ -1,6 +1,7 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../../core/types/authenticated-request.types';
+import { OrganizationOwnerGuard } from '../organizations/guards/organization-owner.guard';
 import { PrepaidService } from './prepaid.service';
 import { CreatePrepaidProviderDto } from './dto/create-prepaid-provider.dto';
 import { UpdatePrepaidProviderDto } from './dto/update-prepaid-provider.dto';
@@ -30,6 +31,23 @@ export class PrepaidController {
   async createProvider(@Body() dto: CreatePrepaidProviderDto) {
     const result = await this.prepaidService.createProvider(dto);
     return { message: 'Prepaid provider created', result };
+  }
+
+  @Get('providers/:id/secret')
+  @UseGuards(OrganizationOwnerGuard)
+  async getProviderSecret(
+    @Param('id') id: string,
+    @Query('organizationId') organizationId: string | undefined,
+    @Query('enterpriseId') enterpriseId: string | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const orgId = organizationId ?? req.user?.organizationId;
+    const entId = enterpriseId ?? req.user?.enterpriseId;
+    if (!orgId || !entId) {
+      throw new BadRequestException('OrganizationId and enterpriseId are required');
+    }
+    const result = await this.prepaidService.getProviderSecret(orgId, entId, id);
+    return { message: 'Prepaid provider secret retrieved', result };
   }
 
   @Patch('providers/:id')
@@ -68,6 +86,22 @@ export class PrepaidController {
     }
     const result = await this.prepaidService.listDeposits(orgId, entId, providerId);
     return { message: 'Prepaid deposits retrieved', result };
+  }
+
+  @Delete('deposits/:id')
+  async deleteDeposit(
+    @Param('id') depositId: string,
+    @Query('organizationId') organizationId: string | undefined,
+    @Query('enterpriseId') enterpriseId: string | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const orgId = organizationId ?? req.user?.organizationId;
+    const entId = enterpriseId ?? req.user?.enterpriseId;
+    if (!orgId || !entId) {
+      throw new BadRequestException('OrganizationId and enterpriseId are required');
+    }
+    const result = await this.prepaidService.deleteDeposit(depositId, orgId, entId);
+    return { message: 'Prepaid deposit deleted', result };
   }
 
   @Post('consume')

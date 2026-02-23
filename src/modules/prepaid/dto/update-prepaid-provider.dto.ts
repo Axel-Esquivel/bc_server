@@ -6,6 +6,10 @@ export class UpdatePrepaidProviderDto {
   name?: string;
 
   @IsOptional()
+  @IsString()
+  pin?: string;
+
+  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }

@@ -38,8 +38,25 @@ export class PrepaidService {
     const model = this.models.providerModel(organizationId);
     return model
       .find({ OrganizationId: organizationId, enterpriseId })
+      .select('-pin')
       .lean<PrepaidProviderDocument[]>()
       .exec();
+  }
+
+  async getProviderSecret(
+    organizationId: string,
+    enterpriseId: string,
+    providerId: string,
+  ): Promise<{ pin: string | null }> {
+    const model = this.models.providerModel(organizationId);
+    const record = await model
+      .findOne({ OrganizationId: organizationId, enterpriseId, id: providerId })
+      .lean<PrepaidProviderDocument>()
+      .exec();
+    if (!record) {
+      throw new BadRequestException('Provider not found');
+    }
+    return { pin: record.pin ?? null };
   }
 
   async createProvider(dto: CreatePrepaidProviderDto): Promise<PrepaidProviderDocument> {
@@ -47,13 +64,14 @@ export class PrepaidService {
     const record: PrepaidProviderDocument = {
       id: uuid(),
       name: dto.name.trim(),
+      pin: dto.pin?.trim(),
       isActive: dto.isActive ?? true,
       OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
       enterpriseId: dto.enterpriseId,
     } as PrepaidProviderDocument;
     await model.create(record);
-    return record;
+    return { ...record, pin: undefined } as PrepaidProviderDocument;
   }
 
   async updateProvider(
@@ -68,10 +86,11 @@ export class PrepaidService {
     }
     const next = {
       name: dto.name?.trim() ?? record.name,
+      pin: dto.pin?.trim() ?? record.pin,
       isActive: dto.isActive ?? record.isActive,
     };
     await model.updateOne({ id }, { $set: next }).exec();
-    return { ...record, ...next } as PrepaidProviderDocument;
+    return { ...record, ...next, pin: undefined } as PrepaidProviderDocument;
   }
 
   async listBalances(organizationId: string, enterpriseId: string, providerId?: string) {
@@ -118,7 +137,6 @@ export class PrepaidService {
             companyId: dto.companyId,
             enterpriseId: dto.enterpriseId,
             providerId: dto.providerId,
-            balance: 0,
           },
           $inc: { balance: dto.creditedAmount },
         },
@@ -153,13 +171,69 @@ export class PrepaidService {
     return model.find(query).lean<PrepaidDepositDocument[]>().exec();
   }
 
+  async deleteDeposit(
+    depositId: string,
+    organizationId: string,
+    enterpriseId: string,
+  ): Promise<{ id: string }> {
+    const depositModel = this.models.depositModel(organizationId);
+    const walletModel = this.models.walletModel(organizationId);
+
+    const deposit = await depositModel
+      .findOne({ id: depositId, OrganizationId: organizationId, enterpriseId })
+      .lean<PrepaidDepositDocument>()
+      .exec();
+
+    if (!deposit) {
+      throw new BadRequestException('Deposit not found');
+    }
+
+    const wallet = await walletModel
+      .findOneAndUpdate(
+        {
+          OrganizationId: organizationId,
+          enterpriseId,
+          providerId: deposit.providerId,
+          balance: { $gte: deposit.creditedAmount },
+        },
+        { $inc: { balance: -deposit.creditedAmount } },
+        { new: true },
+      )
+      .lean<PrepaidWalletDocument>()
+      .exec();
+
+    if (!wallet) {
+      throw new BadRequestException('Insufficient balance to delete deposit');
+    }
+
+    await depositModel.deleteOne({ id: depositId }).exec();
+
+    await this.outbox.add({
+      organizationId,
+      enterpriseId,
+      moduleKey: 'prepaid',
+      eventType: 'prepaid.wallet.deposit_deleted',
+      payload: {
+        depositId,
+        providerId: deposit.providerId,
+        creditedAmount: deposit.creditedAmount,
+        balance: wallet.balance,
+      },
+    });
+
+    return { id: depositId };
+  }
+
   async createVariantConfig(dto: CreatePrepaidVariantConfigDto): Promise<PrepaidVariantConfigDocument> {
     const model = this.models.variantConfigModel(dto.OrganizationId);
     const record: PrepaidVariantConfigDocument = {
       id: uuid(),
-      variantId: dto.variantId,
+      variantId: dto.variantId?.trim() || undefined,
+      name: dto.name.trim(),
       providerId: dto.providerId,
       denomination: dto.denomination,
+      durationDays: dto.durationDays,
+      requestCodeTemplate: dto.requestCodeTemplate.trim(),
       isActive: dto.isActive ?? true,
       OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
@@ -181,7 +255,10 @@ export class PrepaidService {
     }
     const next = {
       providerId: dto.providerId ?? record.providerId,
+      name: dto.name?.trim() ?? record.name,
       denomination: dto.denomination ?? record.denomination,
+      durationDays: dto.durationDays ?? record.durationDays,
+      requestCodeTemplate: dto.requestCodeTemplate?.trim() ?? record.requestCodeTemplate,
       isActive: dto.isActive ?? record.isActive,
     };
     await model.updateOne({ id }, { $set: next }).exec();

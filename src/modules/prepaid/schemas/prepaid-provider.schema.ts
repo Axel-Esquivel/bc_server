@@ -3,6 +3,7 @@ import { Schema, Document } from 'mongoose';
 export interface PrepaidProviderDocument extends Document {
   id: string;
   name: string;
+  pin?: string;
   isActive: boolean;
   OrganizationId: string;
   companyId: string;
@@ -15,6 +16,7 @@ export const PrepaidProviderSchema = new Schema<PrepaidProviderDocument>(
   {
     id: { type: String, required: true, index: true, unique: true },
     name: { type: String, required: true },
+    pin: { type: String, trim: true },
     isActive: { type: Boolean, default: true },
     OrganizationId: { type: String, required: true, index: true },
     companyId: { type: String, required: true, index: true },
