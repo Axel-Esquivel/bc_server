@@ -20,5 +20,6 @@ import { StockMovement, StockMovementSchema } from './entities/stock-movement.en
   ],
   controllers: [StockMovementsController],
   providers: [StockMovementsService],
+  exports: [StockMovementsService],
 })
 export class StockMovementsModule {}
