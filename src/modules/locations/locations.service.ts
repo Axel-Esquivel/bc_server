@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { isValidObjectId, Model, Schema as MongooseSchema } from 'mongoose';
+import { isValidObjectId, Model, Types } from 'mongoose';
 import { CreateLocationDto } from './dto/create-location.dto';
 import { LocationListQueryDto } from './dto/location-list-query.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
@@ -26,6 +26,25 @@ export interface LocationRecord {
 export interface LocationTreeNode extends LocationRecord {
   children: LocationTreeNode[];
 }
+
+type ObjectIdLike = { toString(): string };
+
+type LocationLike = {
+  _id: ObjectIdLike;
+  organizationId: string;
+  enterpriseId: string;
+  warehouseId: ObjectIdLike;
+  parentLocationId: ObjectIdLike | null;
+  name: string;
+  code: string;
+  level: number;
+  path: string;
+  type: LocationType;
+  usage: LocationUsage;
+  active: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
 
 export const LOCATION_CODES = {
   STOCK: 'STOCK',
@@ -338,7 +357,7 @@ export class LocationsService {
     return location;
   }
 
-  private toRecord(location: LocationDocument): LocationRecord {
+  private toRecord(location: LocationLike): LocationRecord {
     return {
       id: location._id.toString(),
       organizationId: location.organizationId,
@@ -357,11 +376,11 @@ export class LocationsService {
     };
   }
 
-  private ensureObjectId(value: string | undefined, message: string): MongooseSchema.Types.ObjectId {
+  private ensureObjectId(value: string | undefined, message: string): Types.ObjectId {
     if (!value || !isValidObjectId(value)) {
       throw new BadRequestException(message);
     }
-    return new MongooseSchema.Types.ObjectId(value);
+    return new Types.ObjectId(value);
   }
 
   private normalizeId(value: string | undefined, message: string): string {
