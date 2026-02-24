@@ -161,13 +161,15 @@ export class StockMovementsService {
       filters.productId = query.productId.trim();
     }
 
-    if (query.fromDate || query.toDate) {
+    if (query.startDate || query.endDate) {
       const range: Record<string, Date> = {};
-      if (query.fromDate) {
-        range.$gte = new Date(query.fromDate);
+      const start = query.startDate ?? query.endDate ?? null;
+      const end = query.endDate ?? query.startDate ?? null;
+      if (start) {
+        range.$gte = new Date(`${start}T00:00:00.000Z`);
       }
-      if (query.toDate) {
-        range.$lte = new Date(query.toDate);
+      if (end) {
+        range.$lte = new Date(`${end}T23:59:59.999Z`);
       }
       filters.createdAt = range;
     }
@@ -185,6 +187,14 @@ export class StockMovementsService {
       filters.$or = [
         { fromLocationId: { $in: locationIds } },
         { toLocationId: { $in: locationIds } },
+      ];
+    }
+
+    if (query.locationId) {
+      const locationObjectId = new MongooseSchema.Types.ObjectId(query.locationId);
+      filters.$or = [
+        { fromLocationId: locationObjectId },
+        { toLocationId: locationObjectId },
       ];
     }
 

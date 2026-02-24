@@ -17,11 +17,15 @@ export class StockMovementQueryDto {
   @IsOptional()
   warehouseId?: string;
 
-  @IsDateString()
+  @IsMongoId()
   @IsOptional()
-  fromDate?: string;
+  locationId?: string;
 
   @IsDateString()
   @IsOptional()
-  toDate?: string;
+  startDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  endDate?: string;
 }
