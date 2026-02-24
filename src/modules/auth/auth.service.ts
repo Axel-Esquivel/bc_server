@@ -12,6 +12,7 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { OrganizationMemberStatus } from '../organizations/entities/organization.entity';
 import { RefreshToken, RefreshTokenDocument } from './schemas/refresh-token.schema';
+import type { StringValue } from 'ms';
 
 export interface TokenBundle {
   accessToken: string;
@@ -170,7 +171,7 @@ export class AuthService {
   private issueTokens(payload: AuthTokenPayload): TokenBundle {
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET || 'demo-secret',
-      expiresIn: '15m',
+      expiresIn: resolveAccessTokenExpiresIn(),
     });
 
     const refreshToken = this.jwtService.sign(payload, {
@@ -290,4 +291,24 @@ export class AuthService {
       currencyId: null,
     };
   }
+}
+
+const STRING_VALUE_REGEX = /^\d+(?:\.\d+)?(ms|s|m|h|d|w|y)$/i;
+
+function isStringValue(value: string): value is StringValue {
+  return STRING_VALUE_REGEX.test(value);
+}
+
+function resolveAccessTokenExpiresIn(): StringValue | number {
+  const raw = process.env.JWT_EXPIRES_IN;
+  if (!raw) {
+    return '1d';
+  }
+  if (/^\d+$/.test(raw)) {
+    return Number(raw);
+  }
+  if (isStringValue(raw)) {
+    return raw;
+  }
+  return '1d';
 }

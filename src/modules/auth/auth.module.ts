@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule } from '@nestjs/jwt';
+import type { StringValue } from 'ms';
 import { PassportModule } from '@nestjs/passport';
 import { DevicesModule } from '../devices/devices.module';
 import { UsersModule } from '../users/users.module';
@@ -24,7 +25,7 @@ import { RefreshToken, RefreshTokenSchema } from './schemas/refresh-token.schema
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'demo-secret',
-      signOptions: { expiresIn: '15m' },
+      signOptions: { expiresIn: resolveAccessTokenExpiresIn() },
     }),
   ],
   controllers: [AuthController],
@@ -32,3 +33,23 @@ import { RefreshToken, RefreshTokenSchema } from './schemas/refresh-token.schema
   exports: [AuthService, JwtAuthGuard, RolesGuard, PermissionsGuard, JwtModule],
 })
 export class AuthModule {}
+
+const STRING_VALUE_REGEX = /^\d+(?:\.\d+)?(ms|s|m|h|d|w|y)$/i;
+
+function isStringValue(value: string): value is StringValue {
+  return STRING_VALUE_REGEX.test(value);
+}
+
+function resolveAccessTokenExpiresIn(): StringValue | number {
+  const raw = process.env.JWT_EXPIRES_IN;
+  if (!raw) {
+    return '1d';
+  }
+  if (/^\d+$/.test(raw)) {
+    return Number(raw);
+  }
+  if (isStringValue(raw)) {
+    return raw;
+  }
+  return '1d';
+}
