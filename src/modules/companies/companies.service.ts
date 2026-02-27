@@ -32,7 +32,7 @@ import {
   CompanyEnterpriseInput,
   CompanyHierarchySettings,
 } from './types/company-hierarchy.types';
-import type { CoreCountry, CoreCurrency } from '../organizations/types/core-settings.types';
+import type { CoreCompanyConfig, CoreCountry, CoreCurrency } from '../organizations/types/core-settings.types';
 
 interface CompaniesState {
   companies: CompanyEntity[];
@@ -189,17 +189,18 @@ export class CompaniesService implements OnModuleInit {
         ...company,
         enterprises: Array.isArray(company.enterprises) ? company.enterprises : [],
       }));
+    const enriched = await this.enrichEnterprisesFromCoreSettings(organizationId, scoped);
     const normalizedCountryId = typeof countryId === 'string' ? countryId.trim() : '';
     if (!normalizedCountryId) {
-      return scoped;
+      return enriched;
     }
     try {
       const lookup = await this.getCoreLookup(organizationId);
-      return scoped.filter((company) => this.companyMatchesCountry(company, normalizedCountryId, lookup));
+      return enriched.filter((company) => this.companyMatchesCountry(company, normalizedCountryId, lookup));
     } catch (error) {
       const message = error instanceof Error ? error.stack ?? error.message : String(error);
       this.logger.error(`Failed to resolve core lookup for ${organizationId}: ${message}`);
-      return scoped;
+      return enriched;
     }
   }
 
@@ -1364,6 +1365,65 @@ export class CompaniesService implements OnModuleInit {
       currenciesById,
       currenciesByCode,
     };
+  }
+
+  private async enrichEnterprisesFromCoreSettings(
+    organizationId: string,
+    companies: CompanyEntity[],
+  ): Promise<CompanyEntity[]> {
+    try {
+      const coreSettings = await this.organizationsService.getCoreSettings(organizationId);
+      const companiesById = new Map<string, CoreCompanyConfig>();
+      coreSettings.countries.forEach((country) => {
+        (country.companies ?? []).forEach((company) => {
+          companiesById.set(company.id, company);
+        });
+      });
+
+      return companies.map((company) => {
+        const currentEnterprises = Array.isArray(company.enterprises) ? company.enterprises : [];
+        const coreCompany = companiesById.get(company.id);
+        const mapped =
+          currentEnterprises.length > 0
+            ? currentEnterprises
+            : (coreCompany?.enterprises ?? []).map((enterprise) => {
+                const currencyIds =
+                  enterprise.allowedCurrencyIds ?? company.currencies ?? [];
+                const defaultCurrencyId =
+                  enterprise.baseCurrencyId ??
+                  currencyIds[0] ??
+                  company.baseCurrencyId ??
+                  'unknown';
+                return {
+                  id: enterprise.id,
+                  name: enterprise.name,
+                  countryId: enterprise.countryId ?? company.baseCountryId,
+                  currencyIds,
+                  defaultCurrencyId,
+                };
+              });
+
+        if (company.defaultEnterpriseId) {
+          const hasDefault = mapped.some(
+            (enterprise) => enterprise.id === company.defaultEnterpriseId,
+          );
+          if (!hasDefault) {
+            this.logger.warn(
+              `Default enterprise ${company.defaultEnterpriseId} not found for company ${company.id}`,
+            );
+          }
+        }
+
+        return {
+          ...company,
+          enterprises: mapped,
+        };
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.stack ?? error.message : String(error);
+      this.logger.error(`Failed to enrich enterprises for ${organizationId}: ${message}`);
+      return companies;
+    }
   }
 
   private resolveCoreCountryId(lookup: CoreLookup, value: string | null | undefined): string {
