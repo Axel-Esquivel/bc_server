@@ -103,8 +103,16 @@ export class CompaniesService implements OnModuleInit {
       const normalizedCompany = this.normalizeCompany(company, normalized);
       normalized.push(normalizedCompany);
     });
-    this.companies = normalized;
-    this.persistState();
+    const withDefaults = normalized.map((company) => this.ensureDefaultEnterprise(company));
+    const changed = withDefaults.some((company, index) => {
+      const previous = normalized[index];
+      const prevCount = Array.isArray(previous?.enterprises) ? previous.enterprises.length : 0;
+      return prevCount === 0 && company.enterprises.length > 0;
+    });
+    this.companies = withDefaults;
+    if (changed) {
+      this.persistState();
+    }
   }
 
   async createCompany(
@@ -158,19 +166,20 @@ export class CompaniesService implements OnModuleInit {
       createdAt: new Date(),
     };
 
-    this.companies.push(company);
+    const normalizedCompany = this.ensureDefaultEnterprise(company);
+    this.companies.push(normalizedCompany);
     this.persistState();
     await this.organizationsService.upsertCoreCompany(organizationId, {
-      id: company.id,
-      name: company.name,
-      countryId: company.baseCountryId,
-      currencyIds: company.currencies ?? [],
-      enterprises: (company.enterprises ?? []).map((enterprise) => ({
+      id: normalizedCompany.id,
+      name: normalizedCompany.name,
+      countryId: normalizedCompany.baseCountryId,
+      currencyIds: normalizedCompany.currencies ?? [],
+      enterprises: (normalizedCompany.enterprises ?? []).map((enterprise) => ({
         id: enterprise.id,
         name: enterprise.name,
       })),
     });
-    return company;
+    return normalizedCompany;
   }
 
   async listByOrganization(
@@ -1069,13 +1078,19 @@ export class CompaniesService implements OnModuleInit {
       const defaultCurrencyId = currencyIds.includes(requestedDefault)
         ? requestedDefault
         : currencyIds[0] ?? input.baseCurrencyId;
+      const fallback = this.buildDefaultEnterprise(
+        input.name,
+        input.baseCountryId,
+        input.baseCurrencyId,
+        this.normalizeIdList([...currencyIds, input.baseCurrencyId]),
+      );
       return {
         baseCountryId: input.baseCountryId,
         baseCurrencyId: input.baseCurrencyId,
         currencyIds: this.normalizeIdList([...currencyIds, input.baseCurrencyId]),
         operatingCountryIds: this.normalizeIdList([...operatingCountryIds, input.baseCountryId]),
-        enterprises,
-        defaultEnterpriseId: null,
+        enterprises: [fallback],
+        defaultEnterpriseId: fallback.id,
         defaultCurrencyId,
       };
     }
@@ -1117,7 +1132,7 @@ export class CompaniesService implements OnModuleInit {
   ): Promise<CompanyEnterprise[]> {
     const enterprisesInput = Array.isArray(input.enterprises) ? input.enterprises : [];
     if (enterprisesInput.length === 0) {
-      return [];
+      return [this.buildDefaultEnterprise(input.name, input.baseCountryId, input.baseCurrencyId, input.currencies)];
     }
 
     const normalized: CompanyEnterprise[] = [];
@@ -1164,6 +1179,45 @@ export class CompaniesService implements OnModuleInit {
       });
     }
     return normalized;
+  }
+
+  private buildDefaultEnterprise(
+    companyName: string,
+    baseCountryId: string,
+    baseCurrencyId: string,
+    currencies?: string[],
+  ): CompanyEnterprise {
+    const currencyIds = this.normalizeIdList([...(currencies ?? []), baseCurrencyId]);
+    const defaultCurrencyId = baseCurrencyId || currencyIds[0] || 'unknown';
+    return {
+      id: uuid(),
+      name: companyName.trim() ? `${companyName.trim()} - Principal` : 'Principal',
+      countryId: baseCountryId || 'unknown',
+      currencyIds,
+      defaultCurrencyId,
+    };
+  }
+
+  private ensureDefaultEnterprise(company: CompanyEntity): CompanyEntity {
+    const enterprises = Array.isArray(company.enterprises) ? company.enterprises : [];
+    if (enterprises.length > 0) {
+      if (!company.defaultEnterpriseId) {
+        return { ...company, defaultEnterpriseId: enterprises[0]?.id ?? null };
+      }
+      return company;
+    }
+    const fallback = this.buildDefaultEnterprise(
+      company.name,
+      company.baseCountryId,
+      company.baseCurrencyId,
+      company.currencies,
+    );
+    return {
+      ...company,
+      enterprises: [fallback],
+      defaultEnterpriseId: fallback.id,
+      defaultCurrencyId: fallback.defaultCurrencyId,
+    };
   }
 
   private resolveDefaultEnterpriseId(
