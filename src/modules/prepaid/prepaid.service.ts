@@ -34,10 +34,19 @@ export class PrepaidService {
     return organization.installedModules?.some((module) => module.key === 'prepaid') ?? false;
   }
 
-  async listProviders(organizationId: string, enterpriseId: string): Promise<PrepaidProviderDocument[]> {
+  async listProviders(
+    organizationId: string,
+    enterpriseId: string,
+    companyId?: string,
+  ): Promise<PrepaidProviderDocument[]> {
     const model = this.models.providerModel(organizationId);
+    const enterpriseIds = await this.resolveEnterpriseIds(model, organizationId, enterpriseId, companyId);
+    const query: Record<string, unknown> = { OrganizationId: organizationId, enterpriseId: { $in: enterpriseIds } };
+    if (companyId) {
+      query.companyId = companyId;
+    }
     return model
-      .find({ OrganizationId: organizationId, enterpriseId })
+      .find(query)
       .select('-pin')
       .lean<PrepaidProviderDocument[]>()
       .exec();
@@ -66,6 +75,7 @@ export class PrepaidService {
       name: dto.name.trim(),
       pin: dto.pin?.trim(),
       isActive: dto.isActive ?? true,
+      minimumBalance: dto.minimumBalance ?? 0,
       OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
       enterpriseId: dto.enterpriseId,
@@ -88,14 +98,27 @@ export class PrepaidService {
       name: dto.name?.trim() ?? record.name,
       pin: dto.pin?.trim() ?? record.pin,
       isActive: dto.isActive ?? record.isActive,
+      minimumBalance: dto.minimumBalance ?? record.minimumBalance ?? 0,
     };
     await model.updateOne({ id }, { $set: next }).exec();
     return { ...record, ...next, pin: undefined } as PrepaidProviderDocument;
   }
 
-  async listBalances(organizationId: string, enterpriseId: string, providerId?: string) {
+  async listBalances(
+    organizationId: string,
+    enterpriseId: string,
+    providerId?: string,
+    companyId?: string,
+  ) {
     const model = this.models.walletModel(organizationId);
-    const query: Record<string, string> = { OrganizationId: organizationId, enterpriseId };
+    const enterpriseIds = await this.resolveEnterpriseIds(model, organizationId, enterpriseId, companyId);
+    const query: Record<string, unknown> = {
+      OrganizationId: organizationId,
+      enterpriseId: { $in: enterpriseIds },
+    };
+    if (companyId) {
+      query.companyId = companyId;
+    }
     if (providerId) {
       query.providerId = providerId;
     }
@@ -162,9 +185,21 @@ export class PrepaidService {
     return deposit;
   }
 
-  async listDeposits(organizationId: string, enterpriseId: string, providerId?: string) {
+  async listDeposits(
+    organizationId: string,
+    enterpriseId: string,
+    providerId?: string,
+    companyId?: string,
+  ) {
     const model = this.models.depositModel(organizationId);
-    const query: Record<string, string> = { OrganizationId: organizationId, enterpriseId };
+    const enterpriseIds = await this.resolveEnterpriseIds(model, organizationId, enterpriseId, companyId);
+    const query: Record<string, unknown> = {
+      OrganizationId: organizationId,
+      enterpriseId: { $in: enterpriseIds },
+    };
+    if (companyId) {
+      query.companyId = companyId;
+    }
     if (providerId) {
       query.providerId = providerId;
     }
@@ -265,10 +300,22 @@ export class PrepaidService {
     return { ...record, ...next } as PrepaidVariantConfigDocument;
   }
 
-  async listVariantConfigs(organizationId: string, enterpriseId: string): Promise<PrepaidVariantConfigDocument[]> {
+  async listVariantConfigs(
+    organizationId: string,
+    enterpriseId: string,
+    companyId?: string,
+  ): Promise<PrepaidVariantConfigDocument[]> {
     const model = this.models.variantConfigModel(organizationId);
+    const enterpriseIds = await this.resolveEnterpriseIds(model, organizationId, enterpriseId, companyId);
+    const query: Record<string, unknown> = {
+      OrganizationId: organizationId,
+      enterpriseId: { $in: enterpriseIds },
+    };
+    if (companyId) {
+      query.companyId = companyId;
+    }
     return model
-      .find({ OrganizationId: organizationId, enterpriseId })
+      .find(query)
       .lean<PrepaidVariantConfigDocument[]>()
       .exec();
   }
@@ -419,5 +466,25 @@ export class PrepaidService {
     });
 
     return consumption;
+  }
+
+  private async resolveEnterpriseIds(
+    model: { distinct: (field: string, filter: Record<string, unknown>) => { exec(): Promise<string[]> } },
+    organizationId: string,
+    enterpriseId: string,
+    companyId?: string,
+  ): Promise<string[]> {
+    const filter: Record<string, unknown> = { OrganizationId: organizationId };
+    if (companyId) {
+      filter.companyId = companyId;
+    }
+    const distinct = await model.distinct('enterpriseId', filter).exec();
+    const ids = distinct
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .map((value) => value.trim());
+    if (ids.includes(enterpriseId)) {
+      return [enterpriseId];
+    }
+    return ids.length > 0 ? ids : [enterpriseId];
   }
 }

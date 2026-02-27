@@ -88,12 +88,20 @@ export class WarehousesService implements OnModuleInit {
     const organizationId = filters?.organizationId ?? filters?.OrganizationId;
     const enterpriseId = filters?.enterpriseId;
     const active = filters?.active;
-    return this.cache.filter((warehouse) => {
+    const filtered = this.cache.filter((warehouse) => {
       if (organizationId && warehouse.organizationId !== organizationId.trim()) return false;
       if (enterpriseId && warehouse.enterpriseId !== enterpriseId.trim()) return false;
       if (active !== undefined && warehouse.active !== active) return false;
       return true;
     });
+    if (enterpriseId && filtered.length === 0 && organizationId) {
+      return this.cache.filter((warehouse) => {
+        if (warehouse.organizationId !== organizationId.trim()) return false;
+        if (active !== undefined && warehouse.active !== active) return false;
+        return true;
+      });
+    }
+    return filtered;
   }
 
   findOne(id: string): WarehouseRecord {

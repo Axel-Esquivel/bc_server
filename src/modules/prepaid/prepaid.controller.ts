@@ -20,10 +20,11 @@ export class PrepaidController {
   async listProviders(@Query('organizationId') organizationId: string | undefined, @Query('enterpriseId') enterpriseId: string | undefined, @Req() req: AuthenticatedRequest) {
     const orgId = organizationId ?? req.user?.organizationId;
     const entId = enterpriseId ?? req.user?.enterpriseId;
+    const companyId = req.user?.companyId ?? undefined;
     if (!orgId || !entId) {
       throw new BadRequestException('OrganizationId and enterpriseId are required');
     }
-    const result = await this.prepaidService.listProviders(orgId, entId);
+    const result = await this.prepaidService.listProviders(orgId, entId, companyId);
     return { message: 'Prepaid providers retrieved', result };
   }
 
@@ -66,8 +67,14 @@ export class PrepaidController {
   }
 
   @Get('balances')
-  async balances(@Query() query: PrepaidBalanceQueryDto) {
-    const result = await this.prepaidService.listBalances(query.OrganizationId, query.enterpriseId, query.providerId);
+  async balances(@Query() query: PrepaidBalanceQueryDto, @Req() req: AuthenticatedRequest) {
+    const companyId = req.user?.companyId ?? undefined;
+    const result = await this.prepaidService.listBalances(
+      query.OrganizationId,
+      query.enterpriseId,
+      query.providerId,
+      companyId,
+    );
     return { message: 'Prepaid balances retrieved', result };
   }
 
@@ -81,10 +88,11 @@ export class PrepaidController {
   async listDeposits(@Query('organizationId') organizationId: string | undefined, @Query('enterpriseId') enterpriseId: string | undefined, @Query('providerId') providerId: string | undefined, @Req() req: AuthenticatedRequest) {
     const orgId = organizationId ?? req.user?.organizationId;
     const entId = enterpriseId ?? req.user?.enterpriseId;
+    const companyId = req.user?.companyId ?? undefined;
     if (!orgId || !entId) {
       throw new BadRequestException('OrganizationId and enterpriseId are required');
     }
-    const result = await this.prepaidService.listDeposits(orgId, entId, providerId);
+    const result = await this.prepaidService.listDeposits(orgId, entId, providerId, companyId);
     return { message: 'Prepaid deposits retrieved', result };
   }
 
@@ -135,10 +143,11 @@ export class PrepaidController {
   async listVariantConfigs(@Query('organizationId') organizationId: string | undefined, @Query('enterpriseId') enterpriseId: string | undefined, @Req() req: AuthenticatedRequest) {
     const orgId = organizationId ?? req.user?.organizationId;
     const entId = enterpriseId ?? req.user?.enterpriseId;
+    const companyId = req.user?.companyId ?? undefined;
     if (!orgId || !entId) {
       throw new BadRequestException('OrganizationId and enterpriseId are required');
     }
-    const result = await this.prepaidService.listVariantConfigs(orgId, entId);
+    const result = await this.prepaidService.listVariantConfigs(orgId, entId, companyId);
     return { message: 'Prepaid variant configs retrieved', result };
   }
 }

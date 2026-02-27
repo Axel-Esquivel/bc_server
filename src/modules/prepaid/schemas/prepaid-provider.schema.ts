@@ -5,6 +5,7 @@ export interface PrepaidProviderDocument extends Document {
   name: string;
   pin?: string;
   isActive: boolean;
+  minimumBalance: number;
   OrganizationId: string;
   companyId: string;
   enterpriseId: string;
@@ -18,6 +19,7 @@ export const PrepaidProviderSchema = new Schema<PrepaidProviderDocument>(
     name: { type: String, required: true },
     pin: { type: String, trim: true },
     isActive: { type: Boolean, default: true },
+    minimumBalance: { type: Number, default: 0 },
     OrganizationId: { type: String, required: true, index: true },
     companyId: { type: String, required: true, index: true },
     enterpriseId: { type: String, required: true, index: true },

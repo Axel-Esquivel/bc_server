@@ -1,4 +1,4 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreatePrepaidProviderDto {
   @IsString()
@@ -12,6 +12,11 @@ export class CreatePrepaidProviderDto {
   @IsOptional()
   @IsString()
   pin?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  minimumBalance?: number;
 
   @IsString()
   @IsNotEmpty()

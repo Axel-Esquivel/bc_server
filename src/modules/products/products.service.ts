@@ -120,7 +120,20 @@ export class ProductsService {
         { barcode: { $regex: needle, $options: 'i' } },
       ];
     }
-    return await model.find(query).lean<ProductRecord[]>().exec();
+    const results = await model.find(query).lean<ProductRecord[]>().exec();
+    if (results.length === 0 && filters.enterpriseId) {
+      const legacyIds = await this.resolveEnterpriseIds(
+        model,
+        orgId,
+        filters.enterpriseId,
+        filters.companyId,
+      );
+      if (legacyIds.length > 0 && !legacyIds.includes(filters.enterpriseId)) {
+        const fallbackQuery: Record<string, unknown> = { ...query, enterpriseId: { $in: legacyIds } };
+        return await model.find(fallbackQuery).lean<ProductRecord[]>().exec();
+      }
+    }
+    return results;
   }
 
   async searchForPos(query: ProductSearchQueryDto, organizationId?: string): Promise<PosProductLookup[]> {
@@ -290,5 +303,25 @@ export class ProductsService {
 
   private escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private async resolveEnterpriseIds(
+    model: { distinct: (field: string, filter: Record<string, unknown>) => { exec(): Promise<string[]> } },
+    organizationId: string,
+    enterpriseId: string,
+    companyId?: string,
+  ): Promise<string[]> {
+    const filter: Record<string, unknown> = { OrganizationId: organizationId };
+    if (companyId) {
+      filter.companyId = companyId;
+    }
+    const distinct = await model.distinct('enterpriseId', filter).exec();
+    const ids = distinct
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .map((value) => value.trim());
+    if (ids.includes(enterpriseId)) {
+      return [enterpriseId];
+    }
+    return ids;
   }
 }
