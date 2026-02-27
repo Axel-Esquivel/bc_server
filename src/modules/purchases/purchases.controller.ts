@@ -110,7 +110,7 @@ export class PurchasesController {
     if (!OrganizationId || !companyId) {
       throw new BadRequestException('OrganizationId and companyId are required');
     }
-    const result = this.purchasesService.listSupplierCatalogBySupplier(OrganizationId, companyId, supplierId);
-    return { message: 'Supplier catalog retrieved', result };
+    const result = this.purchasesService.listSupplierProducts(OrganizationId, companyId, supplierId);
+    return { message: 'Supplier products retrieved', result };
   }
 }

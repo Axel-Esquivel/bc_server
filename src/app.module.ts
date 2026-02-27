@@ -26,6 +26,7 @@ import { InventoryCountsModule } from './modules/inventory-counts/inventory-coun
 import { InventoryEventsModule } from './modules/inventory-events/inventory-events.module';
 import { InventoryAdjustmentsModule } from './modules/inventory-adjustments/inventory-adjustments.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
+import { ProvidersModule } from './modules/providers/providers.module';
 import { PosModule } from './modules/pos/pos.module';
 import { PrepaidModule } from './modules/prepaid/prepaid.module';
 import { ProductsModule } from './modules/products/products.module';
@@ -134,6 +135,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     InventoryCountsModule,
     InventoryEventsModule,
     InventoryAdjustmentsModule,
+    ProvidersModule,
     StockModule,
     StockMovementsModule,
     StockReservationsModule,

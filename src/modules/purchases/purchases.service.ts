@@ -21,6 +21,8 @@ import {
   SupplierCatalogItem,
   SupplierCatalogStatus,
 } from './entities/supplier-catalog-item.entity';
+import { ProvidersService } from '../providers/providers.service';
+import type { ProviderVariant } from '../providers/entities/provider.entity';
 
 export type SuggestionDecision = 'pending' | 'accepted' | 'partially_accepted' | 'rejected';
 
@@ -44,6 +46,15 @@ export interface SupplierCatalogRecord extends SupplierCatalogItem {
 
 export interface SupplierCatalogView extends SupplierCatalogRecord {
   lastReceiptCost?: number;
+}
+
+export interface SupplierProductVariantItem {
+  supplierId: string;
+  variantId: string;
+  active: boolean;
+  lastCost: number | null;
+  lastCurrency: string | null;
+  lastRecordedAt: string | null;
 }
 
 interface PurchasesState {
@@ -71,6 +82,7 @@ export class PurchasesService implements OnModuleInit {
     private readonly inventoryService: InventoryService,
     private readonly moduleState: ModuleStateService,
     private readonly companiesService: CompaniesService,
+    private readonly providersService: ProvidersService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -445,6 +457,19 @@ export class PurchasesService implements OnModuleInit {
     return filtered.map((item) => this.withLastReceiptCost(item));
   }
 
+  listSupplierProducts(
+    OrganizationId: string,
+    companyId: string,
+    supplierId: string,
+  ): SupplierProductVariantItem[] {
+    this.ensureValidTenant(OrganizationId, companyId);
+    const provider = this.providersService.findOne(supplierId);
+    if (provider.OrganizationId !== OrganizationId || provider.companyId !== companyId) {
+      throw new BadRequestException('Provider does not belong to the provided Organization/company');
+    }
+    return this.mapProviderVariants(provider.variants ?? [], supplierId, OrganizationId, companyId);
+  }
+
   listSuggestions(OrganizationId: string, companyId: string): PurchaseSuggestion[] {
     return this.suggestions.filter((suggestion) => suggestion.OrganizationId === OrganizationId && suggestion.companyId === companyId);
   }
@@ -622,6 +647,41 @@ export class PurchasesService implements OnModuleInit {
       ...item,
       lastReceiptCost: latest.unitCost,
     };
+  }
+
+  private mapProviderVariants(
+    variants: ProviderVariant[],
+    supplierId: string,
+    OrganizationId: string,
+    companyId: string,
+  ): SupplierProductVariantItem[] {
+    return variants.map((variant) => {
+      const latest = this.findLatestCost(supplierId, variant.variantId, OrganizationId, companyId);
+      return {
+        supplierId,
+        variantId: variant.variantId,
+        active: variant.active,
+        lastCost: latest?.unitCost ?? null,
+        lastCurrency: latest?.currency ?? null,
+        lastRecordedAt: null,
+      };
+    });
+  }
+
+  private findLatestCost(
+    supplierId: string,
+    variantId: string,
+    OrganizationId: string,
+    companyId: string,
+  ): SupplierCostHistory | undefined {
+    const matches = this.costHistory.filter(
+      (entry) =>
+        entry.OrganizationId === OrganizationId &&
+        entry.companyId === companyId &&
+        entry.supplierId === supplierId &&
+        entry.variantId === variantId,
+    );
+    return matches.length > 0 ? matches[matches.length - 1] : undefined;
   }
 
   private ensureValidTenant(OrganizationId?: string, companyId?: string): void {
