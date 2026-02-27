@@ -1,12 +1,20 @@
-import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
 import { ModuleStateService } from '../../core/database/module-state.service';
 import { CreateProviderDto, ProviderVariantInput } from './dto/create-provider.dto';
 import { UpdateProviderDto } from './dto/update-provider.dto';
-import { CostHistoryEntry, Provider, ProviderVariant } from './entities/provider.entity';
+import { CostHistoryEntry, Provider, ProviderStatus, ProviderVariant } from './entities/provider.entity';
 
 export interface ProviderRecord extends Provider {
   id: string;
+}
+
+export interface ProviderVariantSummary {
+  variantId: string;
+  active: boolean;
+  latestCost: number | null;
+  latestCurrency: string | null;
+  latestRecordedAt: Date | null;
 }
 
 interface ProvidersState {
@@ -27,14 +35,20 @@ export class ProvidersService implements OnModuleInit {
   }
 
   create(dto: CreateProviderDto): ProviderRecord {
+    const organizationId = this.resolveOrganizationId(dto.OrganizationId, dto.organizationId);
     const variants = this.mapVariants(dto.variants);
     const provider: ProviderRecord = {
       id: uuid(),
       name: dto.name,
+      nit: dto.nit,
+      address: dto.address,
+      creditLimit: dto.creditLimit,
+      creditDays: dto.creditDays,
+      status: dto.status ?? ProviderStatus.ACTIVE,
       contactEmail: dto.contactEmail,
       contactPhone: dto.contactPhone,
       variants,
-      OrganizationId: dto.OrganizationId,
+      OrganizationId: organizationId,
       companyId: dto.companyId,
     };
 
@@ -59,9 +73,16 @@ export class ProvidersService implements OnModuleInit {
   update(id: string, dto: UpdateProviderDto): ProviderRecord {
     const provider = this.findOne(id);
     if (dto.name !== undefined) provider.name = dto.name;
+    if (dto.nit !== undefined) provider.nit = dto.nit;
+    if (dto.address !== undefined) provider.address = dto.address;
+    if (dto.creditLimit !== undefined) provider.creditLimit = dto.creditLimit;
+    if (dto.creditDays !== undefined) provider.creditDays = dto.creditDays;
+    if (dto.status !== undefined) provider.status = dto.status;
     if (dto.contactEmail !== undefined) provider.contactEmail = dto.contactEmail;
     if (dto.contactPhone !== undefined) provider.contactPhone = dto.contactPhone;
-    if (dto.OrganizationId !== undefined) provider.OrganizationId = dto.OrganizationId;
+    if (dto.OrganizationId !== undefined || dto.organizationId !== undefined) {
+      provider.OrganizationId = this.resolveOrganizationId(dto.OrganizationId, dto.organizationId);
+    }
     if (dto.companyId !== undefined) provider.companyId = dto.companyId;
     if (dto.variants !== undefined) {
       provider.variants = this.mapVariants(dto.variants);
@@ -76,6 +97,20 @@ export class ProvidersService implements OnModuleInit {
     }
     this.providers.splice(index, 1);
     this.persistState();
+  }
+
+  listVariants(id: string): ProviderVariantSummary[] {
+    const provider = this.findOne(id);
+    return provider.variants.map((variant) => {
+      const latest = this.resolveLatestCost(variant.costHistory);
+      return {
+        variantId: variant.variantId,
+        active: variant.active,
+        latestCost: latest?.cost ?? null,
+        latestCurrency: latest?.currency ?? null,
+        latestRecordedAt: latest?.recordedAt ?? null,
+      };
+    });
   }
 
   private mapVariants(inputs?: ProviderVariantInput[]): ProviderVariant[] {
@@ -109,5 +144,25 @@ export class ProvidersService implements OnModuleInit {
         const message = error instanceof Error ? error.stack ?? error.message : String(error);
         this.logger.error(`Failed to persist providers: ${message}`);
       });
+  }
+
+  private resolveOrganizationId(OrganizationId?: string, organizationId?: string): string {
+    const value = OrganizationId ?? organizationId;
+    if (!value || !value.trim()) {
+      throw new BadRequestException('OrganizationId is required');
+    }
+    return value.trim();
+  }
+
+  private resolveLatestCost(history: CostHistoryEntry[]): CostHistoryEntry | undefined {
+    if (history.length === 0) {
+      return undefined;
+    }
+    return history.reduce((latest, entry) => {
+      if (!latest) {
+        return entry;
+      }
+      return entry.recordedAt.getTime() >= latest.recordedAt.getTime() ? entry : latest;
+    });
   }
 }

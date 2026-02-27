@@ -25,10 +25,30 @@ class ProviderVariant {
   costHistory!: CostHistoryEntry[];
 }
 
+export enum ProviderStatus {
+  ACTIVE = 'active',
+  INACTIVE = 'inactive',
+}
+
 @modelOptions({ schemaOptions: { timestamps: true } })
 export class Provider {
   @prop({ required: true })
   name!: string;
+
+  @prop()
+  nit?: string;
+
+  @prop()
+  address?: string;
+
+  @prop()
+  creditLimit?: number;
+
+  @prop()
+  creditDays?: number;
+
+  @prop({ required: true, enum: ProviderStatus, default: ProviderStatus.ACTIVE })
+  status!: ProviderStatus;
 
   @prop()
   contactEmail?: string;

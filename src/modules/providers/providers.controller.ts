@@ -25,6 +25,12 @@ export class ProvidersController {
     return { message: 'Provider retrieved', result };
   }
 
+  @Get(':id/variants')
+  findVariants(@Param('id') id: string) {
+    const result = this.providersService.listVariants(id);
+    return { message: 'Provider variants retrieved', result };
+  }
+
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateProviderDto) {
     const result = this.providersService.update(id, dto);

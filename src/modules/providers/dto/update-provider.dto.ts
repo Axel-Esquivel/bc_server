@@ -1,12 +1,46 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsEmail, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsEmail,
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { ProviderVariantInput } from './create-provider.dto';
+import { ProviderStatus } from '../entities/provider.entity';
 
 export class UpdateProviderDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  nit?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  creditLimit?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  creditDays?: number;
+
+  @IsOptional()
+  @IsEnum(ProviderStatus)
+  status?: ProviderStatus;
 
   @IsOptional()
   @IsEmail()
@@ -25,6 +59,10 @@ export class UpdateProviderDto {
   @IsOptional()
   @IsString()
   OrganizationId?: string;
+
+  @IsOptional()
+  @IsString()
+  organizationId?: string;
 
   @IsOptional()
   @IsString()

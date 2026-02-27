@@ -9,10 +9,18 @@ import { CreateGoodsReceiptDto, GoodsReceiptLineDto } from './dto/create-goods-r
 import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
 import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto';
 import { PurchaseSuggestionQueryDto } from './dto/purchase-suggestion-query.dto';
+import { CreateSupplierCatalogItemDto } from './dto/create-supplier-catalog-item.dto';
+import { UpdateSupplierCatalogItemDto } from './dto/update-supplier-catalog-item.dto';
+import { ListSupplierCatalogQueryDto } from './dto/list-supplier-catalog-query.dto';
 import { GoodsReceiptNote } from './entities/goods-receipt-note.entity';
 import { PurchaseOrder, PurchaseOrderStatus } from './entities/purchase-order.entity';
 import { PurchaseOrderLine, PurchaseOrderLineStatus } from './entities/purchase-order-line.entity';
 import { SupplierCostHistory } from './entities/supplier-cost-history.entity';
+import {
+  SupplierCatalogBonusType,
+  SupplierCatalogItem,
+  SupplierCatalogStatus,
+} from './entities/supplier-catalog-item.entity';
 
 export type SuggestionDecision = 'pending' | 'accepted' | 'partially_accepted' | 'rejected';
 
@@ -29,12 +37,22 @@ export interface PurchaseSuggestion {
   companyId: string;
 }
 
+export interface SupplierCatalogRecord extends SupplierCatalogItem {
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface SupplierCatalogView extends SupplierCatalogRecord {
+  lastReceiptCost?: number;
+}
+
 interface PurchasesState {
   suggestions: PurchaseSuggestion[];
   purchaseOrders: PurchaseOrder[];
   receipts: GoodsReceiptNote[];
   costHistory: SupplierCostHistory[];
   averageCosts: { variantId: string; averageCost: number; quantity: number }[];
+  supplierCatalog: SupplierCatalogRecord[];
 }
 
 @Injectable()
@@ -47,6 +65,7 @@ export class PurchasesService implements OnModuleInit {
   private receipts: GoodsReceiptNote[] = [];
   private costHistory: SupplierCostHistory[] = [];
   private averageCosts = new Map<string, { averageCost: number; quantity: number }>();
+  private supplierCatalog: SupplierCatalogRecord[] = [];
 
   constructor(
     private readonly inventoryService: InventoryService,
@@ -61,11 +80,13 @@ export class PurchasesService implements OnModuleInit {
       receipts: [],
       costHistory: [],
       averageCosts: [],
+      supplierCatalog: [],
     });
     this.suggestions = state.suggestions ?? [];
     this.purchaseOrders = state.purchaseOrders ?? [];
     this.receipts = state.receipts ?? [];
     this.costHistory = state.costHistory ?? [];
+    this.supplierCatalog = state.supplierCatalog ?? [];
     this.averageCosts = new Map(
       (state.averageCosts ?? []).map((entry) => [
         entry.variantId,
@@ -242,6 +263,188 @@ export class PurchasesService implements OnModuleInit {
     return this.costHistory;
   }
 
+  createSupplierCatalogItem(dto: CreateSupplierCatalogItemDto): SupplierCatalogView {
+    this.ensureValidTenant(dto.OrganizationId, dto.companyId);
+    this.ensureValidBonus(dto.bonusType, dto.bonusValue);
+    const validFrom = this.parseDate(dto.validFrom);
+    const validTo = this.parseDate(dto.validTo);
+    this.ensureValidDateRange(validFrom, validTo);
+
+    const existing = this.findCatalogByKeys(dto.OrganizationId, dto.companyId, dto.supplierId, dto.variantId);
+    if (existing) {
+      const updated = this.updateCatalogItemInternal(existing, {
+        supplierId: dto.supplierId,
+        variantId: dto.variantId,
+        unitCost: dto.unitCost,
+        currency: dto.currency,
+        freightCost: dto.freightCost,
+        bonusType: dto.bonusType,
+        bonusValue: dto.bonusValue,
+        minQty: dto.minQty,
+        leadTimeDays: dto.leadTimeDays,
+        validFrom,
+        validTo,
+        status: dto.status,
+      });
+      this.persistState();
+      return this.withLastReceiptCost(updated);
+    }
+
+    const record: SupplierCatalogRecord = {
+      id: uuid(),
+      supplierId: dto.supplierId,
+      variantId: dto.variantId,
+      unitCost: dto.unitCost,
+      currency: dto.currency,
+      freightCost: dto.freightCost,
+      bonusType: dto.bonusType ?? SupplierCatalogBonusType.NONE,
+      bonusValue: dto.bonusValue,
+      minQty: dto.minQty,
+      leadTimeDays: dto.leadTimeDays,
+      validFrom,
+      validTo,
+      status: dto.status ?? SupplierCatalogStatus.ACTIVE,
+      OrganizationId: dto.OrganizationId,
+      companyId: dto.companyId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.supplierCatalog.push(record);
+    this.persistState();
+    return this.withLastReceiptCost(record);
+  }
+
+  listSupplierCatalog(query: ListSupplierCatalogQueryDto): SupplierCatalogView[] {
+    const OrganizationId = query.OrganizationId?.trim();
+    const companyId = query.companyId?.trim();
+    if (!OrganizationId || !companyId) {
+      return [];
+    }
+    const status = query.status;
+    const supplierId = query.supplierId?.trim();
+    const needle = query.q?.trim().toLowerCase();
+
+    const filtered = this.supplierCatalog.filter((item) => {
+      if (item.OrganizationId !== OrganizationId || item.companyId !== companyId) return false;
+      if (supplierId && item.supplierId !== supplierId) return false;
+      if (status && item.status !== status) return false;
+      if (needle) {
+        const variantMatch = item.variantId.toLowerCase().includes(needle);
+        const supplierMatch = item.supplierId.toLowerCase().includes(needle);
+        if (!variantMatch && !supplierMatch) return false;
+      }
+      return true;
+    });
+
+    return filtered.map((item) => this.withLastReceiptCost(item));
+  }
+
+  getSupplierCatalogItem(id: string, OrganizationId: string, companyId: string): SupplierCatalogView {
+    this.ensureValidTenant(OrganizationId, companyId);
+    const item = this.supplierCatalog.find(
+      (candidate) =>
+        candidate.id === id &&
+        candidate.OrganizationId === OrganizationId &&
+        candidate.companyId === companyId,
+    );
+    if (!item) {
+      throw new NotFoundException('Supplier catalog item not found');
+    }
+    return this.withLastReceiptCost(item);
+  }
+
+  updateSupplierCatalogItem(
+    id: string,
+    dto: UpdateSupplierCatalogItemDto,
+    OrganizationId: string,
+    companyId: string,
+  ): SupplierCatalogView {
+    this.ensureValidTenant(OrganizationId, companyId);
+    if (dto.OrganizationId && dto.OrganizationId !== OrganizationId) {
+      throw new BadRequestException('OrganizationId cannot be changed');
+    }
+    if (dto.companyId && dto.companyId !== companyId) {
+      throw new BadRequestException('companyId cannot be changed');
+    }
+    this.ensureValidBonus(dto.bonusType, dto.bonusValue);
+
+    const existing = this.supplierCatalog.find(
+      (candidate) =>
+        candidate.id === id &&
+        candidate.OrganizationId === OrganizationId &&
+        candidate.companyId === companyId,
+    );
+    if (!existing) {
+      throw new NotFoundException('Supplier catalog item not found');
+    }
+
+    const nextSupplierId = dto.supplierId ?? existing.supplierId;
+    const nextVariantId = dto.variantId ?? existing.variantId;
+    const duplicate = this.supplierCatalog.find(
+      (candidate) =>
+        candidate.id !== existing.id &&
+        candidate.OrganizationId === OrganizationId &&
+        candidate.companyId === companyId &&
+        candidate.supplierId === nextSupplierId &&
+        candidate.variantId === nextVariantId,
+    );
+    if (duplicate) {
+      throw new BadRequestException('Supplier catalog item already exists for supplier and variant');
+    }
+
+    const validFrom = dto.validFrom !== undefined ? this.parseDate(dto.validFrom) : existing.validFrom;
+    const validTo = dto.validTo !== undefined ? this.parseDate(dto.validTo) : existing.validTo;
+    this.ensureValidDateRange(validFrom, validTo);
+
+    const updated = this.updateCatalogItemInternal(existing, {
+      supplierId: dto.supplierId,
+      variantId: dto.variantId,
+      unitCost: dto.unitCost,
+      currency: dto.currency,
+      freightCost: dto.freightCost,
+      bonusType: dto.bonusType,
+      bonusValue: dto.bonusValue,
+      minQty: dto.minQty,
+      leadTimeDays: dto.leadTimeDays,
+      validFrom,
+      validTo,
+      status: dto.status,
+    });
+    this.persistState();
+    return this.withLastReceiptCost(updated);
+  }
+
+  removeSupplierCatalogItem(id: string, OrganizationId: string, companyId: string): void {
+    this.ensureValidTenant(OrganizationId, companyId);
+    const index = this.supplierCatalog.findIndex(
+      (candidate) =>
+        candidate.id === id &&
+        candidate.OrganizationId === OrganizationId &&
+        candidate.companyId === companyId,
+    );
+    if (index === -1) {
+      throw new NotFoundException('Supplier catalog item not found');
+    }
+    this.supplierCatalog.splice(index, 1);
+    this.persistState();
+  }
+
+  listSupplierCatalogBySupplier(
+    OrganizationId: string,
+    companyId: string,
+    supplierId: string,
+  ): SupplierCatalogView[] {
+    this.ensureValidTenant(OrganizationId, companyId);
+    const filtered = this.supplierCatalog.filter(
+      (item) =>
+        item.OrganizationId === OrganizationId &&
+        item.companyId === companyId &&
+        item.supplierId === supplierId,
+    );
+    return filtered.map((item) => this.withLastReceiptCost(item));
+  }
+
   listSuggestions(OrganizationId: string, companyId: string): PurchaseSuggestion[] {
     return this.suggestions.filter((suggestion) => suggestion.OrganizationId === OrganizationId && suggestion.companyId === companyId);
   }
@@ -342,6 +545,7 @@ export class PurchasesService implements OnModuleInit {
         purchaseOrders: this.purchaseOrders,
         receipts: this.receipts,
         costHistory: this.costHistory,
+        supplierCatalog: this.supplierCatalog,
         averageCosts: Array.from(this.averageCosts.entries()).map(([variantId, value]) => ({
           variantId,
           averageCost: value.averageCost,
@@ -352,5 +556,103 @@ export class PurchasesService implements OnModuleInit {
         const message = error instanceof Error ? error.stack ?? error.message : String(error);
         this.logger.error(`Failed to persist purchases state: ${message}`);
       });
+  }
+
+  private findCatalogByKeys(
+    OrganizationId: string,
+    companyId: string,
+    supplierId: string,
+    variantId: string,
+  ): SupplierCatalogRecord | undefined {
+    return this.supplierCatalog.find(
+      (item) =>
+        item.OrganizationId === OrganizationId &&
+        item.companyId === companyId &&
+        item.supplierId === supplierId &&
+        item.variantId === variantId,
+    );
+  }
+
+  private updateCatalogItemInternal(
+    target: SupplierCatalogRecord,
+    updates: {
+      supplierId?: string;
+      variantId?: string;
+      unitCost?: number;
+      currency?: string;
+      freightCost?: number;
+      bonusType?: SupplierCatalogBonusType;
+      bonusValue?: number;
+      minQty?: number;
+      leadTimeDays?: number;
+      validFrom?: Date;
+      validTo?: Date;
+      status?: SupplierCatalogStatus;
+    },
+  ): SupplierCatalogRecord {
+    if (updates.supplierId !== undefined) target.supplierId = updates.supplierId;
+    if (updates.variantId !== undefined) target.variantId = updates.variantId;
+    if (updates.unitCost !== undefined) target.unitCost = updates.unitCost;
+    if (updates.currency !== undefined) target.currency = updates.currency;
+    if (updates.freightCost !== undefined) target.freightCost = updates.freightCost;
+    if (updates.bonusType !== undefined) target.bonusType = updates.bonusType;
+    if (updates.bonusValue !== undefined) target.bonusValue = updates.bonusValue;
+    if (updates.minQty !== undefined) target.minQty = updates.minQty;
+    if (updates.leadTimeDays !== undefined) target.leadTimeDays = updates.leadTimeDays;
+    if (updates.validFrom !== undefined) target.validFrom = updates.validFrom;
+    if (updates.validTo !== undefined) target.validTo = updates.validTo;
+    if (updates.status !== undefined) target.status = updates.status;
+    target.updatedAt = new Date();
+    return target;
+  }
+
+  private withLastReceiptCost(item: SupplierCatalogRecord): SupplierCatalogView {
+    const matches = this.costHistory.filter(
+      (entry) =>
+        entry.OrganizationId === item.OrganizationId &&
+        entry.companyId === item.companyId &&
+        entry.supplierId === item.supplierId &&
+        entry.variantId === item.variantId,
+    );
+    if (matches.length === 0) {
+      return { ...item };
+    }
+    const latest = matches[matches.length - 1];
+    return {
+      ...item,
+      lastReceiptCost: latest.unitCost,
+    };
+  }
+
+  private ensureValidTenant(OrganizationId?: string, companyId?: string): void {
+    if (!OrganizationId || !OrganizationId.trim()) {
+      throw new BadRequestException('OrganizationId is required');
+    }
+    if (!companyId || !companyId.trim()) {
+      throw new BadRequestException('companyId is required');
+    }
+  }
+
+  private ensureValidBonus(bonusType?: SupplierCatalogBonusType, bonusValue?: number): void {
+    if (bonusType && bonusType !== SupplierCatalogBonusType.NONE && bonusValue === undefined) {
+      throw new BadRequestException('bonusValue is required when bonusType is not none');
+    }
+  }
+
+  private parseDate(value?: string): Date | undefined {
+    if (!value) {
+      return undefined;
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException('Invalid date format');
+    }
+    return parsed;
+  }
+
+  private ensureValidDateRange(validFrom?: Date, validTo?: Date): void {
+    if (validFrom && validTo && validTo.getTime() < validFrom.getTime()) {
+      throw new BadRequestException('validTo must be greater than or equal to validFrom');
+    }
   }
 }
