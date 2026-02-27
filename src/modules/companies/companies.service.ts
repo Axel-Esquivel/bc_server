@@ -183,13 +183,24 @@ export class CompaniesService implements OnModuleInit {
       throw new ForbiddenException('Organization membership not found');
     }
 
-    const scoped = this.companies.filter((company) => company.organizationId === organizationId);
+    const scoped = this.companies
+      .filter((company) => company.organizationId === organizationId)
+      .map((company) => ({
+        ...company,
+        enterprises: Array.isArray(company.enterprises) ? company.enterprises : [],
+      }));
     const normalizedCountryId = typeof countryId === 'string' ? countryId.trim() : '';
     if (!normalizedCountryId) {
       return scoped;
     }
-    const lookup = await this.getCoreLookup(organizationId);
-    return scoped.filter((company) => this.companyMatchesCountry(company, normalizedCountryId, lookup));
+    try {
+      const lookup = await this.getCoreLookup(organizationId);
+      return scoped.filter((company) => this.companyMatchesCountry(company, normalizedCountryId, lookup));
+    } catch (error) {
+      const message = error instanceof Error ? error.stack ?? error.message : String(error);
+      this.logger.error(`Failed to resolve core lookup for ${organizationId}: ${message}`);
+      return scoped;
+    }
   }
 
   removeByOrganization(organizationId: string): void {

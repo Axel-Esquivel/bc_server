@@ -565,8 +565,14 @@ export class OrganizationsService {
       await this.updateOrganizationFields(organizationId, { eanPrefix });
       organization.eanPrefix = eanPrefix;
     }
-    const migrated = await this.migrateCatalogsToProducts(organization);
-    return this.normalizeOrganizationEntity(migrated);
+    try {
+      const migrated = await this.migrateCatalogsToProducts(organization);
+      return this.normalizeOrganizationEntity(migrated);
+    } catch (error) {
+      const message = error instanceof Error ? error.stack ?? error.message : String(error);
+      this.logger.error(`Failed to migrate organization ${organizationId}: ${message}`);
+      return this.normalizeOrganizationEntity(organization);
+    }
   }
 
   async findByCode(code: string): Promise<OrganizationEntity | null> {
@@ -1666,7 +1672,14 @@ export class OrganizationsService {
       delete moduleSettings['catalogs'];
     }
 
-    await this.migrateOrgModuleRecords(organization.id);
+    if (changed) {
+      try {
+        await this.migrateOrgModuleRecords(organization.id);
+      } catch (error) {
+        const message = error instanceof Error ? error.stack ?? error.message : String(error);
+        this.logger.error(`Failed to migrate org modules for ${organization.id}: ${message}`);
+      }
+    }
 
     if (!changed) {
       return organization;
