@@ -189,6 +189,7 @@ export class PurchasesService implements OnModuleInit {
       status: PurchaseOrderStatus.DRAFT,
       OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
+      createdAt: new Date().toISOString(),
       lines,
     };
 
@@ -277,6 +278,37 @@ export class PurchasesService implements OnModuleInit {
 
   listPurchaseOrders(): PurchaseOrder[] {
     return this.purchaseOrders;
+  }
+
+  listPurchaseOrdersByQuery(query: {
+    OrganizationId: string;
+    companyId: string;
+    supplierId?: string;
+    status?: PurchaseOrderStatus;
+  }): PurchaseOrder[] {
+    const OrganizationId = query.OrganizationId.trim();
+    const companyId = query.companyId.trim();
+    if (!OrganizationId || !companyId) {
+      return [];
+    }
+    const supplierId = query.supplierId?.trim();
+    const status = query.status;
+
+    return this.purchaseOrders
+      .filter((order) => {
+        if (order.OrganizationId !== OrganizationId || order.companyId !== companyId) {
+          return false;
+        }
+        if (supplierId && order.supplierId !== supplierId) {
+          return false;
+        }
+        if (status && order.status !== status) {
+          return false;
+        }
+        return true;
+      })
+      .slice()
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   listReceipts(): GoodsReceiptNote[] {

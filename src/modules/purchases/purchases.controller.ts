@@ -7,6 +7,7 @@ import { CreateSupplierCatalogItemDto } from './dto/create-supplier-catalog-item
 import { UpdateSupplierCatalogItemDto } from './dto/update-supplier-catalog-item.dto';
 import { ListSupplierCatalogQueryDto } from './dto/list-supplier-catalog-query.dto';
 import { PurchasesService } from './purchases.service';
+import { PurchaseOrderStatus } from './entities/purchase-order.entity';
 
 @Controller('purchases')
 export class PurchasesController {
@@ -26,6 +27,25 @@ export class PurchasesController {
       message: 'Purchase order created',
       result: this.purchasesService.createPurchaseOrder(dto),
     };
+  }
+
+  @Get('orders')
+  listOrders(
+    @Query('OrganizationId') OrganizationId: string | undefined,
+    @Query('companyId') companyId: string | undefined,
+    @Query('supplierId') supplierId?: string,
+    @Query('status') status?: PurchaseOrderStatus,
+  ) {
+    if (!OrganizationId || !companyId) {
+      throw new BadRequestException('OrganizationId and companyId are required');
+    }
+    const result = this.purchasesService.listPurchaseOrdersByQuery({
+      OrganizationId,
+      companyId,
+      supplierId,
+      status,
+    });
+    return { message: 'Purchase orders retrieved', result };
   }
 
   @Post('orders/:id/confirm')

@@ -30,4 +30,19 @@ export class PurchaseOrder {
 
   @prop({ required: true })
   companyId!: string;
+
+  @prop({ required: true })
+  createdAt!: string;
+
+  @prop()
+  expectedDeliveryDate?: string;
+
+  @prop()
+  receivedAt?: string;
+
+  @prop()
+  globalFreight?: number;
+
+  @prop()
+  globalExtraCosts?: number;
 }
