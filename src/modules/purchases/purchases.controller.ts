@@ -113,4 +113,23 @@ export class PurchasesController {
     const result = this.purchasesService.listSupplierProducts(OrganizationId, companyId, supplierId);
     return { message: 'Supplier products retrieved', result };
   }
+
+  @Get('suppliers/:supplierId/products/:variantId/last-cost')
+  getSupplierVariantLastCost(
+    @Param('supplierId') supplierId: string,
+    @Param('variantId') variantId: string,
+    @Query('OrganizationId') OrganizationId: string | undefined,
+    @Query('companyId') companyId: string | undefined,
+  ) {
+    if (!OrganizationId || !companyId) {
+      throw new BadRequestException('OrganizationId and companyId are required');
+    }
+    const result = this.purchasesService.getSupplierVariantLastCost(
+      OrganizationId,
+      companyId,
+      supplierId,
+      variantId,
+    );
+    return { message: 'Supplier product last cost retrieved', result };
+  }
 }

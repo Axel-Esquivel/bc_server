@@ -1,14 +1,22 @@
 import { Type } from 'class-transformer';
-import { ArrayNotEmpty, IsArray, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 
 export class PurchaseOrderLineDto {
   @IsString()
   variantId!: string;
 
+  @IsOptional()
   @IsNumber()
-  quantity!: number;
+  @Min(0)
+  quantity?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  qty?: number;
 
   @IsNumber()
+  @Min(0)
   unitCost!: number;
 
   @IsOptional()
@@ -30,8 +38,9 @@ export class CreatePurchaseOrderDto {
   @IsString()
   supplierId!: string;
 
+  @IsOptional()
   @IsString()
-  warehouseId!: string;
+  warehouseId?: string;
 
   @IsArray()
   @ArrayNotEmpty()

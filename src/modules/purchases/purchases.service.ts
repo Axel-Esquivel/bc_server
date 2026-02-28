@@ -57,6 +57,12 @@ export interface SupplierProductVariantItem {
   lastRecordedAt: string | null;
 }
 
+export interface SupplierLastCostResult {
+  lastCost: number | null;
+  lastCurrency: string | null;
+  lastRecordedAt: string | null;
+}
+
 interface PurchasesState {
   suggestions: PurchaseSuggestion[];
   purchaseOrders: PurchaseOrder[];
@@ -170,14 +176,20 @@ export class PurchasesService implements OnModuleInit {
   }
 
   createPurchaseOrder(dto: CreatePurchaseOrderDto): PurchaseOrder {
+    const lines = dto.lines
+      .map((line) => this.mapOrderLine(line, dto.OrganizationId, dto.companyId))
+      .filter((line) => line.quantity > 0);
+    if (lines.length === 0) {
+      throw new BadRequestException('At least one line with qty > 0 is required');
+    }
     const order: PurchaseOrder = {
       id: uuid(),
       supplierId: dto.supplierId,
-      warehouseId: dto.warehouseId,
+      warehouseId: dto.warehouseId ?? '',
       status: PurchaseOrderStatus.DRAFT,
       OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
-      lines: dto.lines.map((line) => this.mapOrderLine(line, dto.OrganizationId, dto.companyId)),
+      lines,
     };
 
     this.applySuggestionDecisions(order, dto.rejectedSuggestionIds ?? []);
@@ -470,23 +482,49 @@ export class PurchasesService implements OnModuleInit {
     return this.mapProviderVariants(provider.variants ?? [], supplierId, OrganizationId, companyId);
   }
 
+  getSupplierVariantLastCost(
+    OrganizationId: string,
+    companyId: string,
+    supplierId: string,
+    variantId: string,
+  ): SupplierLastCostResult {
+    this.ensureValidTenant(OrganizationId, companyId);
+    const provider = this.providersService.findOne(supplierId);
+    if (provider.OrganizationId !== OrganizationId || provider.companyId !== companyId) {
+      throw new BadRequestException('Provider does not belong to the provided Organization/company');
+    }
+    const latest = this.findLatestCost(supplierId, variantId, OrganizationId, companyId);
+    return {
+      lastCost: latest?.unitCost ?? null,
+      lastCurrency: latest?.currency ?? null,
+      lastRecordedAt: null,
+    };
+  }
+
   listSuggestions(OrganizationId: string, companyId: string): PurchaseSuggestion[] {
     return this.suggestions.filter((suggestion) => suggestion.OrganizationId === OrganizationId && suggestion.companyId === companyId);
   }
 
   private mapOrderLine(line: CreatePurchaseOrderDto['lines'][number], OrganizationId: string, companyId: string): PurchaseOrderLine {
+    const qty = this.resolveLineQuantity(line);
+    if (qty <= 0) {
+      throw new BadRequestException('Line qty must be greater than 0');
+    }
+    if (line.unitCost < 0) {
+      throw new BadRequestException('Unit cost must be >= 0');
+    }
     const decision = this.suggestions.find(
       (suggestion) => suggestion.id === line.suggestionId && suggestion.OrganizationId === OrganizationId && suggestion.companyId === companyId,
     );
 
     if (decision) {
-      decision.decision = line.quantity >= decision.recommendedQty ? 'accepted' : 'partially_accepted';
+      decision.decision = qty >= decision.recommendedQty ? 'accepted' : 'partially_accepted';
     }
 
     return {
       id: uuid(),
       variantId: line.variantId,
-      quantity: line.quantity,
+      quantity: qty,
       receivedQuantity: 0,
       unitCost: line.unitCost,
       currency: line.currency,
@@ -714,5 +752,15 @@ export class PurchasesService implements OnModuleInit {
     if (validFrom && validTo && validTo.getTime() < validFrom.getTime()) {
       throw new BadRequestException('validTo must be greater than or equal to validFrom');
     }
+  }
+
+  private resolveLineQuantity(line: CreatePurchaseOrderDto['lines'][number]): number {
+    if (typeof line.quantity === 'number') {
+      return line.quantity;
+    }
+    if (typeof line.qty === 'number') {
+      return line.qty;
+    }
+    return 0;
   }
 }
