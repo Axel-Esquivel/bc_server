@@ -210,6 +210,42 @@ export class PurchasesService implements OnModuleInit {
     return order;
   }
 
+  updatePurchaseOrder(orderId: string, dto: CreatePurchaseOrderDto): PurchaseOrder {
+    const order = this.findOrder(orderId);
+    this.ensureSameTenant(order.OrganizationId, order.companyId, dto.OrganizationId, dto.companyId);
+    if (order.status !== PurchaseOrderStatus.DRAFT) {
+      throw new BadRequestException('Only DRAFT orders can be edited');
+    }
+
+    const lines = dto.lines
+      .map((line) => this.mapOrderLine(line, dto.OrganizationId, dto.companyId))
+      .filter((line) => line.quantity > 0);
+    if (lines.length === 0) {
+      throw new BadRequestException('At least one line with qty > 0 is required');
+    }
+
+    const orderDate = this.parseDate(dto.orderDate)?.toISOString() ?? order.createdAt;
+    const expectedDeliveryDate = this.parseDate(dto.expectedDeliveryDate)?.toISOString() ?? order.expectedDeliveryDate;
+    const receivedAt = this.parseDate(dto.receivedAt)?.toISOString() ?? order.receivedAt;
+    const total = this.computeOrderTotal(lines, dto.globalFreight ?? order.globalFreight, dto.globalExtraCosts ?? order.globalExtraCosts);
+
+    order.supplierId = dto.supplierId ?? order.supplierId;
+    order.warehouseId = dto.warehouseId ?? order.warehouseId;
+    order.status = dto.status ?? order.status;
+    order.createdAt = orderDate;
+    order.expectedDeliveryDate = expectedDeliveryDate;
+    order.receivedAt = receivedAt;
+    order.currencyId = dto.currencyId ?? order.currencyId;
+    order.globalFreight = dto.globalFreight ?? order.globalFreight;
+    order.globalExtraCosts = dto.globalExtraCosts ?? order.globalExtraCosts;
+    order.notes = dto.notes ?? order.notes;
+    order.total = total;
+    order.lines = lines;
+
+    this.persistState();
+    return order;
+  }
+
   confirmPurchaseOrder(orderId: string, dto: ConfirmPurchaseOrderDto): PurchaseOrder {
     const order = this.findOrder(orderId);
     this.ensureSameTenant(order.OrganizationId, order.companyId, dto.OrganizationId, dto.companyId);

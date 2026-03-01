@@ -29,6 +29,14 @@ export class PurchasesController {
     };
   }
 
+  @Patch('orders/:id')
+  updateOrder(@Param('id') id: string, @Body() dto: CreatePurchaseOrderDto) {
+    return {
+      message: 'Purchase order updated',
+      result: this.purchasesService.updatePurchaseOrder(id, dto),
+    };
+  }
+
   @Get('orders')
   listOrders(
     @Query('OrganizationId') OrganizationId: string | undefined,
