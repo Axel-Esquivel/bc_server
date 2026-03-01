@@ -26,6 +26,15 @@ export class PurchaseOrderLine {
   @prop()
   currency?: string;
 
+  @prop()
+  freightCost?: number;
+
+  @prop()
+  extraCosts?: number;
+
+  @prop()
+  notes?: string;
+
   @prop({ enum: PurchaseOrderLineStatus, default: PurchaseOrderLineStatus.PENDING })
   status!: PurchaseOrderLineStatus;
 

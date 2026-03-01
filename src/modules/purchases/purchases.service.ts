@@ -182,14 +182,25 @@ export class PurchasesService implements OnModuleInit {
     if (lines.length === 0) {
       throw new BadRequestException('At least one line with qty > 0 is required');
     }
+    const orderDate = this.parseDate(dto.orderDate)?.toISOString() ?? new Date().toISOString();
+    const expectedDeliveryDate = this.parseDate(dto.expectedDeliveryDate)?.toISOString();
+    const receivedAt = this.parseDate(dto.receivedAt)?.toISOString();
+    const total = this.computeOrderTotal(lines, dto.globalFreight, dto.globalExtraCosts);
     const order: PurchaseOrder = {
       id: uuid(),
       supplierId: dto.supplierId,
       warehouseId: dto.warehouseId ?? '',
-      status: PurchaseOrderStatus.DRAFT,
+      status: dto.status ?? PurchaseOrderStatus.DRAFT,
       OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
-      createdAt: new Date().toISOString(),
+      createdAt: orderDate,
+      expectedDeliveryDate,
+      receivedAt,
+      currencyId: dto.currencyId,
+      globalFreight: dto.globalFreight,
+      globalExtraCosts: dto.globalExtraCosts,
+      notes: dto.notes,
+      total,
       lines,
     };
 
@@ -545,6 +556,12 @@ export class PurchasesService implements OnModuleInit {
     if (line.unitCost < 0) {
       throw new BadRequestException('Unit cost must be >= 0');
     }
+    if (line.freightCost !== undefined && line.freightCost < 0) {
+      throw new BadRequestException('Freight cost must be >= 0');
+    }
+    if (line.extraCosts !== undefined && line.extraCosts < 0) {
+      throw new BadRequestException('Extra costs must be >= 0');
+    }
     const decision = this.suggestions.find(
       (suggestion) => suggestion.id === line.suggestionId && suggestion.OrganizationId === OrganizationId && suggestion.companyId === companyId,
     );
@@ -560,6 +577,9 @@ export class PurchasesService implements OnModuleInit {
       receivedQuantity: 0,
       unitCost: line.unitCost,
       currency: line.currency,
+      freightCost: line.freightCost,
+      extraCosts: line.extraCosts,
+      notes: line.notes,
       status: PurchaseOrderLineStatus.PENDING,
       suggestionId: line.suggestionId,
       OrganizationId,
@@ -784,6 +804,21 @@ export class PurchasesService implements OnModuleInit {
     if (validFrom && validTo && validTo.getTime() < validFrom.getTime()) {
       throw new BadRequestException('validTo must be greater than or equal to validFrom');
     }
+  }
+
+  private computeOrderTotal(
+    lines: PurchaseOrderLine[],
+    globalFreight?: number,
+    globalExtraCosts?: number,
+  ): number {
+    const lineTotal = lines.reduce((sum, line) => {
+      const qty = line.quantity ?? 0;
+      const unitCost = line.unitCost ?? 0;
+      const freight = line.freightCost ?? 0;
+      const extras = line.extraCosts ?? 0;
+      return sum + qty * unitCost + freight + extras;
+    }, 0);
+    return lineTotal + (globalFreight ?? 0) + (globalExtraCosts ?? 0);
   }
 
   private resolveLineQuantity(line: CreatePurchaseOrderDto['lines'][number]): number {

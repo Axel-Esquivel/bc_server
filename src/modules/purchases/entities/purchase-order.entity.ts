@@ -35,6 +35,9 @@ export class PurchaseOrder {
   createdAt!: string;
 
   @prop()
+  currencyId?: string;
+
+  @prop()
   expectedDeliveryDate?: string;
 
   @prop()
@@ -45,4 +48,10 @@ export class PurchaseOrder {
 
   @prop()
   globalExtraCosts?: number;
+
+  @prop()
+  notes?: string;
+
+  @prop()
+  total?: number;
 }
