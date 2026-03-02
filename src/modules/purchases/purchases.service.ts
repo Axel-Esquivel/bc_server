@@ -14,7 +14,11 @@ import { UpdateSupplierCatalogItemDto } from './dto/update-supplier-catalog-item
 import { ListSupplierCatalogQueryDto } from './dto/list-supplier-catalog-query.dto';
 import { GoodsReceiptNote } from './entities/goods-receipt-note.entity';
 import { PurchaseOrder, PurchaseOrderStatus } from './entities/purchase-order.entity';
-import { PurchaseOrderLine, PurchaseOrderLineStatus } from './entities/purchase-order-line.entity';
+import {
+  PurchaseOrderLine,
+  PurchaseOrderLineDiscountType,
+  PurchaseOrderLineStatus,
+} from './entities/purchase-order-line.entity';
 import { SupplierCostHistory } from './entities/supplier-cost-history.entity';
 import {
   SupplierCatalogBonusType,
@@ -24,6 +28,7 @@ import {
 import { ProvidersService } from '../providers/providers.service';
 import type { ProviderVariant } from '../providers/entities/provider.entity';
 import { PackagingNamesService } from '../products/packaging-names/packaging-names.service';
+import { VariantsService } from '../products/variants/variants.service';
 
 export type SuggestionDecision = 'pending' | 'accepted' | 'partially_accepted' | 'rejected';
 
@@ -64,6 +69,19 @@ export interface SupplierLastCostResult {
   lastRecordedAt: string | null;
 }
 
+export interface BestPriceItem {
+  providerId: string;
+  providerName: string;
+  currency: string;
+  unitCost: number;
+  packagingId?: string;
+  multiplierSnapshot?: number;
+  date: string;
+  source: 'purchase_order' | 'price_list';
+  orderId?: string;
+  bestInCurrency?: boolean;
+}
+
 interface PurchasesState {
   suggestions: PurchaseSuggestion[];
   purchaseOrders: PurchaseOrder[];
@@ -91,6 +109,7 @@ export class PurchasesService implements OnModuleInit {
     private readonly companiesService: CompaniesService,
     private readonly providersService: ProvidersService,
     private readonly packagingNamesService: PackagingNamesService,
+    private readonly variantsService: VariantsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -588,6 +607,119 @@ export class PurchasesService implements OnModuleInit {
     return this.suggestions.filter((suggestion) => suggestion.OrganizationId === OrganizationId && suggestion.companyId === companyId);
   }
 
+  async listBestPrices(query: {
+    OrganizationId: string;
+    productId: string;
+    variantId?: string;
+    packagingId?: string;
+    limit?: number;
+  }): Promise<{ items: BestPriceItem[]; fxNote?: string }> {
+    const OrganizationId = query.OrganizationId?.trim();
+    const productId = query.productId?.trim();
+    if (!OrganizationId || !productId) {
+      return { items: [] };
+    }
+
+    const variants = await this.variantsService.findByProduct(productId, OrganizationId);
+    const variantIds = new Set(variants.map((variant) => variant.id));
+    if (variantIds.size === 0) {
+      return { items: [] };
+    }
+
+    const requestedVariantId = query.variantId?.trim();
+    if (requestedVariantId && !variantIds.has(requestedVariantId)) {
+      return { items: [] };
+    }
+
+    const packagingId = query.packagingId?.trim();
+    const limit = Math.max(query.limit ?? 10, 1);
+    const providers = this.providersService
+      .findAll()
+      .filter((provider) => provider.OrganizationId === OrganizationId);
+    const providerMap = new Map(providers.map((provider) => [provider.id, provider.name]));
+
+    const allowedStatuses = new Set([PurchaseOrderStatus.CONFIRMED, PurchaseOrderStatus.RECEIVED]);
+    const purchaseItems: BestPriceItem[] = [];
+    this.purchaseOrders.forEach((order) => {
+      if (order.OrganizationId !== OrganizationId || !allowedStatuses.has(order.status)) {
+        return;
+      }
+      order.lines.forEach((line) => {
+        if (requestedVariantId && line.variantId !== requestedVariantId) {
+          return;
+        }
+        if (!requestedVariantId && !variantIds.has(line.variantId)) {
+          return;
+        }
+        if (packagingId && line.packagingId !== packagingId) {
+          return;
+        }
+        purchaseItems.push({
+          providerId: order.supplierId,
+          providerName: providerMap.get(order.supplierId) ?? order.supplierId,
+          currency: line.currency ?? order.currencyId ?? 'N/A',
+          unitCost: line.unitCost,
+          packagingId: line.packagingId ?? undefined,
+          multiplierSnapshot: line.packagingMultiplier ?? undefined,
+          date: order.createdAt,
+          source: 'purchase_order',
+          orderId: order.id,
+        });
+      });
+    });
+
+    const priceListItems: BestPriceItem[] = [];
+    if (!packagingId) {
+      this.supplierCatalog.forEach((item) => {
+        if (item.OrganizationId !== OrganizationId) return;
+        if (requestedVariantId && item.variantId !== requestedVariantId) return;
+        if (!requestedVariantId && !variantIds.has(item.variantId)) return;
+        priceListItems.push({
+          providerId: item.supplierId,
+          providerName: providerMap.get(item.supplierId) ?? item.supplierId,
+          currency: item.currency ?? 'N/A',
+          unitCost: item.unitCost,
+          packagingId: undefined,
+          multiplierSnapshot: undefined,
+          date: (item.updatedAt ?? item.createdAt ?? new Date()).toISOString(),
+          source: 'price_list',
+        });
+      });
+    }
+
+    const combined = [...purchaseItems, ...priceListItems];
+    const bestByCurrency = new Map<string, number>();
+    combined.forEach((item) => {
+      const current = bestByCurrency.get(item.currency);
+      if (current === undefined || item.unitCost < current) {
+        bestByCurrency.set(item.currency, item.unitCost);
+      }
+    });
+
+    combined.forEach((item) => {
+      const best = bestByCurrency.get(item.currency);
+      item.bestInCurrency = best !== undefined && item.unitCost === best;
+    });
+
+    const grouped = new Map<string, BestPriceItem[]>();
+    combined.forEach((item) => {
+      const list = grouped.get(item.currency) ?? [];
+      list.push(item);
+      grouped.set(item.currency, list);
+    });
+
+    const items: BestPriceItem[] = [];
+    grouped.forEach((list) => {
+      list.sort((a, b) => a.unitCost - b.unitCost);
+      items.push(...list.slice(0, limit));
+    });
+
+    return {
+      items,
+      fxNote: 'Comparación global requiere tipo de cambio.',
+    };
+  }
+
   private async mapOrderLine(
     line: CreatePurchaseOrderDto['lines'][number],
     OrganizationId: string,
@@ -619,6 +751,15 @@ export class PurchasesService implements OnModuleInit {
     if (line.extraCosts !== undefined && line.extraCosts < 0) {
       throw new BadRequestException('Extra costs must be >= 0');
     }
+    if (line.bonusQty !== undefined && line.bonusQty < 0) {
+      throw new BadRequestException('bonusQty must be >= 0');
+    }
+    if (line.discountValue !== undefined && line.discountValue < 0) {
+      throw new BadRequestException('discountValue must be >= 0');
+    }
+    if (line.discountType && line.discountValue === undefined) {
+      throw new BadRequestException('discountValue is required when discountType is provided');
+    }
     const decision = this.suggestions.find(
       (suggestion) => suggestion.id === line.suggestionId && suggestion.OrganizationId === OrganizationId && suggestion.companyId === companyId,
     );
@@ -639,6 +780,9 @@ export class PurchasesService implements OnModuleInit {
       freightCost: line.freightCost,
       extraCosts: line.extraCosts,
       notes: line.notes,
+      bonusQty: line.bonusQty,
+      discountType: line.discountType,
+      discountValue: line.discountValue,
       status: PurchaseOrderLineStatus.PENDING,
       suggestionId: line.suggestionId,
       OrganizationId,
@@ -875,9 +1019,21 @@ export class PurchasesService implements OnModuleInit {
       const unitCost = line.unitCost ?? 0;
       const freight = line.freightCost ?? 0;
       const extras = line.extraCosts ?? 0;
-      return sum + qty * unitCost + freight + extras;
+      const base = qty * unitCost + freight + extras;
+      const discount = this.resolveLineDiscount(line, base);
+      return sum + base - discount;
     }, 0);
     return lineTotal + (globalFreight ?? 0) + (globalExtraCosts ?? 0);
+  }
+
+  private resolveLineDiscount(line: PurchaseOrderLine, base: number): number {
+    if (!line.discountType || line.discountValue === undefined) {
+      return 0;
+    }
+    if (line.discountType === PurchaseOrderLineDiscountType.PERCENT) {
+      return (base * line.discountValue) / 100;
+    }
+    return line.discountValue;
   }
 
   private resolveLineQuantity(line: CreatePurchaseOrderDto['lines'][number]): number {

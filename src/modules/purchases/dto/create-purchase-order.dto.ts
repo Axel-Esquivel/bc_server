@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import { ArrayNotEmpty, IsArray, IsEnum, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 import { PurchaseOrderStatus } from '../entities/purchase-order.entity';
+import { PurchaseOrderLineDiscountType } from '../entities/purchase-order-line.entity';
 
 export class PurchaseOrderLineDto {
   @IsString()
@@ -53,6 +54,20 @@ export class PurchaseOrderLineDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  bonusQty?: number;
+
+  @IsOptional()
+  @IsEnum(PurchaseOrderLineDiscountType)
+  discountType?: PurchaseOrderLineDiscountType;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  discountValue?: number;
 
   @IsOptional()
   @IsString()

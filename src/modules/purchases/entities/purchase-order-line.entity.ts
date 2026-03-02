@@ -6,6 +6,11 @@ export enum PurchaseOrderLineStatus {
   RECEIVED = 'RECEIVED',
 }
 
+export enum PurchaseOrderLineDiscountType {
+  PERCENT = 'PERCENT',
+  AMOUNT = 'AMOUNT',
+}
+
 @modelOptions({ schemaOptions: { _id: false, timestamps: true } })
 export class PurchaseOrderLine {
   @prop({ required: true })
@@ -46,6 +51,15 @@ export class PurchaseOrderLine {
 
   @prop()
   notes?: string;
+
+  @prop({ min: 0 })
+  bonusQty?: number;
+
+  @prop({ enum: PurchaseOrderLineDiscountType })
+  discountType?: PurchaseOrderLineDiscountType;
+
+  @prop({ min: 0 })
+  discountValue?: number;
 
   @prop({ enum: PurchaseOrderLineStatus, default: PurchaseOrderLineStatus.PENDING })
   status!: PurchaseOrderLineStatus;

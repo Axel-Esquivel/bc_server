@@ -72,6 +72,27 @@ export class PurchasesController {
     };
   }
 
+  @Get('orders/best-price')
+  async bestPrice(
+    @Query('organizationId') organizationId: string | undefined,
+    @Query('productId') productId: string | undefined,
+    @Query('variantId') variantId?: string,
+    @Query('packagingId') packagingId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (!organizationId || !productId) {
+      throw new BadRequestException('organizationId and productId are required');
+    }
+    const result = await this.purchasesService.listBestPrices({
+      OrganizationId: organizationId,
+      productId,
+      variantId,
+      packagingId,
+      limit: limit ? Number(limit) : undefined,
+    });
+    return { message: 'Best prices retrieved', result };
+  }
+
   @Post('supplier-catalog')
   createSupplierCatalog(@Body() dto: CreateSupplierCatalogItemDto) {
     const result = this.purchasesService.createSupplierCatalogItem(dto);
