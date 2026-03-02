@@ -1,17 +1,14 @@
-import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
-export class CreatePackagingNameDto {
+export class UpdatePackagingNameDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  organizationId!: string;
+  name?: string;
 
-  @IsString()
-  @IsNotEmpty()
-  name!: string;
-
+  @IsOptional()
   @IsNumber()
   @Min(1)
-  multiplier!: number;
+  multiplier?: number;
 
   @IsOptional()
   @IsNumber()

@@ -23,6 +23,7 @@ import {
 } from './entities/supplier-catalog-item.entity';
 import { ProvidersService } from '../providers/providers.service';
 import type { ProviderVariant } from '../providers/entities/provider.entity';
+import { PackagingNamesService } from '../products/packaging-names/packaging-names.service';
 
 export type SuggestionDecision = 'pending' | 'accepted' | 'partially_accepted' | 'rejected';
 
@@ -89,6 +90,7 @@ export class PurchasesService implements OnModuleInit {
     private readonly moduleState: ModuleStateService,
     private readonly companiesService: CompaniesService,
     private readonly providersService: ProvidersService,
+    private readonly packagingNamesService: PackagingNamesService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -175,10 +177,11 @@ export class PurchasesService implements OnModuleInit {
     return result;
   }
 
-  createPurchaseOrder(dto: CreatePurchaseOrderDto): PurchaseOrder {
-    const lines = dto.lines
-      .map((line) => this.mapOrderLine(line, dto.OrganizationId, dto.companyId))
-      .filter((line) => line.quantity > 0);
+  async createPurchaseOrder(dto: CreatePurchaseOrderDto): Promise<PurchaseOrder> {
+    const mapped = await Promise.all(
+      dto.lines.map((line) => this.mapOrderLine(line, dto.OrganizationId, dto.companyId)),
+    );
+    const lines = mapped.filter((line) => line.quantity > 0);
     if (lines.length === 0) {
       throw new BadRequestException('At least one line with qty > 0 is required');
     }
@@ -210,16 +213,17 @@ export class PurchasesService implements OnModuleInit {
     return order;
   }
 
-  updatePurchaseOrder(orderId: string, dto: CreatePurchaseOrderDto): PurchaseOrder {
+  async updatePurchaseOrder(orderId: string, dto: CreatePurchaseOrderDto): Promise<PurchaseOrder> {
     const order = this.findOrder(orderId);
     this.ensureSameTenant(order.OrganizationId, order.companyId, dto.OrganizationId, dto.companyId);
     if (order.status !== PurchaseOrderStatus.DRAFT) {
       throw new BadRequestException('Only DRAFT orders can be edited');
     }
 
-    const lines = dto.lines
-      .map((line) => this.mapOrderLine(line, dto.OrganizationId, dto.companyId))
-      .filter((line) => line.quantity > 0);
+    const mapped = await Promise.all(
+      dto.lines.map((line) => this.mapOrderLine(line, dto.OrganizationId, dto.companyId)),
+    );
+    const lines = mapped.filter((line) => line.quantity > 0);
     if (lines.length === 0) {
       throw new BadRequestException('At least one line with qty > 0 is required');
     }
@@ -584,13 +588,30 @@ export class PurchasesService implements OnModuleInit {
     return this.suggestions.filter((suggestion) => suggestion.OrganizationId === OrganizationId && suggestion.companyId === companyId);
   }
 
-  private mapOrderLine(line: CreatePurchaseOrderDto['lines'][number], OrganizationId: string, companyId: string): PurchaseOrderLine {
+  private async mapOrderLine(
+    line: CreatePurchaseOrderDto['lines'][number],
+    OrganizationId: string,
+    companyId: string,
+  ): Promise<PurchaseOrderLine> {
     const qty = this.resolveLineQuantity(line);
     if (qty <= 0) {
       throw new BadRequestException('Line qty must be greater than 0');
     }
     if (line.unitCost < 0) {
       throw new BadRequestException('Unit cost must be >= 0');
+    }
+    const packagingId = line.packagingId ?? line.packagingNameId ?? '';
+    if (!packagingId) {
+      throw new BadRequestException('packagingId is required');
+    }
+    const packaging = await this.resolvePackaging(OrganizationId, packagingId);
+    if (!packaging) {
+      throw new BadRequestException('packagingId is invalid for this organization');
+    }
+    const packagingMultiplier =
+      line.packagingMultiplier ?? line.packagingMultiplierSnapshot ?? packaging.multiplier ?? 1;
+    if (packagingMultiplier < 1) {
+      throw new BadRequestException('packagingMultiplier must be >= 1');
     }
     if (line.freightCost !== undefined && line.freightCost < 0) {
       throw new BadRequestException('Freight cost must be >= 0');
@@ -609,6 +630,8 @@ export class PurchasesService implements OnModuleInit {
     return {
       id: uuid(),
       variantId: line.variantId,
+      packagingId,
+      packagingMultiplier,
       quantity: qty,
       receivedQuantity: 0,
       unitCost: line.unitCost,
@@ -865,5 +888,17 @@ export class PurchasesService implements OnModuleInit {
       return line.qty;
     }
     return 0;
+  }
+
+  private async resolvePackaging(
+    OrganizationId: string,
+    packagingId: string,
+  ): Promise<{ id: string; multiplier: number } | null> {
+    const list = await this.packagingNamesService.list(OrganizationId);
+    const match = list.find((item) => item.id === packagingId);
+    if (!match) {
+      return null;
+    }
+    return { id: match.id, multiplier: match.multiplier ?? 1 };
   }
 }

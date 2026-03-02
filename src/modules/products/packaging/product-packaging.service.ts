@@ -7,6 +7,7 @@ import type { VariantRecord } from '../variants/variants.service';
 import { CounterService } from '../../../core/database/counter.service';
 import { Ean13Service } from '../../../core/utils/ean13.service';
 import { OrganizationsService } from '../../organizations/organizations.service';
+import { PackagingNamesService } from '../packaging-names/packaging-names.service';
 import { ProductsModelsProvider } from '../models/products-models.provider';
 import { ProductVariantDocument } from '../schemas/product-variant.schema';
 
@@ -21,6 +22,7 @@ export class ProductPackagingService {
     private readonly counterService: CounterService,
     private readonly ean13Service: Ean13Service,
     private readonly organizationsService: OrganizationsService,
+    private readonly packagingNamesService: PackagingNamesService,
   ) {}
 
   async create(dto: CreatePackagingDto): Promise<PackagingRecord> {
@@ -32,8 +34,9 @@ export class ProductPackagingService {
     const record: PackagingRecord = {
       id: uuid(),
       variantId: dto.variantId,
-      name: dto.name.trim(),
-      unitsPerPack: dto.unitsPerPack,
+      packagingNameId: dto.packagingNameId,
+      multiplierSnapshot: dto.multiplierSnapshot ?? dto.unitsPerPack,
+      unitsPerPack: dto.multiplierSnapshot ?? dto.unitsPerPack,
       barcode: dto.barcode?.trim() || undefined,
       internalBarcode: internalBarcode ?? undefined,
       price: dto.price,
@@ -60,9 +63,11 @@ export class ProductPackagingService {
     if (dto.internalBarcode) {
       await this.assertUniqueInternalBarcode(dto.internalBarcode, record.OrganizationId, record.id);
     }
+    const nextMultiplier = dto.multiplierSnapshot ?? dto.unitsPerPack ?? record.multiplierSnapshot ?? record.unitsPerPack;
     const next = {
-      name: dto.name?.trim() ?? record.name,
-      unitsPerPack: dto.unitsPerPack ?? record.unitsPerPack,
+      packagingNameId: dto.packagingNameId ?? record.packagingNameId,
+      multiplierSnapshot: nextMultiplier,
+      unitsPerPack: dto.unitsPerPack ?? nextMultiplier,
       barcode: dto.barcode?.trim() ?? record.barcode,
       internalBarcode: dto.internalBarcode?.trim() ?? record.internalBarcode,
       price: dto.price ?? record.price,
@@ -98,11 +103,13 @@ export class ProductPackagingService {
     if (existing) {
       return existing as PackagingRecord;
     }
+    const defaultPackagingName = await this.resolveDefaultPackagingName(variant.OrganizationId);
     const internalBarcode = await this.generateInternalBarcode(variant.OrganizationId, '02');
     const created: PackagingRecord = {
       id: uuid(),
       variantId: variant.id,
-      name: 'Unidad',
+      packagingNameId: defaultPackagingName?.id ?? 'unidad',
+      multiplierSnapshot: defaultPackagingName?.multiplier ?? 1,
       unitsPerPack: 1,
       internalBarcode,
       price: 0,
@@ -123,7 +130,6 @@ export class ProductPackagingService {
         {
           OrganizationId: organizationId,
           systemCreated: { $ne: true },
-          name: 'Unidad',
           unitsPerPack: 1,
           $and: [
             { $or: [{ price: 0 }, { price: { $exists: false } }] },
@@ -172,6 +178,17 @@ export class ProductPackagingService {
     }
     const internalBarcode = await this.generateInternalBarcode(organizationId, '02');
     return internalBarcode;
+  }
+
+  private async resolveDefaultPackagingName(
+    organizationId: string,
+  ): Promise<{ id: string; multiplier: number } | null> {
+    const list = await this.packagingNamesService.list(organizationId);
+    const unit = list.find((item) => item.nameNormalized === 'unidad' || item.name === 'Unidad') ?? list[0];
+    if (!unit) {
+      return null;
+    }
+    return { id: unit.id, multiplier: unit.multiplier ?? 1 };
   }
 
   private async findOne(id: string, organizationId: string): Promise<PackagingRecord> {

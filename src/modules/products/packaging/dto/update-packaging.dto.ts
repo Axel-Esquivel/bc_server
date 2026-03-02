@@ -4,7 +4,12 @@ export class UpdatePackagingDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
-  name?: string;
+  packagingNameId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  multiplierSnapshot?: number;
 
   @IsOptional()
   @IsNumber()

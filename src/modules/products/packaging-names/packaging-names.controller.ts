@@ -1,6 +1,7 @@
-import { BadRequestException, Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Patch, Post, Query, Req, UseGuards, Param } from '@nestjs/common';
 import { PackagingNamesService } from './packaging-names.service';
 import { CreatePackagingNameDto } from './dto/create-packaging-name.dto';
+import { UpdatePackagingNameDto } from './dto/update-packaging-name.dto';
 import type { AuthenticatedRequest } from '../../../core/types/authenticated-request.types';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 
@@ -23,5 +24,20 @@ export class PackagingNamesController {
   async create(@Body() dto: CreatePackagingNameDto) {
     const result = await this.packagingNamesService.create(dto);
     return { message: 'Packaging name created', result };
+  }
+
+  @Patch(':id')
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdatePackagingNameDto,
+    @Query('organizationId') organizationId: string | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const orgId = organizationId ?? req.user?.organizationId;
+    if (!orgId) {
+      throw new BadRequestException('OrganizationId is required');
+    }
+    const result = await this.packagingNamesService.update(id, dto, orgId);
+    return { message: 'Packaging name updated', result };
   }
 }

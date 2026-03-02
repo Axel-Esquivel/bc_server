@@ -22,18 +22,18 @@ export class PurchasesController {
   }
 
   @Post('orders')
-  createOrder(@Body() dto: CreatePurchaseOrderDto) {
+  async createOrder(@Body() dto: CreatePurchaseOrderDto) {
     return {
       message: 'Purchase order created',
-      result: this.purchasesService.createPurchaseOrder(dto),
+      result: await this.purchasesService.createPurchaseOrder(dto),
     };
   }
 
   @Patch('orders/:id')
-  updateOrder(@Param('id') id: string, @Body() dto: CreatePurchaseOrderDto) {
+  async updateOrder(@Param('id') id: string, @Body() dto: CreatePurchaseOrderDto) {
     return {
       message: 'Purchase order updated',
-      result: this.purchasesService.updatePurchaseOrder(id, dto),
+      result: await this.purchasesService.updatePurchaseOrder(id, dto),
     };
   }
 

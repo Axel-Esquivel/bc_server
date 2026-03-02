@@ -14,6 +14,18 @@ export class PurchaseOrderLine {
   @prop({ required: true })
   variantId!: string;
 
+  @prop({ required: true })
+  packagingId!: string;
+
+  @prop({ required: true, min: 1 })
+  packagingMultiplier!: number;
+
+  @prop()
+  packagingNameId?: string;
+
+  @prop()
+  packagingMultiplierSnapshot?: number;
+
   @prop({ required: true, min: 0 })
   quantity!: number;
 

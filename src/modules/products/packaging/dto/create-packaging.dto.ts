@@ -7,7 +7,11 @@ export class CreatePackagingDto {
 
   @IsString()
   @IsNotEmpty()
-  name!: string;
+  packagingNameId!: string;
+
+  @IsNumber()
+  @Min(1)
+  multiplierSnapshot!: number;
 
   @IsNumber()
   @Min(1)

@@ -6,6 +6,22 @@ export class PurchaseOrderLineDto {
   @IsString()
   variantId!: string;
 
+  @IsString()
+  packagingId!: string;
+
+  @IsNumber()
+  @Min(1)
+  packagingMultiplier!: number;
+
+  @IsOptional()
+  @IsString()
+  packagingNameId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  packagingMultiplierSnapshot?: number;
+
   @IsOptional()
   @IsNumber()
   @Min(0)

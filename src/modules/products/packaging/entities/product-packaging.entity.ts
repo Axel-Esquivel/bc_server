@@ -6,7 +6,10 @@ export class ProductPackaging {
   variantId!: string;
 
   @prop({ required: true })
-  name!: string;
+  packagingNameId!: string;
+
+  @prop({ required: true, min: 1 })
+  multiplierSnapshot!: number;
 
   @prop({ required: true, min: 1 })
   unitsPerPack!: number;

@@ -3,7 +3,8 @@ import { Schema, Document } from 'mongoose';
 export interface ProductPackagingDocument extends Document {
   id: string;
   variantId: string;
-  name: string;
+  packagingNameId: string;
+  multiplierSnapshot: number;
   unitsPerPack: number;
   barcode?: string;
   internalBarcode?: string;
@@ -21,7 +22,8 @@ export const ProductPackagingSchema = new Schema<ProductPackagingDocument>(
   {
     id: { type: String, required: true, index: true, unique: true },
     variantId: { type: String, required: true, index: true },
-    name: { type: String, required: true },
+    packagingNameId: { type: String, required: true, index: true },
+    multiplierSnapshot: { type: Number, required: true, min: 1 },
     unitsPerPack: { type: Number, required: true, min: 1 },
     barcode: { type: String },
     internalBarcode: { type: String, index: true, sparse: true, unique: true },
