@@ -5,7 +5,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { ModuleStateService } from '../../core/database/module-state.service';
 import { CompaniesService } from '../companies/companies.service';
 import type { JsonObject } from '../../core/events/business-event';
-import { CreateGoodsReceiptDto, GoodsReceiptLineDto } from './dto/create-goods-receipt.dto';
+import { CreateGoodsReceiptDto, GoodsReceiptDiscountType, GoodsReceiptLineDto } from './dto/create-goods-receipt.dto';
 import { ConfirmPurchaseOrderDto } from './dto/confirm-purchase-order.dto';
 import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto';
 import { PurchaseSuggestionQueryDto } from './dto/purchase-suggestion-query.dto';
@@ -80,6 +80,17 @@ export interface BestPriceItem {
   source: 'purchase_order' | 'price_list';
   orderId?: string;
   bestInCurrency?: boolean;
+}
+
+export interface GoodsReceiptValidationIssue {
+  path: string;
+  message: string;
+}
+
+export interface GoodsReceiptValidationResult {
+  valid: boolean;
+  errors: GoodsReceiptValidationIssue[];
+  warnings: GoodsReceiptValidationIssue[];
 }
 
 interface PurchasesState {
@@ -285,16 +296,30 @@ export class PurchasesService implements OnModuleInit {
       this.ensureSameTenant(order.OrganizationId, order.companyId, dto.OrganizationId, dto.companyId);
     }
 
+    const validation = this.validateGoodsReceiptData(dto);
+    if (!validation.valid) {
+      throw new BadRequestException({
+        message: 'Goods receipt validation failed',
+        errors: validation.errors,
+      });
+    }
+
     const receipt: GoodsReceiptNote = {
       id: uuid(),
       purchaseOrderId: order?.id,
       warehouseId: dto.warehouseId,
       OrganizationId: dto.OrganizationId,
       companyId: dto.companyId,
-      lines: dto.lines.map((line) => this.mapReceiptLine(line, dto.OrganizationId, dto.companyId)),
+      lines: dto.lines.map((line, index) =>
+        this.mapReceiptLine(line, dto.OrganizationId, dto.companyId, index),
+      ),
     };
 
     receipt.lines.forEach((line) => {
+      const paidQty = line.quantityReceived ?? line.quantity;
+      const bonusQty = line.bonusQty ?? 0;
+      const totalQty = paidQty + bonusQty;
+      const effectiveUnitCost = this.resolveEffectiveReceiptUnitCost(line, paidQty, totalQty);
       const references: JsonObject = { grnId: receipt.id, warehouseId: receipt.warehouseId };
       if (order) {
         references.purchaseOrderId = order.id;
@@ -307,28 +332,45 @@ export class PurchasesService implements OnModuleInit {
         enterpriseId: this.resolveEnterpriseId(dto.companyId),
         locationId: line.locationId,
         batchId: line.batchId,
-        quantity: line.quantity,
+        quantity: totalQty,
         operationId: `${receipt.id}:${line.variantId}`,
         references,
         OrganizationId: dto.OrganizationId,
         companyId: dto.companyId,
       });
 
-      this.updateAverageCost(line.variantId, line.quantity, line.unitCost);
+      this.updateAverageCost(line.variantId, totalQty, effectiveUnitCost);
       this.costHistory.push({
         id: uuid(),
         supplierId: order?.supplierId ?? 'unknown',
         variantId: line.variantId,
-        unitCost: line.unitCost,
+        unitCost: effectiveUnitCost,
         currency: line.currency,
         OrganizationId: dto.OrganizationId,
         companyId: dto.companyId,
       });
 
+      if (line.bonusVariantId && line.bonusVariantQty && line.bonusVariantQty > 0) {
+        this.inventoryService.recordMovement({
+          direction: InventoryDirection.IN,
+          variantId: line.bonusVariantId,
+          warehouseId: receipt.warehouseId,
+          enterpriseId: this.resolveEnterpriseId(dto.companyId),
+          locationId: line.locationId,
+          batchId: line.batchId,
+          quantity: line.bonusVariantQty,
+          operationId: `${receipt.id}:${line.bonusVariantId}:bonus`,
+          references: { ...references, bonusFromVariantId: line.variantId },
+          OrganizationId: dto.OrganizationId,
+          companyId: dto.companyId,
+        });
+        this.updateAverageCost(line.bonusVariantId, line.bonusVariantQty, 0);
+      }
+
       if (order) {
         const matchingLine = order.lines.find((l) => l.variantId === line.variantId);
         if (matchingLine) {
-          matchingLine.receivedQuantity += line.quantity;
+          matchingLine.receivedQuantity += paidQty;
           matchingLine.status =
             matchingLine.receivedQuantity >= matchingLine.quantity
               ? PurchaseOrderLineStatus.RECEIVED
@@ -790,7 +832,24 @@ export class PurchasesService implements OnModuleInit {
     };
   }
 
-  private mapReceiptLine(line: GoodsReceiptLineDto, OrganizationId: string, companyId: string) {
+  validateGoodsReceiptData(dto: CreateGoodsReceiptDto): GoodsReceiptValidationResult {
+    const errors: GoodsReceiptValidationIssue[] = [];
+    const warnings: GoodsReceiptValidationIssue[] = [];
+
+    dto.lines.forEach((line, index) => {
+      const lineResult = this.validateReceiptLine(line, index);
+      errors.push(...lineResult.errors);
+      warnings.push(...lineResult.warnings);
+    });
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+    };
+  }
+
+  private mapReceiptLine(line: GoodsReceiptLineDto, OrganizationId: string, companyId: string, index: number) {
     const suggestion = line.suggestionId
       ? this.suggestions.find(
           (candidate) => candidate.id === line.suggestionId && candidate.OrganizationId === OrganizationId && candidate.companyId === companyId,
@@ -801,17 +860,140 @@ export class PurchasesService implements OnModuleInit {
       suggestion.decision = line.quantity >= suggestion.recommendedQty ? 'accepted' : 'partially_accepted';
     }
 
+    const validation = this.validateReceiptLine(line, index);
+    if (validation.errors.length > 0) {
+      throw new BadRequestException({
+        message: 'Goods receipt line validation failed',
+        errors: validation.errors,
+      });
+    }
+    const normalizedDiscountType = validation.normalizedDiscountType;
+
+    const paidQty = line.quantityReceived ?? line.quantity;
+    const bonusQty = line.bonusQty ?? 0;
+    const totalQty = paidQty + bonusQty;
+    const effectiveUnitCost = this.resolveEffectiveReceiptUnitCost(
+      {
+        unitCost: line.unitCost,
+        discountType: normalizedDiscountType,
+        discountValue: line.discountValue,
+        isBonus: line.isBonus,
+      },
+      paidQty,
+      totalQty,
+    );
+
     return {
       id: uuid(),
       variantId: line.variantId,
+      productId: line.productId,
       quantity: line.quantity,
+      quantityReceived: line.quantityReceived,
       unitCost: line.unitCost,
+      effectiveUnitCost,
       currency: line.currency,
       locationId: line.locationId,
       batchId: line.batchId,
+      bonusQty: line.bonusQty,
+      bonusVariantId: line.bonusVariantId,
+      bonusVariantQty: line.bonusVariantQty,
+      discountType: normalizedDiscountType,
+      discountValue: line.discountValue,
+      isBonus: line.isBonus,
+      bonusSourceLineId: line.bonusSourceLineId,
       OrganizationId,
       companyId,
     };
+  }
+
+  private validateReceiptLine(
+    line: GoodsReceiptLineDto,
+    index: number,
+  ): { errors: GoodsReceiptValidationIssue[]; warnings: GoodsReceiptValidationIssue[]; normalizedDiscountType?: GoodsReceiptDiscountType } {
+    const errors: GoodsReceiptValidationIssue[] = [];
+    const warnings: GoodsReceiptValidationIssue[] = [];
+    const pathPrefix = `lines[${index}]`;
+
+    const normalizedDiscountType = this.normalizeReceiptDiscountType(line.discountType);
+    if (normalizedDiscountType === GoodsReceiptDiscountType.PERCENT) {
+      if (line.discountValue !== undefined && (line.discountValue < 0 || line.discountValue > 100)) {
+        errors.push({ path: `${pathPrefix}.discountValue`, message: 'Percent discount must be between 0 and 100' });
+      }
+    } else if (normalizedDiscountType === GoodsReceiptDiscountType.AMOUNT) {
+      if (line.discountValue !== undefined && line.discountValue < 0) {
+        errors.push({ path: `${pathPrefix}.discountValue`, message: 'Amount discount must be >= 0' });
+      }
+    } else if (line.discountValue !== undefined) {
+      errors.push({ path: `${pathPrefix}.discountType`, message: 'discountType is required when discountValue is provided' });
+    }
+
+    if (line.isBonus && line.unitCost !== 0) {
+      errors.push({ path: `${pathPrefix}.unitCost`, message: 'unitCost must be 0 when isBonus is true' });
+    }
+
+    if (line.bonusQty !== undefined && line.bonusQty < 0) {
+      errors.push({ path: `${pathPrefix}.bonusQty`, message: 'bonusQty must be >= 0' });
+    }
+    if ((line.bonusVariantId && line.bonusVariantQty === undefined) || (!line.bonusVariantId && line.bonusVariantQty !== undefined)) {
+      errors.push({ path: `${pathPrefix}.bonusVariantId`, message: 'bonusVariantId and bonusVariantQty must be provided together' });
+    }
+    if (line.bonusVariantQty !== undefined && line.bonusVariantQty < 0) {
+      errors.push({ path: `${pathPrefix}.bonusVariantQty`, message: 'bonusVariantQty must be >= 0' });
+    }
+    if (line.discountType && line.discountValue === undefined) {
+      errors.push({ path: `${pathPrefix}.discountValue`, message: 'discountValue is required when discountType is provided' });
+    }
+    if (line.discountValue !== undefined && line.discountValue < 0) {
+      errors.push({ path: `${pathPrefix}.discountValue`, message: 'discountValue must be >= 0' });
+    }
+
+    return { errors, warnings, normalizedDiscountType };
+  }
+
+  private resolveEffectiveReceiptUnitCost(
+    line: { unitCost: number; discountType?: GoodsReceiptDiscountType; discountValue?: number; isBonus?: boolean },
+    paidQty: number,
+    totalQty: number,
+  ): number {
+    if (line.isBonus) {
+      return 0;
+    }
+    const gross = line.unitCost * paidQty;
+    const discount = this.resolveReceiptDiscount(line.discountType, line.discountValue, gross);
+    const net = Math.max(gross - discount, 0);
+    if (totalQty <= 0) {
+      return 0;
+    }
+    return net / totalQty;
+  }
+
+  private resolveReceiptDiscount(
+    discountType: GoodsReceiptDiscountType | undefined,
+    discountValue: number | undefined,
+    base: number,
+  ): number {
+    if (!discountType || discountValue === undefined || discountValue <= 0) {
+      return 0;
+    }
+    if (discountType === GoodsReceiptDiscountType.PERCENT) {
+      return (base * discountValue) / 100;
+    }
+    return discountValue;
+  }
+
+  private normalizeReceiptDiscountType(
+    discountType: GoodsReceiptLineDto['discountType'],
+  ): GoodsReceiptDiscountType | undefined {
+    if (!discountType) {
+      return undefined;
+    }
+    if (discountType === GoodsReceiptDiscountType.PERCENT_UPPER) {
+      return GoodsReceiptDiscountType.PERCENT;
+    }
+    if (discountType === GoodsReceiptDiscountType.AMOUNT_UPPER) {
+      return GoodsReceiptDiscountType.AMOUNT;
+    }
+    return discountType as GoodsReceiptDiscountType;
   }
 
   private updateAverageCost(variantId: string, receivedQty: number, unitCost: number) {

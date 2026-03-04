@@ -72,6 +72,14 @@ export class PurchasesController {
     };
   }
 
+  @Post('grn/validate')
+  validateGoodsReceipt(@Body() dto: CreateGoodsReceiptDto) {
+    return {
+      message: 'Goods receipt validation result',
+      result: this.purchasesService.validateGoodsReceiptData(dto),
+    };
+  }
+
   @Get('orders/best-price')
   async bestPrice(
     @Query('organizationId') organizationId: string | undefined,
