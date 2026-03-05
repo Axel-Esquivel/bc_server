@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put } from '@nestjs/common';
 import { CreatePriceListDto } from './dto/create-price-list.dto';
 import { UpdatePriceListDto } from './dto/update-price-list.dto';
 import { PriceListsService } from './price-lists.service';
@@ -27,6 +27,12 @@ export class PriceListsController {
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdatePriceListDto) {
+    const result = this.priceListsService.update(id, dto);
+    return { message: 'Price list updated', result };
+  }
+
+  @Put(':id')
+  replace(@Param('id') id: string, @Body() dto: UpdatePriceListDto) {
     const result = this.priceListsService.update(id, dto);
     return { message: 'Price list updated', result };
   }
