@@ -687,6 +687,12 @@ export class OrganizationsService {
 
     const registry = this.moduleRegistry.listInstallableModules();
     const installedKeys = new Set(organization.installedModules.map((module) => module.key));
+    const moduleStates = this.normalizeModuleStates(organization.moduleStates);
+    const enabledKeys = new Set(
+      Object.entries(moduleStates)
+        .filter(([, state]) => state?.status !== OrganizationModuleStatus.Disabled)
+        .map(([key]) => key),
+    );
     const available: OrganizationModuleStoreItem[] = registry
       .map((module) => ({
         key: module.key,
@@ -700,7 +706,7 @@ export class OrganizationsService {
         tags: [...module.tags],
         order: module.order,
         icon: module.icon,
-        installed: installedKeys.has(module.key),
+        installed: installedKeys.has(module.key) || enabledKeys.has(module.key),
       }));
     const installed = available.filter((module) => module.installed);
 
