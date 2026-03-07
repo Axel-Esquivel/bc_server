@@ -4,6 +4,9 @@ class PriceListItem {
   @prop({ required: true })
   variantId!: string;
 
+  @prop()
+  packagingId?: string;
+
   @prop({ required: true })
   price!: number;
 

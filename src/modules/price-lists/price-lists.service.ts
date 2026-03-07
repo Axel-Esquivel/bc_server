@@ -78,6 +78,7 @@ export class PriceListsService implements OnModuleInit {
   private mapItems(items: PriceListItemDto[] = []): PriceListItem[] {
     return items.map((item) => ({
       variantId: item.variantId,
+      packagingId: item.packagingId?.trim() || undefined,
       price: item.price,
       currency: item.currency ?? 'USD',
       minQuantity: item.minQuantity ?? 1,

@@ -3,12 +3,14 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { ProductByCodeQueryDto } from './dto/product-by-code-query.dto';
 import { ProductListQueryDto } from './dto/product-list-query.dto';
 import { ProductSearchQueryDto } from './dto/product-search-query.dto';
+import { ResolvePriceDto } from './dto/resolve-price.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
 import { VariantsService } from './variants/variants.service';
 import { CreateProductVariantDto } from './variants/dto/create-product-variant.dto';
 import type { AuthenticatedRequest } from '../../core/types/authenticated-request.types';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PriceResolverService } from './pricing/price-resolver.service';
 
 @Controller('products')
 @UseGuards(JwtAuthGuard)
@@ -16,6 +18,7 @@ export class ProductsController {
   constructor(
     private readonly productsService: ProductsService,
     private readonly variantsService: VariantsService,
+    private readonly priceResolverService: PriceResolverService,
   ) {}
 
   @Post()
@@ -43,6 +46,33 @@ export class ProductsController {
     const orgId = query.OrganizationId ?? req.user?.organizationId ?? undefined;
     const result = await this.productsService.findByCodeForPos(query, orgId);
     return { message: 'Product lookup retrieved', result };
+  }
+
+  @Post('resolve-price')
+  async resolvePrice(@Body() dto: ResolvePriceDto, @Req() req: AuthenticatedRequest) {
+    const orgId = dto.OrganizationId ?? req.user?.organizationId;
+    if (!orgId) {
+      throw new BadRequestException('OrganizationId is required');
+    }
+    if (!dto.companyId) {
+      throw new BadRequestException('companyId is required');
+    }
+    if (!dto.variantId) {
+      throw new BadRequestException('variantId is required');
+    }
+    const result = await this.priceResolverService.resolvePrice({
+      OrganizationId: orgId,
+      companyId: dto.companyId,
+      enterpriseId: dto.enterpriseId,
+      variantId: dto.variantId,
+      packagingId: dto.packagingId,
+      quantity: dto.quantity,
+      customerSegment: dto.customerSegment,
+      channel: dto.channel,
+      priceListId: dto.priceListId,
+      fallbackPrice: dto.fallbackPrice,
+    });
+    return { message: 'Price resolved', result };
   }
 
   @Get(':productId/variants')

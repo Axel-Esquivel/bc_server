@@ -13,6 +13,10 @@ class PriceListItemDto {
   @IsNotEmpty()
   variantId!: string;
 
+  @IsOptional()
+  @IsString()
+  packagingId?: string;
+
   @IsNumber()
   price!: number;
 

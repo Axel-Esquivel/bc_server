@@ -11,6 +11,7 @@ import { ProductPackagingService } from './packaging/product-packaging.service';
 import { PackagingNamesController } from './packaging-names/packaging-names.controller';
 import { PackagingNamesService } from './packaging-names/packaging-names.service';
 import { ProductsModelsProvider } from './models/products-models.provider';
+import { PriceResolverService } from './pricing/price-resolver.service';
 
 @Module({
   imports: [PriceListsModule, OrganizationsModule],
@@ -27,6 +28,7 @@ import { ProductsModelsProvider } from './models/products-models.provider';
     ProductPackagingService,
     PackagingNamesService,
     ProductsModelsProvider,
+    PriceResolverService,
   ],
   exports: [
     ProductsService,
@@ -34,6 +36,7 @@ import { ProductsModelsProvider } from './models/products-models.provider';
     ProductPackagingService,
     PackagingNamesService,
     ProductsModelsProvider,
+    PriceResolverService,
   ],
 })
 export class ProductsModule {}
