@@ -45,6 +45,27 @@ export class PriceListsService implements OnModuleInit {
     return [...this.priceLists];
   }
 
+  findAllForTenant(OrganizationId: string, companyId: string): PriceListRecord[] {
+    const orgId = OrganizationId?.trim();
+    const company = companyId?.trim();
+    if (!orgId || !company) {
+      return [];
+    }
+    return this.priceLists.filter((item) => item.OrganizationId === orgId && item.companyId === company);
+  }
+
+  findOneForTenant(id: string, OrganizationId: string, companyId: string): PriceListRecord | null {
+    const listId = id?.trim();
+    const orgId = OrganizationId?.trim();
+    const company = companyId?.trim();
+    if (!listId || !orgId || !company) {
+      return null;
+    }
+    return this.priceLists.find(
+      (item) => item.id === listId && item.OrganizationId === orgId && item.companyId === company,
+    ) ?? null;
+  }
+
   findOne(id: string): PriceListRecord {
     const priceList = this.priceLists.find((item) => item.id === id);
     if (!priceList) {

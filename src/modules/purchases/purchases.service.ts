@@ -29,6 +29,8 @@ import { ProvidersService } from '../providers/providers.service';
 import type { ProviderVariant } from '../providers/entities/provider.entity';
 import { PackagingNamesService } from '../products/packaging-names/packaging-names.service';
 import { VariantsService } from '../products/variants/variants.service';
+import { ProductPackagingService } from '../products/packaging/product-packaging.service';
+import { StockService } from '../stock/stock.service';
 
 export type SuggestionDecision = 'pending' | 'accepted' | 'partially_accepted' | 'rejected';
 
@@ -67,6 +69,12 @@ export interface SupplierLastCostResult {
   lastCost: number | null;
   lastCurrency: string | null;
   lastRecordedAt: string | null;
+}
+
+export interface ReferenceCostsResult {
+  averageCost: number | null;
+  lastPurchaseCost: number | null;
+  packagingBasePrice: number | null;
 }
 
 export interface BestPriceItem {
@@ -121,6 +129,8 @@ export class PurchasesService implements OnModuleInit {
     private readonly providersService: ProvidersService,
     private readonly packagingNamesService: PackagingNamesService,
     private readonly variantsService: VariantsService,
+    private readonly productPackagingService: ProductPackagingService,
+    private readonly stockService: StockService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -645,6 +655,44 @@ export class PurchasesService implements OnModuleInit {
     };
   }
 
+  async getReferenceCosts(params: {
+    OrganizationId: string;
+    companyId: string;
+    variantId: string;
+    packagingId?: string;
+    enterpriseId?: string;
+  }): Promise<ReferenceCostsResult> {
+    this.ensureValidTenant(params.OrganizationId, params.companyId);
+    const variant = await this.variantsService.findOne(params.variantId, params.OrganizationId);
+    if (variant.companyId !== params.companyId) {
+      throw new BadRequestException('Variant does not belong to the provided Organization/company');
+    }
+
+    const packagingBasePrice = await this.resolvePackagingBasePrice(
+      params.variantId,
+      params.packagingId,
+      params.OrganizationId,
+    );
+
+    const averageCost = await this.resolveAverageCost(
+      params.OrganizationId,
+      params.enterpriseId ?? variant.enterpriseId,
+      variant.productId,
+    );
+
+    const lastPurchaseCost = this.resolveLastPurchaseCost(
+      params.OrganizationId,
+      params.companyId,
+      params.variantId,
+    );
+
+    return {
+      averageCost,
+      lastPurchaseCost,
+      packagingBasePrice,
+    };
+  }
+
   listSuggestions(OrganizationId: string, companyId: string): PurchaseSuggestion[] {
     return this.suggestions.filter((suggestion) => suggestion.OrganizationId === OrganizationId && suggestion.companyId === companyId);
   }
@@ -760,6 +808,65 @@ export class PurchasesService implements OnModuleInit {
       items,
       fxNote: 'Comparación global requiere tipo de cambio.',
     };
+  }
+
+  private resolveLastPurchaseCost(
+    OrganizationId: string,
+    companyId: string,
+    variantId: string,
+  ): number | null {
+    for (let index = this.costHistory.length - 1; index >= 0; index -= 1) {
+      const entry = this.costHistory[index];
+      if (
+        entry.OrganizationId === OrganizationId &&
+        entry.companyId === companyId &&
+        entry.variantId === variantId
+      ) {
+        return entry.unitCost ?? null;
+      }
+    }
+    return null;
+  }
+
+  private async resolvePackagingBasePrice(
+    variantId: string,
+    packagingId: string | undefined,
+    organizationId: string,
+  ): Promise<number | null> {
+    if (!packagingId) {
+      return null;
+    }
+    const list = await this.productPackagingService.listByVariant(variantId, organizationId);
+    const match = list.find((item) => item.id === packagingId && item.isActive);
+    return match ? match.price ?? null : null;
+  }
+
+  private async resolveAverageCost(
+    organizationId: string,
+    enterpriseId: string | null | undefined,
+    productId: string,
+  ): Promise<number | null> {
+    if (!enterpriseId) {
+      return null;
+    }
+    const records = await this.stockService.getByProduct(organizationId, enterpriseId, productId);
+    if (records.length === 0) {
+      return null;
+    }
+    let totalOnHand = 0;
+    let weightedSum = 0;
+    let sum = 0;
+    records.forEach((record) => {
+      const onHand = record.onHand ?? 0;
+      const avgCost = record.avgCost ?? 0;
+      totalOnHand += onHand;
+      weightedSum += avgCost * onHand;
+      sum += avgCost;
+    });
+    if (totalOnHand > 0) {
+      return weightedSum / totalOnHand;
+    }
+    return records.length > 0 ? sum / records.length : null;
   }
 
   private async mapOrderLine(

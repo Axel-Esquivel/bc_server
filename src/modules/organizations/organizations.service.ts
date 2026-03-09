@@ -25,6 +25,7 @@ import { ModuleRegistryService } from '../module-loader/module-registry.service'
 import { ModuleRegistryEntry } from '../module-loader/module-registry.types';
 import { AccountingService } from '../accounting/accounting.service';
 import { UomService } from '../uom/uom.service';
+import { PriceListsService } from '../price-lists/price-lists.service';
 import { BootstrapOrganizationDto } from './dto/bootstrap-organization.dto';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
@@ -66,7 +67,7 @@ import {
   OrganizationModuleStates,
   OrganizationModuleStatus,
 } from './types/module-state.types';
-import { OrganizationModuleSettingsMap } from './types/module-settings.types';
+import { OrganizationModuleSettingsMap, PriceListsModuleSettings } from './types/module-settings.types';
 import {
   OrganizationModuleDefinition,
   OrganizationModuleOverviewItem,
@@ -111,6 +112,7 @@ export class OrganizationsService {
     private readonly moduleRegistry: ModuleRegistryService,
     private readonly accountingService: AccountingService,
     private readonly uomService: UomService,
+    private readonly priceListsService: PriceListsService,
   ) {}
 
   async createOrganization(dto: CreateOrganizationDto, ownerUserId: string): Promise<OrganizationEntity> {
@@ -465,6 +467,12 @@ export class OrganizationsService {
     const nextSettings = { ...(organization.moduleSettings ?? {}) };
     if (update.moduleKey === 'products') {
       nextSettings.products = this.normalizeProductsSettings(update.settings);
+    } else if (update.moduleKey === 'price-lists') {
+      nextSettings['price-lists'] = await this.normalizePriceListsSettings(
+        organizationId,
+        update.settings,
+        this.toPriceListsSettings(nextSettings['price-lists']),
+      );
     } else {
       nextSettings[update.moduleKey] = update.settings ?? {};
     }
@@ -1935,6 +1943,76 @@ export class OrganizationsService {
       autoGenerateSku: normalized.autoGenerateSku === true,
       allowMultipleBarcodes: normalized.allowMultipleBarcodes === true,
     };
+  }
+
+  private toPriceListsSettings(value: unknown): PriceListsModuleSettings | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+    const record = value as { defaultByCompanyId?: unknown };
+    if (!record.defaultByCompanyId || typeof record.defaultByCompanyId !== 'object') {
+      return null;
+    }
+    return {
+      defaultByCompanyId: record.defaultByCompanyId as Record<string, string | null>,
+    };
+  }
+
+  private async normalizePriceListsSettings(
+    organizationId: string,
+    input: unknown,
+    current: PriceListsModuleSettings | null,
+  ): Promise<PriceListsModuleSettings> {
+    const baseMap: Record<string, string | null> = { ...(current?.defaultByCompanyId ?? {}) };
+    if (!input || typeof input !== 'object') {
+      return { defaultByCompanyId: baseMap };
+    }
+
+    const record = input as Record<string, unknown>;
+    const nextMap: Record<string, string | null> = { ...baseMap };
+
+    const rawMap = record.defaultByCompanyId;
+    if (rawMap && typeof rawMap === 'object') {
+      Object.entries(rawMap as Record<string, unknown>).forEach(([companyId, value]) => {
+        const key = companyId.trim();
+        if (!key) {
+          return;
+        }
+        if (value === null) {
+          nextMap[key] = null;
+          return;
+        }
+        if (typeof value === 'string' && value.trim()) {
+          nextMap[key] = value.trim();
+          return;
+        }
+      });
+    }
+
+    const companyId = typeof record.companyId === 'string' ? record.companyId.trim() : '';
+    const rawDefault = record.defaultPriceListId;
+    const hasDefault =
+      rawDefault === null || (typeof rawDefault === 'string' && rawDefault.trim() !== '');
+    if (companyId && hasDefault) {
+      nextMap[companyId] = rawDefault === null ? null : rawDefault.trim();
+    } else if (!companyId && hasDefault) {
+      throw new BadRequestException('companyId is required to set a default price list');
+    }
+
+    for (const [key, value] of Object.entries(nextMap)) {
+      if (value) {
+        this.assertPriceListExists(organizationId, key, value);
+      }
+    }
+
+    return { defaultByCompanyId: nextMap };
+  }
+
+  private assertPriceListExists(organizationId: string, companyId: string, priceListId: string): void {
+    const match = this.priceListsService.findOneForTenant(priceListId, organizationId, companyId);
+    if (!match) {
+      throw new BadRequestException('Default price list is invalid for the selected company');
+    }
   }
 
   private buildModulesOverviewResponse(

@@ -189,4 +189,25 @@ export class PurchasesController {
     );
     return { message: 'Supplier product last cost retrieved', result };
   }
+
+  @Get('reference-costs')
+  async getReferenceCosts(
+    @Query('OrganizationId') OrganizationId: string | undefined,
+    @Query('companyId') companyId: string | undefined,
+    @Query('variantId') variantId: string | undefined,
+    @Query('packagingId') packagingId?: string,
+    @Query('enterpriseId') enterpriseId?: string,
+  ) {
+    if (!OrganizationId || !companyId || !variantId) {
+      throw new BadRequestException('OrganizationId, companyId and variantId are required');
+    }
+    const result = await this.purchasesService.getReferenceCosts({
+      OrganizationId,
+      companyId,
+      variantId,
+      packagingId,
+      enterpriseId,
+    });
+    return { message: 'Reference costs loaded', result };
+  }
 }
