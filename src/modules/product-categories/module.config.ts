@@ -1,15 +1,14 @@
 import { ModuleConfig } from '../module-loader/module.config';
 
 const moduleConfig: ModuleConfig = {
-  key: 'auth',
-  name: 'auth',
+  key: 'product-categories',
+  name: 'product-categories',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['companies', 'devices', 'organizations', 'users'],
-  category: 'core',
-  suite: 'core-suite',
-  tags: ['core'],
-  order: 10,
+  dependencies: ['auth'],
+  description: 'Categorias de productos.',
+  category: 'master-data',
+  tags: ['products', 'categories'],
   isSystem: true,
   isInstallable: false,
 };

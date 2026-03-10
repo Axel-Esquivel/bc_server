@@ -5,7 +5,7 @@ const moduleConfig: ModuleConfig = {
   name: 'warehouses',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['companies', 'branches', 'locations', 'auth'],
+  dependencies: ['locations'],
   description: 'Bodegas y almacenes.',
   category: 'inventory',
   suite: 'inventory-suite',

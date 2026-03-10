@@ -3,7 +3,7 @@ const moduleConfig = {
   name: 'accounting',
   version: '1.0.0',
   enabled: true,
-  dependencies: [],
+  dependencies: ['organizations'],
   description: 'Contabilidad y configuracion fiscal.',
   category: 'finanzas',
   icon: 'pi pi-calculator',

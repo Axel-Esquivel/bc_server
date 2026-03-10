@@ -5,7 +5,7 @@ const moduleConfig: ModuleConfig = {
   name: 'inventory-adjustments',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['stock-movements', 'auth'],
+  dependencies: ['stock', 'stock-movements'],
   description: 'Ajustes por conteo fisico.',
   category: 'inventory',
   icon: 'pi pi-sliders-h',

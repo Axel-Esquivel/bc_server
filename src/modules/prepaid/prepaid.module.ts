@@ -8,7 +8,14 @@ import { OrganizationsModule } from '../organizations/organizations.module';
 @Module({
   imports: [OutboxModule, OrganizationsModule],
   controllers: [PrepaidController],
-  providers: [PrepaidService, PrepaidModelsProvider],
-  exports: [PrepaidService],
+  providers: [
+    PrepaidService,
+    PrepaidModelsProvider,
+    {
+      provide: 'PREPAID_PORT',
+      useExisting: PrepaidService,
+    },
+  ],
+  exports: [PrepaidService, 'PREPAID_PORT'],
 })
 export class PrepaidModule {}

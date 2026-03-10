@@ -3,7 +3,7 @@ const moduleConfig = {
   name: 'prepaid',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['pos'],
+  dependencies: ['auth', 'organizations', 'outbox'],
   description: 'Recargas con saldo por proveedor.',
   category: 'ventas',
   icon: 'pi pi-mobile',

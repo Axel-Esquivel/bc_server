@@ -5,7 +5,7 @@ const moduleConfig: ModuleConfig = {
   name: 'inventory',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['warehouses'],
+  dependencies: ['outbox', 'realtime', 'warehouses'],
   description: 'Inventario y stock.',
   category: 'inventory',
   suite: 'inventory-suite',

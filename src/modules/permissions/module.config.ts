@@ -3,7 +3,7 @@ const moduleConfig = {
   name: 'permissions',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['roles', 'auth'],
+  dependencies: ['auth', 'roles'],
   isSystem: true,
   isInstallable: false,
 };

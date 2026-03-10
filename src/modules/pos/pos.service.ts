@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { v4 as uuid } from 'uuid';
 import { InventoryDirection } from '../inventory/entities/inventory-movement.entity';
 import { InventoryService } from '../inventory/inventory.service';
@@ -8,7 +9,6 @@ import { CoreEventsService } from '../../core/events/core-events.service';
 import { createBusinessEvent } from '../../core/events/business-event';
 import type { JsonObject } from '../../core/events/business-event';
 import { OutboxService } from '../outbox/outbox.service';
-import { PrepaidService } from '../prepaid/prepaid.service';
 import { AddCartLineDto } from './dto/add-cart-line.dto';
 import { AddPaymentDto } from './dto/add-payment.dto';
 import { ClosePosSessionDto } from './dto/close-pos-session.dto';
@@ -98,6 +98,16 @@ interface PosSessionEventPayload extends JsonObject {
   status?: PosSessionStatus;
 }
 
+interface PrepaidPort {
+  consumeForSale(
+    organizationId: string,
+    companyId: string,
+    enterpriseId: string,
+    lines: Array<{ variantId: string; quantity: number; saleLineId?: string }>,
+    saleId?: string,
+  ): Promise<void>;
+}
+
 @Injectable()
 export class PosService implements OnModuleInit {
   // TODO: replace in-memory collections with MongoDB persistence and domain events for CQRS projections.
@@ -117,7 +127,7 @@ export class PosService implements OnModuleInit {
     private readonly companiesService: CompaniesService,
     private readonly coreEventsService: CoreEventsService,
     private readonly outboxService: OutboxService,
-    private readonly prepaidService: PrepaidService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -536,12 +546,20 @@ export class PosService implements OnModuleInit {
     lines: Array<{ variantId: string; quantity: number; id?: string }>,
     saleId?: string,
   ): Promise<void> {
+    const prepaidPort = this.resolvePrepaidPort();
+    if (!prepaidPort) {
+      if (lines.length > 0) {
+        this.logger.warn('Prepaid module not available; skipping prepaid consumption.');
+      }
+      return;
+    }
+
     const prepaidLines = lines.map((line) => ({
       variantId: line.variantId,
       quantity: line.quantity,
       saleLineId: line.id,
     }));
-    await this.prepaidService.consumeForSale(organizationId, companyId, enterpriseId, prepaidLines, saleId);
+    await prepaidPort.consumeForSale(organizationId, companyId, enterpriseId, prepaidLines, saleId);
   }
 
   voidSale(saleId: string, dto: PosSaleActionDto): SaleRecord {
@@ -789,6 +807,18 @@ export class PosService implements OnModuleInit {
     if (resolved !== enterpriseId) {
       throw new BadRequestException('Enterprise does not match company context');
     }
+  }
+
+  private resolvePrepaidPort(): PrepaidPort | null {
+    try {
+      const port = this.moduleRef.get<PrepaidPort>('PREPAID_PORT', { strict: false });
+      if (port && typeof port.consumeForSale === 'function') {
+        return port;
+      }
+    } catch {
+      return null;
+    }
+    return null;
   }
 
   private emitSessionOpened(payload: PosSessionEventPayload): void {

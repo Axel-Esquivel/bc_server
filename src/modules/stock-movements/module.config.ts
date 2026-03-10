@@ -5,7 +5,7 @@ const moduleConfig: ModuleConfig = {
   name: 'stock-movements',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['stock', 'locations', 'auth'],
+  dependencies: ['locations', 'organizations', 'outbox', 'stock'],
   description: 'Ledger inmutable de movimientos de stock.',
   category: 'inventory',
   suite: 'inventory-suite',

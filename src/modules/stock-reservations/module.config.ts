@@ -5,7 +5,7 @@ const moduleConfig: ModuleConfig = {
   name: 'stock-reservations',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['stock', 'auth'],
+  dependencies: ['outbox', 'stock'],
   description: 'Reservas de stock para ventas y picking.',
   category: 'inventory',
   icon: 'pi pi-bookmark',

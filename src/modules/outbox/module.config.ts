@@ -1,15 +1,14 @@
 import { ModuleConfig } from '../module-loader/module.config';
 
 const moduleConfig: ModuleConfig = {
-  key: 'auth',
-  name: 'auth',
+  key: 'outbox',
+  name: 'outbox',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['companies', 'devices', 'organizations', 'users'],
-  category: 'core',
-  suite: 'core-suite',
-  tags: ['core'],
-  order: 10,
+  dependencies: ['realtime'],
+  description: 'Outbox de eventos para integraciones y notificaciones.',
+  category: 'utilities',
+  tags: ['outbox', 'events'],
   isSystem: true,
   isInstallable: false,
 };

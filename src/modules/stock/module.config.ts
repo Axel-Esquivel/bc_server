@@ -5,7 +5,7 @@ const moduleConfig: ModuleConfig = {
   name: 'stock',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['auth'],
+  dependencies: [],
   description: 'Stock como proyeccion por ubicacion.',
   category: 'inventory',
   suite: 'inventory-suite',

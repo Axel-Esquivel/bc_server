@@ -3,7 +3,7 @@ const moduleConfig = {
   name: 'purchases',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['inventory'],
+  dependencies: ['companies', 'inventory', 'products', 'providers', 'stock'],
   description: 'Ordenes de compra.',
   category: 'compras',
   icon: 'pi pi-briefcase',

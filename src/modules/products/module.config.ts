@@ -5,7 +5,7 @@ const moduleConfig: ModuleConfig = {
   name: 'products',
   version: '1.0.0',
   enabled: true,
-  dependencies: [],
+  dependencies: ['auth', 'organizations', 'price-lists'],
   description: 'Productos y catalogo.',
   category: 'master-data',
   suite: 'master-data-suite',

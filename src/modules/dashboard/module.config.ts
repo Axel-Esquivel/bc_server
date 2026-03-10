@@ -3,7 +3,7 @@ const moduleConfig = {
   name: 'dashboard',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['auth', 'organizations'],
+  dependencies: ['auth', 'companies', 'organizations'],
   isSystem: true,
   isInstallable: false,
 };

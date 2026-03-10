@@ -5,7 +5,7 @@ const moduleConfig: ModuleConfig = {
   name: 'inventory-events',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['stock-movements', 'outbox', 'locations', 'auth'],
+  dependencies: ['locations', 'outbox', 'stock-movements'],
   description: 'Consumidor de eventos externos para inventario.',
   category: 'inventory',
   icon: 'pi pi-bolt',
