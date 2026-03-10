@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AddCartLineDto } from './dto/add-cart-line.dto';
 import { AddPaymentDto } from './dto/add-payment.dto';
+import { ActivePosSessionQueryDto } from './dto/active-session-query.dto';
 import { ClosePosSessionDto } from './dto/close-pos-session.dto';
 import { ConfirmCartDto } from './dto/confirm-cart.dto';
 import { CreateCartDto } from './dto/create-cart.dto';
@@ -9,10 +10,17 @@ import { OpenPosSessionDto } from './dto/open-pos-session.dto';
 import { PosSaleActionDto } from './dto/pos-sale-action.dto';
 import { PosService } from './pos.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ProductsService } from '../products/products.service';
+import { ProductSearchQueryDto } from '../products/dto/product-search-query.dto';
+import { ProductByCodeQueryDto } from '../products/dto/product-by-code-query.dto';
+import type { AuthenticatedRequest } from '../../core/types/authenticated-request.types';
 
 @Controller('pos')
 export class PosController {
-  constructor(private readonly posService: PosService) {}
+  constructor(
+    private readonly posService: PosService,
+    private readonly productsService: ProductsService,
+  ) {}
 
   @Post('carts')
   createCart(@Body() dto: CreateCartDto) {
@@ -28,6 +36,15 @@ export class PosController {
     return {
       message: 'POS session opened',
       result: this.posService.openSession(dto),
+    };
+  }
+
+  @Get('sessions/active')
+  @UseGuards(JwtAuthGuard)
+  getActiveSession(@Query() query: ActivePosSessionQueryDto) {
+    return {
+      message: 'POS active session loaded',
+      result: this.posService.getActiveSession(query),
     };
   }
 
@@ -58,11 +75,31 @@ export class PosController {
 
   @Post('carts/:id/confirm')
   @UseGuards(JwtAuthGuard)
-  async confirm(@Param('id') cartId: string, @Body() dto: ConfirmCartDto, @Req() req: any) {
+  async confirm(@Param('id') cartId: string, @Body() dto: ConfirmCartDto, @Req() req: AuthenticatedRequest) {
+    const cashierUserId = req.userId ?? req.user?.sub ?? req.user?.id;
+    if (!cashierUserId) {
+      throw new BadRequestException('Cashier user id is required');
+    }
     return {
       message: 'Sale confirmed from cart',
-      result: await this.posService.confirmCart(cartId, dto, req.userId ?? req.user?.sub ?? req.user?.id),
+      result: await this.posService.confirmCart(cartId, dto, cashierUserId),
     };
+  }
+
+  @Get('variants/search')
+  @UseGuards(JwtAuthGuard)
+  async searchVariants(@Query() query: ProductSearchQueryDto, @Req() req: AuthenticatedRequest) {
+    const orgId = query.OrganizationId ?? req.user?.organizationId ?? undefined;
+    const result = await this.productsService.searchForPos(query, orgId);
+    return { message: 'POS variants search retrieved', result };
+  }
+
+  @Get('variants/by-code')
+  @UseGuards(JwtAuthGuard)
+  async findVariantByCode(@Query() query: ProductByCodeQueryDto, @Req() req: AuthenticatedRequest) {
+    const orgId = query.OrganizationId ?? req.user?.organizationId ?? undefined;
+    const result = await this.productsService.findByCodeForPos(query, orgId);
+    return { message: 'POS variant lookup retrieved', result };
   }
 
   @Post('sales')

@@ -17,7 +17,7 @@ interface PosSaleCompletedPayload extends JsonObject {
     amount: number;
   } | null;
   lines: Array<{
-    productId: string;
+    variantId: string;
     qty: number;
     unitPrice: number;
     total: number;

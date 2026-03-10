@@ -19,7 +19,7 @@ import moduleLoader from '../module-loader/module.config';
 import organizations from '../organizations/module.config';
 import outbox from '../outbox/module.config';
 import permissions from '../permissions/module.config';
-import pos from '../pos/module.config';
+import pos from '../POS/module.config';
 import priceLists from '../price-lists/module.config';
 import productCategories from '../product-categories/module.config';
 import products from '../products/module.config';

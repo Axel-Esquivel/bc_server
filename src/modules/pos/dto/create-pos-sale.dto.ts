@@ -1,11 +1,28 @@
 import { Type } from 'class-transformer';
-import { ArrayNotEmpty, IsArray, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import {
+  ArrayNotEmpty,
+  IsArray,
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
 import { PaymentMethod } from '../entities/payment.entity';
 
 export class CreatePosSaleLineDto {
+  @ValidateIf((item) => !item.variantId)
   @IsString()
   @IsNotEmpty()
-  productId!: string;
+  productId?: string;
+
+  @ValidateIf((item) => !item.productId)
+  @IsString()
+  @IsNotEmpty()
+  variantId?: string;
 
   @IsOptional()
   @IsString()

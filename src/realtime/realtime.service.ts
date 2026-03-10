@@ -4,8 +4,8 @@ import { WsException } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { InventoryMovementRecord } from '../modules/inventory/entities/inventory-movement.entity';
 import { StockProjectionRecord } from '../modules/inventory/entities/stock-projection.entity';
-import { CartRecord } from '../modules/pos/entities/cart.entity';
-import { SaleRecord } from '../modules/pos/entities/sale.entity';
+import { CartRecord } from '../modules/POS/entities/cart.entity';
+import { SaleRecord } from '../modules/POS/entities/sale.entity';
 import type { JsonObject } from '../core/events/business-event';
 
 export interface RealtimeContext {

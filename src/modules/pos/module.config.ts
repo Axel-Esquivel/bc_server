@@ -5,7 +5,7 @@ const moduleConfig: ModuleConfig = {
   name: 'pos',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['auth', 'companies', 'inventory', 'organizations', 'outbox', 'realtime'],
+  dependencies: ['auth', 'companies', 'inventory', 'organizations', 'outbox', 'products', 'realtime'],
   description: 'Punto de venta.',
   category: 'pos',
   suite: 'pos-suite',

@@ -48,7 +48,7 @@ interface PosSaleCompletedPayload extends JsonObject {
     amount: number;
   } | null;
   lines: Array<{
-    productId: string;
+    variantId: string;
     qty: number;
     unitPrice: number;
     total: number;
@@ -71,7 +71,7 @@ interface PosSaleEventPayload extends JsonObject {
     amount: number;
   } | null;
   lines: Array<{
-    productId: string;
+    variantId: string;
     qty: number;
     unitPrice: number;
     total: number;
@@ -439,6 +439,19 @@ export class PosService implements OnModuleInit {
     return session;
   }
 
+  getActiveSession(dto: { OrganizationId: string; companyId: string; enterpriseId: string; cashierUserId: string }): PosSessionRecord | null {
+    this.ensureEnterprise(dto.companyId, dto.enterpriseId);
+    const match = this.sessions.find(
+      (session) =>
+        session.OrganizationId === dto.OrganizationId &&
+        session.companyId === dto.companyId &&
+        session.enterpriseId === dto.enterpriseId &&
+        session.cashierUserId === dto.cashierUserId &&
+        session.status === PosSessionStatus.OPEN,
+    );
+    return match ?? null;
+  }
+
   createSale(dto: CreatePosSaleDto): SaleRecord {
     this.ensureEnterprise(dto.companyId, dto.enterpriseId);
     const session = this.findSession(dto.sessionId);
@@ -467,17 +480,23 @@ export class PosService implements OnModuleInit {
       subtotal: totals.subtotal,
       discountTotal: 0,
       total: totals.grandTotal,
-      lines: dto.lines.map((line) => ({
-        id: uuid(),
-        variantId: line.productId,
-        quantity: line.qty,
-        unitPrice: line.unitPrice,
-        discountAmount: 0,
-        total: line.qty * line.unitPrice,
-        phoneNumber: line.phoneNumber,
-        denomination: line.denomination,
-        prepaidProviderId: line.prepaidProviderId,
-      })),
+      lines: dto.lines.map((line) => {
+        const variantId = line.variantId ?? line.productId;
+        if (!variantId) {
+          throw new BadRequestException('variantId is required');
+        }
+        return {
+          id: uuid(),
+          variantId,
+          quantity: line.qty,
+          unitPrice: line.unitPrice,
+          discountAmount: 0,
+          total: line.qty * line.unitPrice,
+          phoneNumber: line.phoneNumber,
+          denomination: line.denomination,
+          prepaidProviderId: line.prepaidProviderId,
+        };
+      }),
       payments: payments.map((payment) => ({
         id: uuid(),
         method: payment.method,
@@ -701,7 +720,7 @@ export class PosService implements OnModuleInit {
         ? { method: sale.payments[0].method, amount: sale.payments[0].amount }
         : null;
       const lines = sale.lines.map((line) => ({
-        productId: line.variantId,
+        variantId: line.variantId,
         qty: line.quantity,
         unitPrice: line.unitPrice,
         total: line.total,
@@ -874,7 +893,7 @@ export class PosService implements OnModuleInit {
         ? { method: sale.payments[0].method, amount: sale.payments[0].amount }
         : null,
       lines: sale.lines.map((line) => ({
-        productId: line.variantId,
+        variantId: line.variantId,
         qty: line.quantity,
         unitPrice: line.unitPrice,
         total: line.total,

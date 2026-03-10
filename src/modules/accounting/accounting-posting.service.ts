@@ -22,7 +22,7 @@ interface PosSaleCompletedPayload extends JsonObject {
     amount: number;
   } | null;
   lines: Array<{
-    productId: string;
+    variantId: string;
     qty: number;
     unitPrice: number;
     total: number;
@@ -168,7 +168,7 @@ export class AccountingPostingService implements OnModuleInit, OnModuleDestroy {
         throw new Error('Invalid POS sale payload: line invalid');
       }
       return {
-        productId: this.getString(line, 'productId'),
+        variantId: this.getLineVariantId(line),
         qty: this.getNumber(line, 'qty'),
         unitPrice: this.getNumber(line, 'unitPrice'),
         total: this.getNumber(line, 'total'),
@@ -201,6 +201,14 @@ export class AccountingPostingService implements OnModuleInit, OnModuleDestroy {
       method: this.getString(value, 'method'),
       amount: this.getNumber(value, 'amount'),
     };
+  }
+
+  private getLineVariantId(line: JsonObject): string {
+    const variantId = this.getOptionalString(line, 'variantId');
+    if (variantId) {
+      return variantId;
+    }
+    return this.getString(line, 'productId');
   }
 
   private isObject(value: JsonValue): value is JsonObject {
