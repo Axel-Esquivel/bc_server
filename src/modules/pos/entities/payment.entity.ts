@@ -31,5 +31,4 @@ export class Payment {
 export interface PaymentRecord extends Payment {
   id: string;
   saleId?: string;
-  cartId?: string;
 }

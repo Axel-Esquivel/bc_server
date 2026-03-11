@@ -7,39 +7,43 @@ export enum PosSessionStatus {
 
 @modelOptions({ schemaOptions: { timestamps: true } })
 export class PosSession {
-  @prop({ required: true, index: true })
+  @prop({ required: true })
   OrganizationId!: string;
 
-  @prop({ required: true, index: true })
+  @prop({ required: true })
   companyId!: string;
 
-  @prop({ required: true, index: true })
+  @prop({ required: true })
   enterpriseId!: string;
 
-  @prop({ index: true })
-  cashierUserId?: string;
+  @prop({ required: true })
+  warehouseId!: string;
 
   @prop({ required: true })
+  cashierUserId!: string;
+
+  @prop({ required: true, enum: PosSessionStatus })
   status!: PosSessionStatus;
 
-  @prop({ required: true, default: 0 })
+  @prop({ required: true })
   openingAmount!: number;
-
-  @prop()
-  openedAt!: Date;
-
-  @prop()
-  closedAt?: Date;
 
   @prop()
   closingAmount?: number;
 
   @prop({ required: true })
-  warehouseId!: string;
+  openedAt!: Date;
+
+  @prop()
+  closedAt?: Date;
+
+  @prop({ required: true })
+  createdAt!: Date;
+
+  @prop({ required: true })
+  updatedAt!: Date;
 }
 
 export interface PosSessionRecord extends PosSession {
   id: string;
-  createdAt: Date;
-  updatedAt: Date;
 }

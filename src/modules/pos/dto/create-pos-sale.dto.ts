@@ -8,25 +8,14 @@ import {
   IsOptional,
   IsString,
   Min,
-  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { PaymentMethod } from '../entities/payment.entity';
 
 export class CreatePosSaleLineDto {
-  @ValidateIf((item) => !item.variantId)
   @IsString()
   @IsNotEmpty()
-  productId?: string;
-
-  @ValidateIf((item) => !item.productId)
-  @IsString()
-  @IsNotEmpty()
-  variantId?: string;
-
-  @IsOptional()
-  @IsString()
-  nameSnapshot?: string;
+  variantId!: string;
 
   @IsNumber()
   @Min(0)
@@ -35,22 +24,6 @@ export class CreatePosSaleLineDto {
   @IsNumber()
   @Min(0)
   unitPrice!: number;
-
-  @IsOptional()
-  @IsNumber()
-  taxRate?: number;
-
-  @IsOptional()
-  @IsString()
-  phoneNumber?: string;
-
-  @IsOptional()
-  @IsNumber()
-  denomination?: number;
-
-  @IsOptional()
-  @IsString()
-  prepaidProviderId?: string;
 }
 
 export class CreatePosPaymentDto {
@@ -85,11 +58,15 @@ export class CreatePosSaleDto {
 
   @IsString()
   @IsNotEmpty()
+  warehouseId!: string;
+
+  @IsString()
+  @IsNotEmpty()
   sessionId!: string;
 
   @IsString()
   @IsNotEmpty()
-  warehouseId!: string;
+  cashierUserId!: string;
 
   @IsOptional()
   @IsString()

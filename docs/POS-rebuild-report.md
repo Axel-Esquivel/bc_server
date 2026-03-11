@@ -2,25 +2,25 @@
 
 Fecha: 2026-03-10
 
-**Resumen**
-Se reconstruyó el módulo POS bajo la carpeta `server/src/modules/POS`, reemplazando la ubicación anterior. Se reforzó el flujo con variantes, se agregaron endpoints de consulta POS y se alinearon dependencias.
-
-**Eliminado/Reemplazado**
-- Carpeta anterior: `server/src/modules/pos` (reemplazada por `server/src/modules/POS`).
-
-**Conservado**
-- Lógica base de ventas, inventario, outbox y sesiones (refactorizada a la nueva ruta).
-
-**Estructura final**
+## Estructura final
 - `server/src/modules/POS/`
   - `pos.module.ts`
   - `pos.controller.ts`
   - `pos.service.ts`
   - `module.config.ts`
-  - `dto/` (incluye `active-session-query.dto.ts`)
+  - `dto/`
+    - `open-pos-session.dto.ts`
+    - `close-pos-session.dto.ts`
+    - `active-session-query.dto.ts`
+    - `create-pos-sale.dto.ts`
+    - `pos-sale-action.dto.ts`
   - `entities/`
+    - `pos-session.entity.ts`
+    - `sale.entity.ts`
+    - `sale-line.entity.ts`
+    - `payment.entity.ts`
 
-**Endpoints POS**
+## Endpoints creados
 - `POST /api/pos/sessions/open`
 - `GET /api/pos/sessions/active`
 - `POST /api/pos/sessions/close`
@@ -28,25 +28,23 @@ Se reconstruyó el módulo POS bajo la carpeta `server/src/modules/POS`, reempla
 - `GET /api/pos/variants/by-code`
 - `POST /api/pos/sales`
 - `POST /api/pos/sales/:id/post`
-- `POST /api/pos/sales/:id/void`
 - `GET /api/pos/sales`
-- `POST /api/pos/carts` (base existente)
-- `POST /api/pos/carts/:id/lines`
-- `POST /api/pos/carts/:id/payments`
-- `POST /api/pos/carts/:id/confirm`
 
-**Dependencias**
-- Requeridas: `auth`, `companies`, `inventory`, `organizations`, `outbox`, `products`, `realtime`
-- Opcionales: `PREPAID_PORT` via `ModuleRef` (no bloquea el runtime)
+## Dependencias reales
+- `auth`, `companies`, `inventory`, `organizations`, `outbox`, `products`
 
-**Integraciones opcionales**
-- Contabilidad vÃ­a outbox (`pos.sale.completed`, `pos.sale.posted`)
-- Prepaid vÃ­a puerto opcional
+## Decisiones de integracion
+- Ventas por `variantId` de forma consistente.
+- Validacion de stock antes de postear venta.
+- Movimientos de inventario `OUT` por linea.
+- Eventos outbox `pos.sale.posted` para integraciones opcionales (contabilidad).
 
-**IntegraciÃ³n con inventario**
-- ValidaciÃ³n de stock en `postSale` con proyecciones de inventario (`inventoryService.listStock`).
-- Descuento de inventario al confirmar/postear venta vÃ­a `inventoryService.recordMovement`.
+## Archivos modificados
+- `server/src/app.module.ts`
+- `server/src/modules/module-loader/module-registry.data.ts`
+- `server/src/modules/module-loader/module.config.ts`
+- `server/src/core/constants/modules.catalog.ts`
 
-**Riesgos / deuda tÃ©cnica**
-- Persistencia POS aÃºn en memoria (ModuleState).
-- Endpoints de carritos pueden requerir endurecimiento de guardas segÃºn polÃ­tica final.
+## Notas
+- Persistencia en memoria via `ModuleStateService` como base inicial.
+- No hay acoplamiento directo a accounting; solo outbox.

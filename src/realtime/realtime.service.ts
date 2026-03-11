@@ -4,8 +4,6 @@ import { WsException } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { InventoryMovementRecord } from '../modules/inventory/entities/inventory-movement.entity';
 import { StockProjectionRecord } from '../modules/inventory/entities/stock-projection.entity';
-import { CartRecord } from '../modules/POS/entities/cart.entity';
-import { SaleRecord } from '../modules/POS/entities/sale.entity';
 import type { JsonObject } from '../core/events/business-event';
 
 export interface RealtimeContext {
@@ -130,41 +128,6 @@ export class RealtimeService {
     this.emitEvent(event, payload, [`user:${userId}`]);
   }
 
-  emitPosCartUpdated(cart: CartRecord) {
-    const payload = {
-      id: cart.id,
-      OrganizationId: cart.OrganizationId,
-      companyId: cart.companyId,
-      userId: cart.userId,
-      status: cart.status,
-      total: cart.total,
-      warehouseId: cart.warehouseId,
-      updatedAt: cart.updatedAt,
-    };
-    this.emitToOrganization(cart.OrganizationId, 'pos:cart:updated', payload);
-    this.emitToUser(cart.userId, 'pos:cart:updated', payload);
-  }
-
-  emitPosCartDeleted(cartId: string, OrganizationId: string | undefined, userId?: string) {
-    const payload = { id: cartId, OrganizationId };
-    this.emitToOrganization(OrganizationId, 'pos:cart:deleted', payload);
-    this.emitToUser(userId, 'pos:cart:deleted', payload);
-  }
-
-  emitPosInventoryAvailability(projection: StockProjectionRecord, OrganizationId: string) {
-    const payload = {
-      variantId: projection.variantId,
-      warehouseId: projection.warehouseId,
-      locationId: projection.locationId,
-      available: projection.available,
-      onHand: projection.onHand,
-      reserved: projection.reserved,
-      version: projection.version,
-      OrganizationId,
-    };
-    this.emitToOrganization(OrganizationId, 'pos:inventory:availability', payload);
-  }
-
   emitInventoryStockUpdated(projection: StockProjectionRecord) {
     const payload = {
       variantId: projection.variantId,
@@ -179,18 +142,6 @@ export class RealtimeService {
       companyId: projection.companyId,
     };
     this.emitToOrganization(projection.OrganizationId, 'inventory:stock:updated', payload);
-  }
-
-  emitDashboardSalesTick(sale: SaleRecord) {
-    const payload = {
-      saleId: sale.id,
-      total: sale.total,
-      storeId: sale.warehouseId,
-      OrganizationId: sale.OrganizationId,
-      companyId: sale.companyId,
-      timestamp: sale.updatedAt ?? sale.createdAt,
-    };
-    this.emitToOrganization(sale.OrganizationId, 'dashboard:sales:tick', payload);
   }
 
   emitInventoryAlert(projection: StockProjectionRecord, threshold = 5) {

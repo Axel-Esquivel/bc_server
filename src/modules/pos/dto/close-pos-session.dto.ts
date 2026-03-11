@@ -17,11 +17,12 @@ export class ClosePosSessionDto {
   @IsNotEmpty()
   sessionId!: string;
 
-  @IsOptional()
   @IsString()
-  cashierUserId?: string;
+  @IsNotEmpty()
+  cashierUserId!: string;
 
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  closingAmount!: number;
+  closingAmount?: number;
 }

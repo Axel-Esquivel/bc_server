@@ -17,11 +17,12 @@ export class OpenPosSessionDto {
   @IsNotEmpty()
   warehouseId!: string;
 
-  @IsOptional()
   @IsString()
-  cashierUserId?: string;
+  @IsNotEmpty()
+  cashierUserId!: string;
 
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  openingAmount!: number;
+  openingAmount?: number;
 }

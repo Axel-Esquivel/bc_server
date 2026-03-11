@@ -86,6 +86,7 @@ export class AccountingPostingService implements OnModuleInit, OnModuleDestroy {
     const event = this.toBusinessEvent(outbox);
     switch (event.type) {
       case 'pos.sale.completed':
+      case 'pos.sale.posted':
         await this.handlePosSaleCompleted(event);
         return true;
       default:
@@ -155,7 +156,7 @@ export class AccountingPostingService implements OnModuleInit, OnModuleDestroy {
     }
     const totals = payload.totals;
     const subtotal = this.getNumber(totals, 'subtotal');
-    const tax = this.getNumber(totals, 'tax');
+    const tax = this.getOptionalNumber(totals, 'tax') ?? 0;
     const discount = this.getNumber(totals, 'discount');
     const grandTotal = this.getNumber(totals, 'grandTotal');
 
@@ -217,6 +218,17 @@ export class AccountingPostingService implements OnModuleInit, OnModuleDestroy {
 
   private getNumber(value: JsonObject, key: string): number {
     const raw = value[key];
+    if (typeof raw !== 'number' || Number.isNaN(raw)) {
+      throw new Error(`Invalid POS sale payload: ${key} must be number`);
+    }
+    return raw;
+  }
+
+  private getOptionalNumber(value: JsonObject, key: string): number | undefined {
+    const raw = value[key];
+    if (raw === undefined || raw === null) {
+      return undefined;
+    }
     if (typeof raw !== 'number' || Number.isNaN(raw)) {
       throw new Error(`Invalid POS sale payload: ${key} must be number`);
     }
