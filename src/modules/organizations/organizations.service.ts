@@ -82,7 +82,6 @@ import {
   SuiteOperationError,
   SuiteOperationResponse,
 } from './types/organization-module-store.types';
-import type { PosTerminal } from './types/pos-terminal.types';
 import type { ModuleDescriptor } from '../module-loader/module-loader.service';
 import { Organization, OrganizationDocument } from './schemas/organization.schema';
 import { OrgModule, OrgModuleDocument } from './schemas/org-module.schema';
@@ -551,13 +550,6 @@ export class OrganizationsService {
       ],
     }));
     return [...catalog, { moduleKey: 'modules', permissions: ['modules.configure'] }];
-  }
-
-  listPosTerminals(organizationId: string): { terminals: PosTerminal[] } {
-    if (!organizationId) {
-      return { terminals: [] };
-    }
-    return { terminals: [] };
   }
 
   async getOrganization(organizationId: string): Promise<OrganizationEntity> {

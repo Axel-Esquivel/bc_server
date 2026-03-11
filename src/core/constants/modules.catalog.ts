@@ -130,19 +130,11 @@ export const MODULE_CATALOG: ModuleCatalogEntry[] = [
     requiresConfig: false,
   },
   {
-    key: 'pos',
-    name: 'Point of Sale',
-    description: 'Sales, carts, and payments',
-    version: '1.0.0',
-    dependencies: [],
-    requiresConfig: true,
-  },
-  {
     key: 'prepaid',
     name: 'Prepaid',
     description: 'Recargas y saldo por proveedor',
     version: '1.0.0',
-    dependencies: ['pos'],
+    dependencies: [],
     requiresConfig: false,
   },
   {

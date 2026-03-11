@@ -102,7 +102,7 @@ const moduleConfig: ModuleConfig = {
   name: 'module-loader',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['accounting', 'auth', 'branches', 'chat', 'companies', 'countries', 'currencies', 'customers', 'dashboard', 'devices', 'health', 'inventory', 'inventory-adjustments', 'inventory-counts', 'inventory-events', 'locations', 'organizations', 'outbox', 'permissions', 'pos', 'prepaid', 'price-lists', 'product-categories', 'products', 'providers', 'purchases', 'realtime', 'reports', 'roles', 'stock', 'stock-movements', 'stock-reservations', 'transfers', 'uom', 'users', 'warehouses'],
+  dependencies: ['accounting', 'auth', 'branches', 'chat', 'companies', 'countries', 'currencies', 'customers', 'dashboard', 'devices', 'health', 'inventory', 'inventory-adjustments', 'inventory-counts', 'inventory-events', 'locations', 'organizations', 'outbox', 'permissions', 'prepaid', 'price-lists', 'product-categories', 'products', 'providers', 'purchases', 'realtime', 'reports', 'roles', 'stock', 'stock-movements', 'stock-reservations', 'transfers', 'uom', 'users', 'warehouses'],
   isSystem: true,
   isInstallable: false,
 };
