@@ -19,6 +19,7 @@ import moduleLoader from '../module-loader/module.config';
 import organizations from '../organizations/module.config';
 import outbox from '../outbox/module.config';
 import permissions from '../permissions/module.config';
+import pos from '../pos/module.config';
 import priceLists from '../price-lists/module.config';
 import productCategories from '../product-categories/module.config';
 import products from '../products/module.config';
@@ -57,6 +58,7 @@ export const MODULE_REGISTRY_CONFIGS: ModuleConfig[] = [
   organizations as ModuleConfig,
   outbox as ModuleConfig,
   permissions as ModuleConfig,
+  pos as ModuleConfig,
   priceLists as ModuleConfig,
   productCategories as ModuleConfig,
   products as ModuleConfig,
