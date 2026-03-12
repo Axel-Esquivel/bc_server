@@ -5,11 +5,20 @@ import { CompaniesModule } from '../companies/companies.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { UsersModule } from '../users/users.module';
 import { WarehousesModule } from '../warehouses/warehouses.module';
+import { OrganizationsModule } from '../organizations/organizations.module';
 import { PosController } from './pos.controller';
 import { PosService } from './pos.service';
 
 @Module({
-  imports: [InventoryModule, ProductsModule, CompaniesModule, OutboxModule, UsersModule, WarehousesModule],
+  imports: [
+    InventoryModule,
+    ProductsModule,
+    CompaniesModule,
+    OutboxModule,
+    UsersModule,
+    WarehousesModule,
+    OrganizationsModule,
+  ],
   controllers: [PosController],
   providers: [PosService],
   exports: [PosService],
