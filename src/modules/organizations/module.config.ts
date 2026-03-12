@@ -3,7 +3,7 @@ const moduleConfig = {
   name: 'organizations',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['accounting', 'auth', 'branches', 'companies', 'module-loader', 'price-lists', 'uom', 'users', 'warehouses'],
+  dependencies: ['module-loader'],
   isSystem: true,
   isInstallable: false,
 };

@@ -3,7 +3,7 @@ const moduleConfig = {
   name: 'branches',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['auth', 'companies'],
+  dependencies: ['companies'],
   isSystem: true,
   isInstallable: false,
 };

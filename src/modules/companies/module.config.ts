@@ -3,7 +3,7 @@ const moduleConfig = {
   name: 'companies',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['auth', 'countries', 'currencies', 'module-loader', 'organizations', 'users'],
+  dependencies: ['countries', 'currencies', 'module-loader', 'organizations', 'users'],
   isSystem: true,
   isInstallable: false,
 };
