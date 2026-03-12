@@ -1,4 +1,6 @@
-﻿import { IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+﻿import { IsArray, IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { PosSessionDenominationDto } from './pos-session-denomination.dto';
 
 export class ClosePosSessionDto {
   @IsString()
@@ -22,7 +24,26 @@ export class ClosePosSessionDto {
   cashierUserId!: string;
 
   @IsOptional()
+  @IsString()
+  posConfigId?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   closingAmount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  countedClosingAmount?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PosSessionDenominationDto)
+  closingDenominations?: PosSessionDenominationDto[];
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }

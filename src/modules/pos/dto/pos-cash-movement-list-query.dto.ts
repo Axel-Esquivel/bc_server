@@ -1,6 +1,6 @@
 ﻿import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
-export class ActivePosSessionQueryDto {
+export class PosCashMovementListQueryDto {
   @IsString()
   @IsNotEmpty()
   OrganizationId!: string;
@@ -13,11 +13,7 @@ export class ActivePosSessionQueryDto {
   @IsNotEmpty()
   enterpriseId!: string;
 
-  @IsString()
-  @IsNotEmpty()
-  cashierUserId!: string;
-
   @IsOptional()
   @IsString()
-  posConfigId?: string;
+  sessionId?: string;
 }

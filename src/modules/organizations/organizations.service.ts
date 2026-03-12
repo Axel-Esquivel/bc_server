@@ -541,14 +541,37 @@ export class OrganizationsService {
   }
 
   listPermissions(): Array<{ moduleKey: string; permissions: string[] }> {
-    const catalog = MODULE_CATALOG.map((entry) => ({
-      moduleKey: entry.key,
-      permissions: [
-        `${entry.key}.read`,
-        `${entry.key}.write`,
-        `${entry.key}.configure`,
-      ],
-    }));
+    const catalog = MODULE_CATALOG.map((entry) => {
+      if (entry.key === 'pos') {
+        return {
+          moduleKey: entry.key,
+          permissions: [
+            'pos.read',
+            'pos.write',
+            'pos.configure',
+            'pos.access',
+            'pos.session.open',
+            'pos.session.close',
+            'pos.session.history',
+            'pos.sale.create',
+            'pos.sale.discount',
+            'pos.sale.cancel',
+            'pos.reprint',
+            'pos.cash.move',
+            'pos.cash.withdrawal',
+          ],
+        };
+      }
+
+      return {
+        moduleKey: entry.key,
+        permissions: [
+          `${entry.key}.read`,
+          `${entry.key}.write`,
+          `${entry.key}.configure`,
+        ],
+      };
+    });
     return [...catalog, { moduleKey: 'modules', permissions: ['modules.configure'] }];
   }
 

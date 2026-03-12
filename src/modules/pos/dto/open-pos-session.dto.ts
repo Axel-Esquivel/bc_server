@@ -1,6 +1,12 @@
-﻿import { IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+﻿import { IsArray, IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { PosSessionDenominationDto } from './pos-session-denomination.dto';
 
 export class OpenPosSessionDto {
+  @IsString()
+  @IsNotEmpty()
+  posConfigId!: string;
+
   @IsString()
   @IsNotEmpty()
   OrganizationId!: string;
@@ -25,4 +31,14 @@ export class OpenPosSessionDto {
   @IsNumber()
   @Min(0)
   openingAmount?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PosSessionDenominationDto)
+  openingDenominations?: PosSessionDenominationDto[];
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
