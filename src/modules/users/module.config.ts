@@ -3,7 +3,7 @@ const moduleConfig = {
   name: 'users',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['branches', 'companies', 'organizations'],
+  dependencies: ['organizations'],
   isSystem: true,
   isInstallable: false,
 };

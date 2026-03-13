@@ -3,7 +3,7 @@ const moduleConfig = {
   name: 'countries',
   version: '1.0.0',
   enabled: true,
-  dependencies: ['auth', 'organizations'],
+  dependencies: ['organizations'],
   isSystem: true,
   isInstallable: false,
 };
