@@ -52,6 +52,7 @@ export class AuthService {
     }
 
     const activeContext = await this.resolveActiveContext(user.id);
+    const permissions = await this.resolvePermissions(user.id, activeContext.organizationId);
     const deviceId = 'untracked-device';
 
     this.devicesService.upsertDevice(user.id, deviceId, activeContext.companyId ?? undefined);
@@ -62,7 +63,7 @@ export class AuthService {
       deviceId,
       organizationId: activeContext.organizationId,
       companyId: activeContext.companyId,
-      permissions: [],
+      permissions,
     });
 
     await this.storeRefreshToken(user.id, deviceId, tokens.refreshToken);
@@ -88,6 +89,7 @@ export class AuthService {
     });
 
     const activeContext = await this.resolveActiveContext(user.id);
+    const permissions = await this.resolvePermissions(user.id, activeContext.organizationId);
     const deviceId = 'untracked-device';
     const tokens = this.issueTokens({
       sub: user.id,
@@ -95,7 +97,7 @@ export class AuthService {
       deviceId,
       organizationId: activeContext.organizationId,
       companyId: activeContext.companyId,
-      permissions: [],
+      permissions,
     });
 
     await this.storeRefreshToken(user.id, deviceId, tokens.refreshToken);
@@ -122,13 +124,14 @@ export class AuthService {
     }
 
     const activeContext = await this.resolveActiveContext(payload.sub);
+    const permissions = await this.resolvePermissions(payload.sub, activeContext.organizationId);
     const tokens = this.issueTokens({
       sub: payload.sub,
       email: payload.email,
       deviceId,
       organizationId: activeContext.organizationId,
       companyId: activeContext.companyId,
-      permissions: payload.permissions || [],
+      permissions,
     });
 
     await this.storeRefreshToken(payload.sub, deviceId, tokens.refreshToken);
@@ -145,11 +148,15 @@ export class AuthService {
   async getProfile(userId: string) {
     const user = await this.usersService.findById(userId);
     const isFirstTime = !(await this.organizationsService.hasActiveMemberships(userId));
+    const activeContext = await this.resolveActiveContext(userId);
+    const permissions = await this.resolvePermissions(userId, activeContext.organizationId);
     return {
       message: 'User profile',
       result: {
         user,
         isFirstTime,
+        activeContext,
+        permissions,
       },
     };
   }
@@ -290,6 +297,13 @@ export class AuthService {
       enterpriseId: null,
       currencyId: null,
     };
+  }
+
+  private async resolvePermissions(userId: string, organizationId?: string | null): Promise<string[]> {
+    if (!organizationId) {
+      return [];
+    }
+    return this.organizationsService.getMemberPermissions(organizationId, userId);
   }
 }
 

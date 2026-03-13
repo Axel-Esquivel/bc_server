@@ -90,6 +90,22 @@ interface OrganizationsState {
   Organizations: OrganizationOrganizationsnapshot[];
 }
 
+export interface OrganizationMemberSummary {
+  userId: string;
+  email?: string;
+  name?: string;
+  roleKey: OrganizationRoleKey;
+  roleName?: string;
+  permissions?: string[];
+  status: OrganizationMemberStatus;
+  invitedBy?: string;
+  requestedBy?: string;
+  invitedAt?: Date;
+  requestedAt?: Date;
+  activatedAt?: Date;
+  createdAt?: Date;
+}
+
 @Injectable()
 export class OrganizationsService {
   private readonly logger = new Logger(OrganizationsService.name);
@@ -519,6 +535,84 @@ export class OrganizationsService {
         (item): item is { organizationId: string; name: string; code: string; roleKey: string; status: OrganizationMemberStatus } =>
           Boolean(item),
       );
+  }
+
+  async listMembers(
+    organizationId: string,
+    status?: OrganizationMemberStatus | OrganizationMemberStatus[],
+  ): Promise<OrganizationMemberSummary[]> {
+    const organization = await this.getOrganization(organizationId);
+    const statuses = Array.isArray(status) ? status : status ? [status] : null;
+    const members = statuses
+      ? organization.members.filter((member) => statuses.includes(member.status))
+      : organization.members;
+
+    const users = await this.usersService.resolveUsers(members.map((member) => member.userId));
+    const userMap = new Map(users.map((user) => [user.id, user]));
+    const roleMap = new Map(organization.roles.map((role) => [role.key, role]));
+
+    return members.map((member) => {
+      const user = userMap.get(member.userId);
+      const role = roleMap.get(member.roleKey);
+      return {
+        userId: member.userId,
+        email: member.email ?? user?.email,
+        name: user?.name,
+        roleKey: member.roleKey,
+        roleName: role?.name,
+        permissions: role?.permissions ? [...role.permissions] : undefined,
+        status: member.status,
+        invitedBy: member.invitedBy,
+        requestedBy: member.requestedBy,
+        invitedAt: member.invitedAt,
+        requestedAt: member.requestedAt,
+        activatedAt: member.activatedAt,
+        createdAt: member.createdAt,
+      };
+    });
+  }
+
+  async getMemberDetails(
+    organizationId: string,
+    targetUserId: string,
+  ): Promise<OrganizationMemberSummary> {
+    const members = await this.listMembers(organizationId);
+    const member = members.find((item) => item.userId === targetUserId);
+    if (!member) {
+      throw new NotFoundException('Organization member not found');
+    }
+    return member;
+  }
+
+  async updateMemberAccess(
+    organizationId: string,
+    requesterId: string,
+    targetUserId: string,
+    nextStatus: OrganizationMemberStatus.Active | OrganizationMemberStatus.Disabled,
+  ): Promise<OrganizationEntity> {
+    const organization = await this.getOrganization(organizationId);
+    await this.assertRoleForMemberChange(organization, requesterId, null, null, targetUserId);
+
+    const member = organization.members.find((item) => item.userId === targetUserId);
+    if (!member) {
+      throw new NotFoundException('Organization member not found');
+    }
+    if (member.roleKey === OWNER_ROLE_KEY && nextStatus !== OrganizationMemberStatus.Active) {
+      throw new ForbiddenException('Owner role cannot be disabled');
+    }
+    if (member.status === OrganizationMemberStatus.Pending) {
+      throw new BadRequestException('Member is pending approval');
+    }
+
+    if (nextStatus === OrganizationMemberStatus.Active) {
+      member.status = OrganizationMemberStatus.Active;
+      member.activatedAt = member.activatedAt ?? new Date();
+    } else {
+      member.status = OrganizationMemberStatus.Disabled;
+    }
+
+    await this.updateOrganizationFields(organizationId, { members: organization.members });
+    return organization;
   }
 
   async hasActiveMemberships(userId: string): Promise<boolean> {
@@ -1443,7 +1537,7 @@ export class OrganizationsService {
       throw new ForbiddenException('User is not a member of organization');
     }
     if (member.status !== OrganizationMemberStatus.Active) {
-      throw new ForbiddenException('Membership is pending approval');
+      throw new ForbiddenException('Membership is not active');
     }
 
     return this.usersService.setDefaultOrganization(userId, organizationId);
@@ -1564,6 +1658,16 @@ export class OrganizationsService {
       return null;
     }
     return member.roleKey ?? null;
+  }
+
+  async getMemberPermissions(organizationId: string, userId?: string): Promise<string[]> {
+    const member = await this.getMember(organizationId, userId);
+    if (!member || member.status !== OrganizationMemberStatus.Active) {
+      return [];
+    }
+    const organization = await this.getOrganization(organizationId);
+    const role = organization.roles.find((item) => item.key === member.roleKey);
+    return Array.isArray(role?.permissions) ? [...role.permissions] : [];
   }
 
   async getModuleState(

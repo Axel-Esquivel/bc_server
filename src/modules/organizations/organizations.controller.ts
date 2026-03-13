@@ -23,6 +23,7 @@ import { JoinOrganizationRequestEmailDto } from './dto/join-organization-request
 import { UpdateOrganizationModulesDto } from './dto/update-organization-modules.dto';
 import { UpdateOrganizationModuleKeyDto } from './dto/update-organization-module-key.dto';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
+import { UpdateOrganizationMemberAccessDto } from './dto/update-organization-member-access.dto';
 import { CreateCoreCompanyDto } from './dto/create-core-company.dto';
 import { CreateCoreCountryDto } from './dto/create-core-country.dto';
 import { CreateCoreCurrencyDto } from './dto/create-core-currency.dto';
@@ -53,6 +54,7 @@ import type {
 } from './types/organization-module-store.types';
 import type { SafeUser } from '../users/entities/user.entity';
 import type { CompanyEntity } from '../companies/entities/company.entity';
+import { OrganizationMemberStatus } from './entities/organization.entity';
 
 interface OrganizationDefaultResponse {
   user: SafeUser;
@@ -207,6 +209,39 @@ export class OrganizationsController {
     return {
       message: 'Organization permissions loaded',
       result: permissions,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('users.read')
+  @Get(':id/members')
+  async listMembers(@Param('id') id: string) {
+    const members = await this.organizationsService.listMembers(id);
+    return {
+      message: 'Organization members loaded',
+      result: members,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('users.read')
+  @Get(':id/members/pending')
+  async listPendingMembers(@Param('id') id: string) {
+    const members = await this.organizationsService.listMembers(id, OrganizationMemberStatus.Pending);
+    return {
+      message: 'Organization pending members loaded',
+      result: members,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('users.read')
+  @Get(':id/members/:userId')
+  async getMember(@Param('id') id: string, @Param('userId') userId: string) {
+    const member = await this.organizationsService.getMemberDetails(id, userId);
+    return {
+      message: 'Organization member loaded',
+      result: member,
     };
   }
 
@@ -749,6 +784,25 @@ export class OrganizationsController {
     const organization = await this.organizationsService.updateMemberRole(id, requesterId, userId, dto.role);
     return {
       message: 'Organization member updated',
+      result: organization,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
+  @OrganizationPermission('users.write')
+  @Patch(':id/members/:userId/access')
+  async updateMemberAccess(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Body() dto: UpdateOrganizationMemberAccessDto,
+  ) {
+    const requesterId = this.getUserId(req);
+    const status =
+      dto.status === 'active' ? OrganizationMemberStatus.Active : OrganizationMemberStatus.Disabled;
+    const organization = await this.organizationsService.updateMemberAccess(id, requesterId, userId, status);
+    return {
+      message: 'Organization member access updated',
       result: organization,
     };
   }

@@ -29,7 +29,7 @@ export class OrganizationAdminGuard implements CanActivate {
       throw new ForbiddenException('User is not a member of organization');
     }
     if (member.status !== 'active') {
-      throw new ForbiddenException('Membership is pending approval');
+      throw new ForbiddenException('Membership is not active');
     }
 
     const permission =

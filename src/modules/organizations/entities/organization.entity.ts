@@ -7,6 +7,7 @@ import { OrganizationModuleStates } from '../types/module-state.types';
 export enum OrganizationMemberStatus {
   Pending = 'pending',
   Active = 'active',
+  Disabled = 'disabled',
 }
 
 export type OrganizationSetupStatus = 'pending' | 'completed';
