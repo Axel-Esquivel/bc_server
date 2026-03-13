@@ -1,0 +1,20 @@
+# Informe de limpieza de duplicaciones (Backend)
+
+## Duplicaciones detectadas
+- Endpoints duplicados para aceptar/rechazar miembros en `OrganizationsController` usando `POST` y `PATCH`.
+
+## Cambios aplicados
+- Se dejó una sola convención (PATCH) para aprobar/rechazar miembros:
+  - Se eliminaron los endpoints `POST /organizations/:id/members/:userId/accept`.
+  - Se eliminaron los endpoints `POST /organizations/:id/members/:userId/reject`.
+  - Se mantienen `PATCH /organizations/:id/members/:userId/accept` y `PATCH /organizations/:id/members/:userId/reject`.
+
+## Archivos modificados
+- `server/src/modules/organizations/organizations.controller.ts`
+
+## Impacto y compatibilidad
+- El frontend fue actualizado para usar `PATCH`.
+- Si algún cliente externo consumía los endpoints `POST`, deberá actualizarse.
+
+## Riesgos pendientes
+- Ninguno crítico dentro del repositorio actual; revisar integraciones externas si las hay.

@@ -708,36 +708,12 @@ export class OrganizationsController {
 
   @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
   @OrganizationPermission('users.write')
-  @Post(':id/members/:userId/accept')
-  async acceptMember(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('userId') userId: string) {
-    const requesterId = this.getUserId(req);
-    const organization = await this.organizationsService.acceptMember(id, requesterId, userId);
-    return {
-      message: 'Organization member accepted',
-      result: organization,
-    };
-  }
-
-  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
-  @OrganizationPermission('users.write')
   @Patch(':id/members/:userId/accept')
   async acceptMemberPatch(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('userId') userId: string) {
     const requesterId = this.getUserId(req);
     const organization = await this.organizationsService.acceptMember(id, requesterId, userId);
     return {
       message: 'Organization member accepted',
-      result: organization,
-    };
-  }
-
-  @UseGuards(JwtAuthGuard, OrganizationAdminGuard)
-  @OrganizationPermission('users.write')
-  @Post(':id/members/:userId/reject')
-  async rejectMember(@Req() req: AuthenticatedRequest, @Param('id') id: string, @Param('userId') userId: string) {
-    const requesterId = this.getUserId(req);
-    const organization = await this.organizationsService.rejectMember(id, requesterId, userId);
-    return {
-      message: 'Organization member rejected',
       result: organization,
     };
   }
